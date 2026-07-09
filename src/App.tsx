@@ -10,10 +10,11 @@ import {
   getAccessToken,
 } from './lib/firebase';
 import {
-  createFleetSpreadsheet,
-  loadFromSpreadsheet,
-  pushToSpreadsheet,
-} from './lib/googleSheets';
+  subscribeToCollection,
+  seedDatabase,
+  isDatabaseEmpty,
+  syncCollectionWithDatabase,
+} from './lib/database';
 import {
   SAMPLE_VEHICLES,
   SAMPLE_OWNERS,
@@ -67,15 +68,14 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [lastSynced, setLastSynced] = useState<string | null>(null);
-
   // Core ERP Master State
-  const [vehicles, setVehicles] = useState<Vehicle[]>(SAMPLE_VEHICLES);
-  const [owners, setOwners] = useState<Owner[]>(SAMPLE_OWNERS);
-  const [drivers, setDrivers] = useState<Driver[]>(SAMPLE_DRIVERS);
-  const [companies, setCompanies] = useState<Company[]>(SAMPLE_COMPANIES);
-  const [sites, setSites] = useState<Site[]>(SAMPLE_SITES);
-  const [payments, setPayments] = useState<CompanyPayment[]>(SAMPLE_PAYMENTS);
-  const [expenses, setExpenses] = useState<Expense[]>(SAMPLE_EXPENSES);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [owners, setOwners] = useState<Owner[]>([]);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [sites, setSites] = useState<Site[]>([]);
+  const [payments, setPayments] = useState<CompanyPayment[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
 
   // Layout & Navigation State
   const [activeTab, setActiveTab] = useState<'Dashboard' | 'Registers' | 'Transactions' | 'Ledgers' | 'Settlement' | 'Reports' | 'VBA Export' | 'Settings'>('Dashboard');
@@ -142,6 +142,44 @@ export default function App() {
     }
   };
 
+  // Firestore connection and live-sync engine
+  const [firestoreConnected, setFirestoreConnected] = useState(false);
+
+  useEffect(() => {
+    let unsubscribes: (() => void)[] = [];
+
+    const initializeFirestoreSync = async () => {
+      setIsSyncing(true);
+      setSyncStatus('idle');
+      try {
+        // Subscribe to real-time collections
+        unsubscribes.push(subscribeToCollection<Vehicle>('vehicles', setVehicles));
+        unsubscribes.push(subscribeToCollection<Owner>('owners', setOwners));
+        unsubscribes.push(subscribeToCollection<Driver>('drivers', setDrivers));
+        unsubscribes.push(subscribeToCollection<Company>('companies', setCompanies));
+        unsubscribes.push(subscribeToCollection<Site>('sites', setSites));
+        unsubscribes.push(subscribeToCollection<CompanyPayment>('payments', setPayments));
+        unsubscribes.push(subscribeToCollection<Expense>('expenses', setExpenses));
+
+        setFirestoreConnected(true);
+        setSyncStatus('success');
+        setLastSynced(new Date().toLocaleTimeString());
+      } catch (err) {
+        console.error('Error connecting to Firestore database. Running in local sandbox mode.', err);
+        setFirestoreConnected(false);
+        setSyncStatus('error');
+      } finally {
+        setIsSyncing(false);
+      }
+    };
+
+    initializeFirestoreSync();
+
+    return () => {
+      unsubscribes.forEach((unsub) => unsub());
+    };
+  }, []);
+
   // Handle Google Login Auth
   const handleLogin = async () => {
     try {
@@ -153,9 +191,6 @@ export default function App() {
         });
         const token = res.accessToken;
         setAccessToken(token);
-        if (token) {
-          triggerSheetInit(token);
-        }
       }
     } catch (err) {
       console.error('Google sign-in error:', err);
@@ -171,124 +206,116 @@ export default function App() {
     setSyncStatus('idle');
   };
 
-  // Create or load sheets
-  const triggerSheetInit = async (token: string) => {
+  // Manual Reset / Re-seed action
+  const handleForceRefresh = async () => {
     setIsSyncing(true);
     setSyncStatus('idle');
     try {
-      // 1. Check if user already has an existing fleet sheet cached in local storage or create new one
-      let sheetId = localStorage.getItem('e7_travels_sheets_id');
-      if (!sheetId) {
-        sheetId = await createFleetSpreadsheet(token, {
-          vehicles,
-          owners,
-          drivers,
-          companies,
-          sites,
-          payments,
-          expenses,
+      if (confirm('Are you sure you want to reset and re-seed the Firestore database with initial sample data?')) {
+        await seedDatabase({
+          vehicles: SAMPLE_VEHICLES,
+          owners: SAMPLE_OWNERS,
+          drivers: SAMPLE_DRIVERS,
+          companies: SAMPLE_COMPANIES,
+          sites: SAMPLE_SITES,
+          payments: SAMPLE_PAYMENTS,
+          expenses: SAMPLE_EXPENSES,
         });
-        if (sheetId) {
-          localStorage.setItem('e7_travels_sheets_id', sheetId);
-        }
-      }
-      setSpreadsheetId(sheetId);
-
-      // 2. Load data from sheet
-      if (sheetId) {
-        const remoteData = await loadFromSpreadsheet(token, sheetId);
-        if (remoteData) {
-          if (remoteData.vehicles.length > 0) setVehicles(remoteData.vehicles);
-          if (remoteData.owners.length > 0) setOwners(remoteData.owners);
-          if (remoteData.drivers.length > 0) setDrivers(remoteData.drivers);
-          if (remoteData.companies.length > 0) setCompanies(remoteData.companies);
-          if (remoteData.sites.length > 0) setSites(remoteData.sites);
-          if (remoteData.payments.length > 0) setPayments(remoteData.payments);
-          if (remoteData.expenses.length > 0) setExpenses(remoteData.expenses);
-        }
-        setSyncStatus('success');
+        alert('Database successfully re-seeded!');
         setLastSynced(new Date().toLocaleTimeString());
+        setSyncStatus('success');
       }
     } catch (err) {
-      console.error('Sync sheets error:', err);
+      console.error('Failed to re-seed database:', err);
       setSyncStatus('error');
     } finally {
       setIsSyncing(false);
     }
   };
 
-  // Push state to sheets on data mutators
-  const triggerPush = async (
-    v = vehicles,
-    o = owners,
-    d = drivers,
-    c = companies,
-    s = sites,
-    p = payments,
-    e = expenses
-  ) => {
-    const token = accessToken || await getAccessToken();
-    if (!token || !spreadsheetId) return;
-
-    setIsSyncing(true);
-    try {
-      await pushToSpreadsheet(token, spreadsheetId, {
-        vehicles: v,
-        owners: o,
-        drivers: d,
-        companies: c,
-        sites: s,
-        payments: p,
-        expenses: e,
-      });
-      setSyncStatus('success');
-      setLastSynced(new Date().toLocaleTimeString());
-    } catch (err) {
-      console.error('Error during automatic data push:', err);
-      setSyncStatus('error');
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  // Explicit refresh/reconcile trigger
-  const handleForceRefresh = async () => {
-    const token = accessToken || await getAccessToken();
-    if (token) {
-      triggerSheetInit(token);
-    } else {
-      alert('Local sandbox mode: Please log in using Google Auth to sync with Google Drive.');
-    }
-  };
-
-  // Mutators
-  const updateVehicles = (newVehicles: Vehicle[]) => {
+  // Mutators mapped to Firestore Sync
+  const updateVehicles = async (newVehicles: Vehicle[]) => {
+    const current = vehicles;
     setVehicles(newVehicles);
-    triggerPush(newVehicles, owners, drivers, companies, sites, payments, expenses);
+    if (firestoreConnected) {
+      try {
+        await syncCollectionWithDatabase('vehicles', newVehicles, current);
+      } catch (err) {
+        console.error('Error syncing vehicles:', err);
+      }
+    }
   };
-  const updateOwners = (newOwners: Owner[]) => {
+
+  const updateOwners = async (newOwners: Owner[]) => {
+    const current = owners;
     setOwners(newOwners);
-    triggerPush(vehicles, newOwners, drivers, companies, sites, payments, expenses);
+    if (firestoreConnected) {
+      try {
+        await syncCollectionWithDatabase('owners', newOwners, current);
+      } catch (err) {
+        console.error('Error syncing owners:', err);
+      }
+    }
   };
-  const updateDrivers = (newDrivers: Driver[]) => {
+
+  const updateDrivers = async (newDrivers: Driver[]) => {
+    const current = drivers;
     setDrivers(newDrivers);
-    triggerPush(vehicles, owners, newDrivers, companies, sites, payments, expenses);
+    if (firestoreConnected) {
+      try {
+        await syncCollectionWithDatabase('drivers', newDrivers, current);
+      } catch (err) {
+        console.error('Error syncing drivers:', err);
+      }
+    }
   };
-  const updateCompanies = (newCompanies: Company[]) => {
+
+  const updateCompanies = async (newCompanies: Company[]) => {
+    const current = companies;
     setCompanies(newCompanies);
-    triggerPush(vehicles, owners, drivers, newCompanies, sites, payments, expenses);
+    if (firestoreConnected) {
+      try {
+        await syncCollectionWithDatabase('companies', newCompanies, current);
+      } catch (err) {
+        console.error('Error syncing companies:', err);
+      }
+    }
   };
-  const updateSites = (newSites: Site[]) => {
+
+  const updateSites = async (newSites: Site[]) => {
+    const current = sites;
     setSites(newSites);
-    triggerPush(vehicles, owners, drivers, companies, newSites, payments, expenses);
+    if (firestoreConnected) {
+      try {
+        await syncCollectionWithDatabase('sites', newSites, current);
+      } catch (err) {
+        console.error('Error syncing sites:', err);
+      }
+    }
   };
-  const updatePayments = (newPayments: CompanyPayment[]) => {
+
+  const updatePayments = async (newPayments: CompanyPayment[]) => {
+    const current = payments;
     setPayments(newPayments);
-    triggerPush(vehicles, owners, drivers, companies, sites, newPayments, expenses);
+    if (firestoreConnected) {
+      try {
+        await syncCollectionWithDatabase('payments', newPayments, current);
+      } catch (err) {
+        console.error('Error syncing payments:', err);
+      }
+    }
   };
-  const updateExpenses = (newExpenses: Expense[]) => {
+
+  const updateExpenses = async (newExpenses: Expense[]) => {
+    const current = expenses;
     setExpenses(newExpenses);
-    triggerPush(vehicles, owners, drivers, companies, sites, payments, newExpenses);
+    if (firestoreConnected) {
+      try {
+        await syncCollectionWithDatabase('expenses', newExpenses, current);
+      } catch (err) {
+        console.error('Error syncing expenses:', err);
+      }
+    }
   };
 
   return (
@@ -472,9 +499,9 @@ export default function App() {
             {/* Sync Status Badge */}
             <div className="flex items-center gap-2">
               <div className="text-right">
-                <p className="text-4xs font-bold text-slate-400 uppercase">Spreadsheet Link</p>
+                <p className="text-4xs font-bold text-slate-400 uppercase">Firestore DB</p>
                 <p className="text-3xs font-extrabold text-slate-600 leading-none mt-0.5">
-                  {user ? (syncStatus === 'success' ? 'Synchronised' : 'Pending Save') : 'Sandbox Mode'}
+                  {firestoreConnected ? 'Live Database' : 'Sandbox Mode'}
                 </p>
               </div>
               <button
@@ -483,7 +510,7 @@ export default function App() {
                 className={`p-2 border border-slate-250 bg-white rounded-lg hover:bg-slate-50 text-slate-600 transition-all shadow-3xs ${
                   isSyncing ? 'animate-spin text-blue-600 border-blue-200 bg-blue-50/20' : ''
                 }`}
-                title="Force reconcile with Google Sheets"
+                title="Reset and Seed Firestore Database"
               >
                 <RefreshCw className="h-3.5 w-3.5" />
               </button>
@@ -639,13 +666,12 @@ export default function App() {
             <Settings
               companies={companies}
               sites={sites}
-              spreadsheetId={spreadsheetId}
+              spreadsheetId={firestoreConnected ? 'Firestore Connected (cedar-vial-g3bk6)' : 'Offline Sandbox Mode'}
               onUpdateCompanies={updateCompanies}
               onUpdateSites={updateSites}
               onForceSync={handleForceRefresh}
             />
           )}
-
         </main>
       </div>
     </div>
