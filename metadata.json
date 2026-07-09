@@ -1,0 +1,6 @@
+{
+  "name": "E7 Travels Fleet ERP",
+  "description": "Professional fleet management and ERP system for E7 Travels corporate employee transportation, integrated with Google Sheets and Excel VBA support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
