@@ -155,6 +155,7 @@ export default function Dashboard({ vehicles, expenses, payments, onNavigate }: 
 
   const quickNavs = [
     { name: 'Dashboard', route: 'Dashboard' },
+    { name: 'Enquiry Registry', route: 'Enquiries' },
     { name: 'Vehicles', route: 'Vehicle Master' },
     { name: 'Owners', route: 'Owner Master' },
     { name: 'Drivers', route: 'Driver Master' },

@@ -146,3 +146,32 @@ export const FUEL_TYPES = ['CNG', 'Diesel', 'Petrol'] as const;
 export const TRANSMISSION_TYPES = ['Manual', 'Automatic'] as const;
 export const VEHICLE_TYPES = ['Sedan', 'SUV', 'Hatchback', 'Bus', 'Tempo Traveler'] as const;
 export const VEHICLE_STATUSES = ['Active', 'Inactive'] as const;
+
+export interface Enquiry {
+  id: string; // e.g., ENQ001
+  
+  // VEHICLE DETAILS
+  vehicleNumber: string;      // NUMBER
+  vehicleType: string;        // TYPE
+  vehicleModelYear: string;   // MODEL/YEAR
+  vehicleColor: string;       // COLOR
+  ownerNamePhone: string;     // OWNER NAME/PHONE
+  reference: string;          // REFERENCE
+
+  // DRIVER DETAILS
+  driverName: string;         // NAME
+  driverAge: string;          // AGE
+  driverPhone: string;        // PHONE NO
+  driverArea: string;         // AREA
+  driverBatchExp: string;     // BATCH EXP
+
+  alreadyRunningCompany: string; // ALREADY RUNNING COMPANY
+  sitePreference1: string;       // SITE PREFERENCE 1
+  sitePreference2: string;       // SITE PREFERENCE 2
+
+  enquiryDate: string; // YYYY-MM-DD
+  status: 'New' | 'Interested' | 'Site Offered' | 'Closed';
+  remarks: string;
+}
+
+export const ENQUIRY_STATUSES = ['New', 'Interested', 'Site Offered', 'Closed'] as const;

@@ -115,7 +115,7 @@ export default function Settings({
       {/* Cloud Integration Details */}
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
         <h2 className="text-md font-bold text-slate-800 tracking-tight flex items-center gap-2 mb-4">
-          <Cloud className="text-blue-600 h-5 w-5" /> Firebase Firestore Mappings
+          <Cloud className="text-blue-600 h-5 w-5" /> Google Sheets Database Mappings
         </h2>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -123,29 +123,29 @@ export default function Settings({
             <div>
               <span className="text-3xs font-semibold text-slate-400 uppercase">Synchronisation Mode</span>
               <p className="text-xs font-bold text-slate-800 mt-1 flex items-center gap-1">
-                <CheckCircle className="text-emerald-500 h-4 w-4" /> Live Cloud Firestore
+                <CheckCircle className="text-emerald-500 h-4 w-4" /> Live Google Sheets Database
               </p>
               <p className="text-3xs text-slate-500 mt-2">
                 All changes made on vehicles, owners, drivers, billing payments, and operational deductions are saved
-                directly to the Firestore NoSQL database and synced in real-time.
+                directly to the designated spreadsheet.
               </p>
             </div>
             {spreadsheetId && (
               <p className="text-3xs text-slate-400 font-mono mt-3 truncate">
-                Database Status: {spreadsheetId}
+                Spreadsheet ID: {spreadsheetId}
               </p>
             )}
           </div>
 
           <div className="border border-slate-200 rounded-lg p-4 bg-slate-50 flex flex-col justify-between">
             <div>
-              <span className="text-3xs font-semibold text-slate-400 uppercase">Offline Reconciliation</span>
+              <span className="text-3xs font-semibold text-slate-400 uppercase">Conflict Reconciliation</span>
               <p className="text-xs font-bold text-slate-800 mt-1 flex items-center gap-1">
-                <Database className="text-blue-500 h-4 w-4" /> Real-time Offline Cache
+                <Database className="text-blue-500 h-4 w-4" /> Dual-Mode State engine
               </p>
               <p className="text-3xs text-slate-500 mt-2">
-                In case of network drops, Firestore automatically caches writes locally and syncs them to the cloud 
-                seamlessly as soon as connectivity is restored.
+                In case of offline operation or network drops, data is automatically stored in standard client state and pushes to
+                Google Drive as soon as connectivity resumes.
               </p>
             </div>
             <button
@@ -153,7 +153,7 @@ export default function Settings({
               onClick={onForceSync}
               className="mt-4 px-3 py-1 text-2xs font-semibold bg-white border border-slate-250 text-slate-700 hover:bg-slate-50 rounded-md shadow-3xs flex items-center justify-center gap-1"
             >
-              <RefreshCw className="h-3 w-3" /> Reset & Seed Database
+              <RefreshCw className="h-3 w-3" /> Force Remote Synchronization
             </button>
           </div>
 

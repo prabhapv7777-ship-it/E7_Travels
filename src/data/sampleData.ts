@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Vehicle, Owner, Driver, Company, Site, CompanyPayment, Expense } from '../types';
+import { Vehicle, Owner, Driver, Company, Site, CompanyPayment, Expense, Enquiry } from '../types';
 
 export const SAMPLE_COMPANIES: Company[] = [
   {
@@ -498,3 +498,67 @@ export const generateSampleTransactions = (vehicles: Vehicle[]): { expenses: Exp
 const tx = generateSampleTransactions(SAMPLE_VEHICLES);
 export const SAMPLE_EXPENSES = tx.expenses;
 export const SAMPLE_PAYMENTS = tx.payments;
+
+export const SAMPLE_ENQUIRIES: Enquiry[] = [
+  {
+    id: 'ENQ001',
+    vehicleNumber: 'TN-07-BY-1234',
+    vehicleType: 'SUV',
+    vehicleModelYear: 'Toyota Innova (2024)',
+    vehicleColor: 'Silver Metallic',
+    ownerNamePhone: 'Rajesh Kumar (9841234560)',
+    reference: 'Direct Calling',
+    driverName: 'Suresh Kumar',
+    driverAge: '38',
+    driverPhone: '9840998877',
+    driverArea: 'Adyar',
+    driverBatchExp: '2028-11-15',
+    alreadyRunningCompany: 'TCS Staff Transport',
+    sitePreference1: 'Siruseri Campus',
+    sitePreference2: 'Thoraipakkam Hub',
+    enquiryDate: '2026-07-02',
+    status: 'Interested',
+    remarks: 'Owner is interested but driver requires a night shift preference option.',
+  },
+  {
+    id: 'ENQ002',
+    vehicleNumber: 'TN-10-AR-5678',
+    vehicleType: 'Sedan',
+    vehicleModelYear: 'Maruti Dzire (2023)',
+    vehicleColor: 'Pearl White',
+    ownerNamePhone: 'Priya Sundar (9841567891)',
+    reference: 'Web Enquiry',
+    driverName: 'Karthik S',
+    driverAge: '29',
+    driverPhone: '9176112233',
+    driverArea: 'Velachery',
+    driverBatchExp: '2029-04-20',
+    alreadyRunningCompany: 'Cognizant',
+    sitePreference1: 'Thoraipakkam Hub',
+    sitePreference2: 'Siruseri Campus',
+    enquiryDate: '2026-07-05',
+    status: 'New',
+    remarks: 'Needs double driver support details before signing contract.',
+  },
+  {
+    id: 'ENQ003',
+    vehicleNumber: 'TN-14-CC-3399',
+    vehicleType: 'Tempo Traveler',
+    vehicleModelYear: 'Force Traveller (2022)',
+    vehicleColor: 'Pure White',
+    ownerNamePhone: 'Anwar Hussain (9176543210)',
+    reference: 'Ref: Selvam (Supervisor)',
+    driverName: 'Moorthy P',
+    driverAge: '45',
+    driverPhone: '9444123456',
+    driverArea: 'Tambaram',
+    driverBatchExp: '2027-08-10',
+    alreadyRunningCompany: 'None (Self Tour Operator)',
+    sitePreference1: 'Mahindra City Campus',
+    sitePreference2: 'Sholinganallur',
+    enquiryDate: '2026-07-08',
+    status: 'Site Offered',
+    remarks: 'Offered Mahindra City long transit route. Pending driver badge renewal.',
+  },
+];
+
