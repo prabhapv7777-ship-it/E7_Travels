@@ -328,10 +328,15 @@ export default function App() {
       {/* Navigation Sidebar */}
       <aside className="w-64 bg-blue-900 text-slate-100 flex flex-col shrink-0 h-screen sticky top-0 print:hidden select-none border-r border-blue-950">
         <div className="p-6 border-b border-blue-800 flex items-center gap-3">
-          <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center font-bold text-blue-900 text-lg">E7</div>
+          <div className="flex items-center justify-center">
+            <svg className="w-9 h-9" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 18C4 10.268 10.268 4 18 4C25.732 4 32 10.268 32 18" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round" strokeDasharray="4 2"/>
+              <path d="M10 12H18M10 18H16M10 24H18M10 12V24" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M20 12H28L22 24" stroke="#38bdf8" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
           <div>
             <h1 className="text-sm font-black text-white tracking-tight leading-none uppercase">E7 Travels</h1>
-            <p className="text-4xs font-bold text-blue-300 uppercase tracking-widest mt-1">Chennai Hub ERP</p>
           </div>
         </div>
 

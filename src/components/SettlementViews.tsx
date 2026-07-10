@@ -104,19 +104,41 @@ export default function SettlementViews({
       color: #1e293b;
       margin: 0;
       padding: 2rem;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    @page {
+      size: ${activeSubView === 'Monthly Settlement' ? 'A4 landscape' : 'A4 portrait'};
+      margin: 10mm;
     }
     @media print {
       body {
-        padding: 0;
+        padding: 0 !important;
+        margin: 0 !important;
+        background-color: #ffffff !important;
       }
       .no-print {
         display: none !important;
       }
+      .overflow-x-auto {
+        overflow: visible !important;
+      }
+      table {
+        width: 100% !important;
+        table-layout: auto !important;
+      }
+      tr {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+      }
+      thead {
+        display: table-header-group !important;
+      }
     }
   </style>
 </head>
-<body class="p-8 bg-white text-slate-800">
-  <div class="max-w-4xl mx-auto border border-slate-100 p-8 rounded-xl shadow-xs print:border-none print:shadow-none print:p-0">
+<body class="p-8 bg-white text-slate-800 print:p-0 print:m-0">
+  <div class="${activeSubView === 'Monthly Settlement' ? 'w-full max-w-none' : 'max-w-4xl'} mx-auto border border-slate-100 p-8 rounded-xl shadow-xs print:border-none print:shadow-none print:p-0">
     ${innerHTML}
   </div>
   
@@ -406,6 +428,15 @@ export default function SettlementViews({
 
   return (
     <div className="space-y-6">
+      {/* Dynamic page orientation style for direct browser printing */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          @page {
+            size: ${activeSubView === 'Monthly Settlement' ? 'A4 landscape' : 'A4 portrait'};
+            margin: 10mm;
+          }
+        }
+      `}} />
       {printNotice && (
         <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-4 flex items-start gap-3 shadow-xs print:hidden animate-in fade-in duration-300">
           <div className="p-1.5 bg-amber-100 rounded-lg text-amber-800">
