@@ -16,7 +16,7 @@ import {
   Building,
 } from 'lucide-react';
 import { Vehicle, Owner, Driver, CompanyPayment, Expense } from '../types';
-import { formatDate, formatMonth } from '../lib/dateUtils';
+import { formatDate, formatMonth, toInputDateFormat } from '../lib/dateUtils';
 
 interface LedgerViewsProps {
   vehicles: Vehicle[];
@@ -58,21 +58,54 @@ export default function LedgerViews({
     ])
   ).sort().reverse();
 
+  const distinctYears = Array.from(
+    new Set(distinctMonths.map((m) => m.substring(0, 4)))
+  ).sort().reverse();
+
+  const distinctDates = Array.from(
+    new Set([
+      ...payments.map((p) => toInputDateFormat(p.paymentDate)),
+      ...expenses.map((e) => toInputDateFormat(e.date)),
+      '2026-07-08',
+    ].filter(Boolean))
+  ).sort().reverse();
+
   const distinctCompanies = Array.from(new Set(vehicles.map((v) => v.company))).filter(Boolean);
 
   // 1. VEHICLE LEDGER COMPUTATION
   const getVehicleLedger = () => {
+    const isYearSelected = selectedMonth.length === 4;
+    const isDateSelected = selectedMonth.length === 10;
+
     // Filters applied
     const matchedPayments = payments.filter((p) => {
       const matchVeh = p.vehicleNumber === selectedVehicle;
-      const matchMonth = selectedMonth ? p.month === selectedMonth : true;
       const matchComp = selectedCompany ? p.company === selectedCompany : true;
+      let matchMonth = true;
+      if (selectedMonth) {
+        if (isDateSelected) {
+          matchMonth = toInputDateFormat(p.paymentDate) === selectedMonth;
+        } else if (isYearSelected) {
+          matchMonth = p.month.startsWith(selectedMonth);
+        } else {
+          matchMonth = p.month === selectedMonth;
+        }
+      }
       return matchVeh && matchMonth && matchComp;
     });
 
     const matchedExpenses = expenses.filter((e) => {
       const matchVeh = e.vehicleNumber === selectedVehicle;
-      const matchMonth = selectedMonth ? e.month === selectedMonth : true;
+      let matchMonth = true;
+      if (selectedMonth) {
+        if (isDateSelected) {
+          matchMonth = toInputDateFormat(e.date) === selectedMonth;
+        } else if (isYearSelected) {
+          matchMonth = e.month.startsWith(selectedMonth);
+        } else {
+          matchMonth = e.month === selectedMonth;
+        }
+      }
       return matchVeh && matchMonth;
     });
 
@@ -142,20 +175,41 @@ export default function LedgerViews({
     const owner = owners.find((o) => o.id === selectedOwner);
     if (!owner) return { rows: [], openingBalance: 0, totalBilling: 0, totalDeductions: 0, closingBalance: 0 };
 
+    const isYearSelected = selectedMonth.length === 4;
+    const isDateSelected = selectedMonth.length === 10;
+
     // Get all vehicles belonging to this owner
     const ownerVehicles = vehicles.filter((v) => v.ownerId === selectedOwner).map((v) => v.registrationNumber);
 
     // Payments for owner's vehicles
     const ownerPayments = payments.filter((p) => {
       const matchVeh = ownerVehicles.includes(p.vehicleNumber);
-      const matchMonth = selectedMonth ? p.month === selectedMonth : true;
+      let matchMonth = true;
+      if (selectedMonth) {
+        if (isDateSelected) {
+          matchMonth = toInputDateFormat(p.paymentDate) === selectedMonth;
+        } else if (isYearSelected) {
+          matchMonth = p.month.startsWith(selectedMonth);
+        } else {
+          matchMonth = p.month === selectedMonth;
+        }
+      }
       return matchVeh && matchMonth;
     });
 
     // Deductions for owner's vehicles (tolls, services, fuel, EMIs)
     const ownerDeductions = expenses.filter((e) => {
       const matchVeh = ownerVehicles.includes(e.vehicleNumber);
-      const matchMonth = selectedMonth ? e.month === selectedMonth : true;
+      let matchMonth = true;
+      if (selectedMonth) {
+        if (isDateSelected) {
+          matchMonth = toInputDateFormat(e.date) === selectedMonth;
+        } else if (isYearSelected) {
+          matchMonth = e.month.startsWith(selectedMonth);
+        } else {
+          matchMonth = e.month === selectedMonth;
+        }
+      }
       return matchVeh && matchMonth;
     });
 
@@ -182,6 +236,9 @@ export default function LedgerViews({
     const driver = drivers.find((d) => d.id === selectedDriver);
     if (!driver) return { salary: 0, incentive: 0, advance: 0, penalty: 0, netSalary: 0 };
 
+    const isYearSelected = selectedMonth.length === 4;
+    const isDateSelected = selectedMonth.length === 10;
+
     // Find if the driver is currently assigned to a vehicle
     const driverVehicle = vehicles.find((v) => v.driverId === selectedDriver);
     const vehicleReg = driverVehicle ? driverVehicle.registrationNumber : '';
@@ -189,8 +246,17 @@ export default function LedgerViews({
     // Drivers salary entries logged as expenses
     const driverSalaryLogs = expenses.filter((e) => {
       const matchVeh = vehicleReg ? e.vehicleNumber === vehicleReg : true;
-      const matchMonth = selectedMonth ? e.month === selectedMonth : true;
-      return matchMonth;
+      let matchMonth = true;
+      if (selectedMonth) {
+        if (isDateSelected) {
+          matchMonth = toInputDateFormat(e.date) === selectedMonth;
+        } else if (isYearSelected) {
+          matchMonth = e.month.startsWith(selectedMonth);
+        } else {
+          matchMonth = e.month === selectedMonth;
+        }
+      }
+      return matchVeh && matchMonth;
     });
 
     // Split logs into incentives, advances, penalties, and core salary
@@ -288,19 +354,35 @@ export default function LedgerViews({
 
         {/* Common Month Filter */}
         <div>
-          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Settlement Month</label>
+          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Settlement Filter</label>
           <select
             id="ledger-month-select"
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
-            className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white text-slate-700"
+            className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white font-bold text-slate-800"
           >
-            <option value="">All Months</option>
-            {distinctMonths.map((m) => (
-              <option key={m} value={m}>
-                {formatMonth(m)}
-              </option>
-            ))}
+            <option value="" className="font-normal text-slate-500">All Period Records</option>
+            <optgroup label="Month-Wise" className="text-slate-500 font-normal">
+              {distinctMonths.map((m) => (
+                <option key={m} value={m} className="font-bold text-slate-800">
+                  {formatMonth(m)}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Year-Wise" className="text-slate-500 font-normal">
+              {distinctYears.map((y) => (
+                <option key={y} value={y} className="font-bold text-slate-800">
+                  {y} (Full Year)
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Date-Wise" className="text-slate-500 font-normal">
+              {distinctDates.map((d) => (
+                <option key={d} value={d} className="font-bold text-slate-800">
+                  {formatDate(d)}
+                </option>
+              ))}
+            </optgroup>
           </select>
         </div>
 

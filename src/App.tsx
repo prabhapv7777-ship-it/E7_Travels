@@ -62,9 +62,15 @@ import Reports from './components/Reports';
 import VbaExport from './components/VbaExport';
 import Settings from './components/Settings';
 import EnquiryViews from './components/EnquiryViews';
+import AdminLogin from './components/AdminLogin';
 
 export default function App() {
   // Authentication & Sync State
+  const [adminEmail, setAdminEmail] = useState<string | null>(() => {
+    return localStorage.getItem('e7_admin_session_active') === 'true'
+      ? (localStorage.getItem('e7_admin_remembered_email') || 'admin@e7travels.com')
+      : null;
+  });
   const [user, setUser] = useState<{ email: string | null; displayName: string | null } | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [spreadsheetId, setSpreadsheetId] = useState<string | null>(null);
@@ -306,6 +312,16 @@ export default function App() {
     localStorage.setItem('e7_travels_enquiries', JSON.stringify(newEnquiries));
   };
 
+  if (!adminEmail) {
+    return (
+      <AdminLogin
+        onLoginSuccess={(email) => {
+          setAdminEmail(email);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex font-sans antialiased selection:bg-blue-100">
       
@@ -429,24 +445,42 @@ export default function App() {
         </div>
 
         {/* Sidebar Footer */}
-        <div className="p-4 border-t border-blue-800 text-blue-300 text-4xs font-mono space-y-2">
+        <div className="p-4 border-t border-blue-800 text-blue-300 text-4xs font-mono space-y-3">
+          <div className="flex items-center justify-between px-2 bg-blue-950/20 p-2 rounded-xl border border-blue-800/30">
+            <div className="flex items-center gap-2 overflow-hidden">
+              <div className="w-6 h-6 rounded bg-blue-800 flex items-center justify-center font-black text-white text-3xs border border-blue-700 shrink-0">
+                A
+              </div>
+              <div className="text-[10px] font-semibold text-white overflow-hidden">
+                <p className="leading-none max-w-[120px] truncate">{adminEmail}</p>
+                <p className="text-[8px] text-blue-400 mt-0.5 font-extrabold uppercase tracking-widest">Admin Access</p>
+              </div>
+            </div>
+            <button
+              id="admin-logout-sidebar-btn"
+              onClick={() => {
+                localStorage.removeItem('e7_admin_session_active');
+                setAdminEmail(null);
+              }}
+              className="p-1 hover:bg-blue-800 text-blue-200 hover:text-rose-400 rounded-lg transition-colors cursor-pointer shrink-0"
+              title="Secure Logout Administrator"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+            </button>
+          </div>
           {user ? (
-            <div className="flex items-center gap-3 px-2">
-              <div className="w-8 h-8 rounded-full bg-blue-800 flex items-center justify-center font-bold text-white text-xs border border-blue-700 shrink-0">
+            <div className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg bg-blue-950/45 border border-blue-850/50">
+              <div className="w-5 h-5 rounded-full bg-blue-800 flex items-center justify-center font-bold text-white text-[10px] border border-blue-700 shrink-0">
                 {user.displayName?.charAt(0) || 'U'}
               </div>
-              <div className="text-xs font-medium overflow-hidden">
-                <p className="truncate max-w-[120px] text-white font-semibold leading-none">{user.displayName}</p>
-                <p className="opacity-50 mt-1">Admin User</p>
+              <div className="text-[9px] font-medium overflow-hidden">
+                <p className="truncate max-w-[120px] text-blue-100 font-semibold leading-none">{user.displayName}</p>
+                <p className="opacity-45 mt-0.5 text-[8px] tracking-wide">GSheets Connected</p>
               </div>
             </div>
           ) : (
-            <div className="flex items-center gap-3 px-2">
-              <div className="w-8 h-8 rounded-full bg-blue-800 flex items-center justify-center font-bold text-white text-xs border border-blue-700 shrink-0">A</div>
-              <div className="text-xs font-medium">
-                <p className="text-white font-semibold">Admin User</p>
-                <p className="opacity-50">Local Mode</p>
-              </div>
+            <div className="px-2.5 py-2 text-slate-300/80 leading-normal text-[9px] bg-blue-950/30 rounded-lg border border-blue-850/40 font-sans">
+              Google Drive and GSheets integration is offline. Sign in to sync.
             </div>
           )}
         </div>

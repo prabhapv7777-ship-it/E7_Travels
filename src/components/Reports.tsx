@@ -24,7 +24,7 @@ import {
   Users,
 } from 'lucide-react';
 import { Vehicle, Expense, CompanyPayment } from '../types';
-import { formatMonth } from '../lib/dateUtils';
+import { formatDate, formatMonth, toInputDateFormat } from '../lib/dateUtils';
 
 interface ReportsProps {
   vehicles: Vehicle[];
@@ -53,6 +53,18 @@ export default function Reports({ vehicles, expenses, payments }: ReportsProps) 
     ])
   ).sort().reverse();
 
+  const distinctYears = Array.from(
+    new Set(distinctMonths.map((m) => m.substring(0, 4)))
+  ).sort().reverse();
+
+  const distinctDates = Array.from(
+    new Set([
+      ...payments.map((p) => toInputDateFormat(p.paymentDate)),
+      ...expenses.map((e) => toInputDateFormat(e.date)),
+      '2026-07-08',
+    ].filter(Boolean))
+  ).sort().reverse();
+
   // Pivot Engine: computes consolidated revenue, CNG, EMI, other costs, and total deductions
   const getPivotData = () => {
     const summaryMap: {
@@ -67,10 +79,21 @@ export default function Reports({ vehicles, expenses, payments }: ReportsProps) 
       };
     } = {};
 
+    const isYearSelected = selectedMonth.length === 4;
+    const isDateSelected = selectedMonth.length === 10;
+
     // Grouping keys mapping
     // Payments (Revenue)
     payments.forEach((p) => {
-      if (selectedMonth && p.month !== selectedMonth) return;
+      if (selectedMonth) {
+        if (isDateSelected) {
+          if (toInputDateFormat(p.paymentDate) !== selectedMonth) return;
+        } else if (isYearSelected) {
+          if (!p.month.startsWith(selectedMonth)) return;
+        } else {
+          if (p.month !== selectedMonth) return;
+        }
+      }
 
       let key = '';
       if (groupBy === 'company') key = p.company;
@@ -88,7 +111,15 @@ export default function Reports({ vehicles, expenses, payments }: ReportsProps) 
 
     // Expenses (Deductions)
     expenses.forEach((e) => {
-      if (selectedMonth && e.month !== selectedMonth) return;
+      if (selectedMonth) {
+        if (isDateSelected) {
+          if (toInputDateFormat(e.date) !== selectedMonth) return;
+        } else if (isYearSelected) {
+          if (!e.month.startsWith(selectedMonth)) return;
+        } else {
+          if (e.month !== selectedMonth) return;
+        }
+      }
 
       let key = '';
       if (groupBy === 'company') {
@@ -173,19 +204,35 @@ export default function Reports({ vehicles, expenses, payments }: ReportsProps) 
 
           {/* Month Filter */}
           <div className="space-y-1">
-            <span className="block text-3xs font-semibold text-slate-500 uppercase">Settlement Month</span>
+            <span className="block text-3xs font-semibold text-slate-500 uppercase">Settlement Filter</span>
             <select
               id="report-month-select"
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
+              className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 font-bold text-slate-800"
             >
-              <option value="">All Months</option>
-              {distinctMonths.map((m) => (
-                <option key={m} value={m}>
-                  {formatMonth(m)}
-                </option>
-              ))}
+              <option value="" className="font-normal text-slate-500">All Period Records</option>
+              <optgroup label="Month-Wise" className="text-slate-500 font-normal">
+                {distinctMonths.map((m) => (
+                  <option key={m} value={m} className="font-bold text-slate-800">
+                    {formatMonth(m)}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Year-Wise" className="text-slate-500 font-normal">
+                {distinctYears.map((y) => (
+                  <option key={y} value={y} className="font-bold text-slate-800">
+                    {y} (Full Year)
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Date-Wise" className="text-slate-500 font-normal">
+                {distinctDates.map((d) => (
+                  <option key={d} value={d} className="font-bold text-slate-800">
+                    {formatDate(d)}
+                  </option>
+                ))}
+              </optgroup>
             </select>
           </div>
         </div>

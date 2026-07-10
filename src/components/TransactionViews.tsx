@@ -141,7 +141,7 @@ export default function TransactionViews({
     setDeleteCandidate({ id, type: 'expense', title: `Expense Voucher for ${name}` });
   };
 
-  // List of distinct months for filtering
+  // List of distinct periods for filtering
   const distinctMonths = Array.from(
     new Set([
       ...payments.map((p) => p.month),
@@ -151,13 +151,37 @@ export default function TransactionViews({
     ])
   ).sort().reverse();
 
+  const distinctYears = Array.from(
+    new Set(distinctMonths.map((m) => m.substring(0, 4)))
+  ).sort().reverse();
+
+  const distinctDates = Array.from(
+    new Set([
+      ...payments.map((p) => toInputDateFormat(p.paymentDate)),
+      ...expenses.map((e) => toInputDateFormat(e.date)),
+      '2026-07-08',
+    ].filter(Boolean))
+  ).sort().reverse();
+
   // Filter Transactions
   const filteredPayments = payments.filter((p) => {
     const matchesQuery =
       p.vehicleNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.invoiceNumber.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesMonth = filterMonth ? p.month === filterMonth : true;
+    
+    let matchesMonth = true;
+    if (filterMonth) {
+      const isYearSelected = filterMonth.length === 4;
+      const isDateSelected = filterMonth.length === 10;
+      if (isDateSelected) {
+        matchesMonth = toInputDateFormat(p.paymentDate) === filterMonth;
+      } else if (isYearSelected) {
+        matchesMonth = p.month.startsWith(filterMonth);
+      } else {
+        matchesMonth = p.month === filterMonth;
+      }
+    }
     return matchesQuery && matchesMonth;
   });
 
@@ -166,7 +190,19 @@ export default function TransactionViews({
       e.vehicleNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
       e.expenseType.toLowerCase().includes(searchQuery.toLowerCase()) ||
       e.remarks.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesMonth = filterMonth ? e.month === filterMonth : true;
+    
+    let matchesMonth = true;
+    if (filterMonth) {
+      const isYearSelected = filterMonth.length === 4;
+      const isDateSelected = filterMonth.length === 10;
+      if (isDateSelected) {
+        matchesMonth = toInputDateFormat(e.date) === filterMonth;
+      } else if (isYearSelected) {
+        matchesMonth = e.month.startsWith(filterMonth);
+      } else {
+        matchesMonth = e.month === filterMonth;
+      }
+    }
     return matchesQuery && matchesMonth;
   });
 
@@ -199,14 +235,30 @@ export default function TransactionViews({
                 id="filter-month-select"
                 value={filterMonth}
                 onChange={(e) => setFilterMonth(e.target.value)}
-                className="bg-transparent focus:outline-none cursor-pointer"
+                className="bg-transparent focus:outline-none cursor-pointer font-bold text-slate-800"
               >
-                <option value="">All Months</option>
-                {distinctMonths.map((m) => (
-                  <option key={m} value={m}>
-                    {formatMonth(m)}
-                  </option>
-                ))}
+                <option value="" className="font-normal text-slate-500">All Periods</option>
+                <optgroup label="Month-Wise" className="text-slate-500 font-normal">
+                  {distinctMonths.map((m) => (
+                    <option key={m} value={m} className="font-bold text-slate-800">
+                      {formatMonth(m)}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Year-Wise" className="text-slate-500 font-normal">
+                  {distinctYears.map((y) => (
+                    <option key={y} value={y} className="font-bold text-slate-800">
+                      {y} (Full Year)
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Date-Wise" className="text-slate-500 font-normal">
+                  {distinctDates.map((d) => (
+                    <option key={d} value={d} className="font-bold text-slate-800">
+                      {formatDate(d)}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             </div>
 
