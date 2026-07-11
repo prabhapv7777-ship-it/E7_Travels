@@ -38,6 +38,7 @@ interface SettlementViewsProps {
   payments: CompanyPayment[];
   expenses: Expense[];
   activeSubView: 'Monthly Settlement' | 'Owner Statement' | 'Driver Statement' | 'Invoice' | 'Payment Voucher';
+  customLogo?: string | null;
 }
 
 export default function SettlementViews({
@@ -47,6 +48,7 @@ export default function SettlementViews({
   payments,
   expenses,
   activeSubView,
+  customLogo,
 }: SettlementViewsProps) {
   const [selectedMonth, setSelectedMonth] = useState('2026-07');
   const [selectedVehicle, setSelectedVehicle] = useState(vehicles[0]?.registrationNumber || '');
@@ -103,13 +105,13 @@ export default function SettlementViews({
       background-color: #ffffff;
       color: #1e293b;
       margin: 0;
-      padding: 2rem;
+      padding: 1.5rem;
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
     }
     @page {
       size: ${activeSubView === 'Monthly Settlement' ? 'A4 landscape' : 'A4 portrait'};
-      margin: 10mm;
+      margin: 8mm;
     }
     @media print {
       body {
@@ -122,11 +124,48 @@ export default function SettlementViews({
       }
       .overflow-x-auto {
         overflow: visible !important;
+        width: 100% !important;
       }
+      /* Reset massive margins/paddings on print */
+      .p-12, .p-8, .p-6 {
+        padding: 2mm !important;
+      }
+      .space-y-8 {
+        margin-top: 2mm !important;
+        margin-bottom: 2mm !important;
+      }
+      .my-4 {
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+      }
+      .pt-16 {
+        padding-top: 8mm !important;
+      }
+      /* Scale tables to fit page exactly */
       table {
         width: 100% !important;
-        table-layout: auto !important;
+        table-layout: fixed !important;
+        border-collapse: collapse !important;
       }
+      th, td {
+        font-size: ${activeSubView === 'Monthly Settlement' ? '7pt' : '8.5pt'} !important;
+        padding: ${activeSubView === 'Monthly Settlement' ? '3px 2px' : '4px 6px'} !important;
+        word-wrap: break-word !important;
+        white-space: normal !important;
+      }
+      ${activeSubView === 'Monthly Settlement' ? `
+      th:nth-child(1), td:nth-child(1) { width: 10% !important; }
+      th:nth-child(2), td:nth-child(2) { width: 12% !important; }
+      th:nth-child(3), td:nth-child(3) { width: 9% !important; }
+      th:nth-child(4), td:nth-child(4) { width: 8% !important; }
+      th:nth-child(5), td:nth-child(5) { width: 7% !important; }
+      th:nth-child(6), td:nth-child(6) { width: 7% !important; }
+      th:nth-child(7), td:nth-child(7) { width: 8% !important; }
+      th:nth-child(8), td:nth-child(8) { width: 10% !important; }
+      th:nth-child(9), td:nth-child(9) { width: 7% !important; }
+      th:nth-child(10), td:nth-child(10) { width: 10% !important; }
+      th:nth-child(11), td:nth-child(11) { width: 12% !important; }
+      ` : ''}
       tr {
         page-break-inside: avoid !important;
         break-inside: avoid !important;
@@ -137,8 +176,8 @@ export default function SettlementViews({
     }
   </style>
 </head>
-<body class="p-8 bg-white text-slate-800 print:p-0 print:m-0">
-  <div class="${activeSubView === 'Monthly Settlement' ? 'w-full max-w-none' : 'max-w-4xl'} mx-auto border border-slate-100 p-8 rounded-xl shadow-xs print:border-none print:shadow-none print:p-0">
+<body class="p-6 bg-white text-slate-800 print:p-0 print:m-0">
+  <div class="${activeSubView === 'Monthly Settlement' ? 'w-full max-w-none' : 'max-w-4xl'} mx-auto border border-slate-100 p-6 rounded-xl shadow-xs print:border-none print:shadow-none print:p-0">
     ${innerHTML}
   </div>
   
@@ -433,7 +472,78 @@ export default function SettlementViews({
         @media print {
           @page {
             size: ${activeSubView === 'Monthly Settlement' ? 'A4 landscape' : 'A4 portrait'};
-            margin: 10mm;
+            margin: 8mm;
+          }
+          /* Hide all elements on the page except the printable section */
+          body > * {
+            display: none !important;
+          }
+          #root, #root > * {
+            display: block !important;
+          }
+          /* Hide sidebar, header, tabs */
+          aside, header, .no-print, button, select, label {
+            display: none !important;
+          }
+          /* Make container expand fully and remove custom styling */
+          .print-area-wrapper {
+            display: block !important;
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            background: white !important;
+          }
+          /* Reset massive margins/paddings on print */
+          .p-12, .p-8, .p-6 {
+            padding: 2mm !important;
+          }
+          .space-y-8 {
+            margin-top: 2mm !important;
+            margin-bottom: 2mm !important;
+          }
+          .my-4 {
+            margin-top: 0 !important;
+            margin-bottom: 0 !important;
+          }
+          .pt-16 {
+            padding-top: 8mm !important;
+          }
+          /* Force small fonts and clean padding on tables */
+          table {
+            width: 100% !important;
+            table-layout: fixed !important;
+            border-collapse: collapse !important;
+          }
+          th, td {
+            font-size: ${activeSubView === 'Monthly Settlement' ? '7pt' : '8.5pt'} !important;
+            padding: ${activeSubView === 'Monthly Settlement' ? '3px 2px' : '4px 6px'} !important;
+            word-wrap: break-word !important;
+            white-space: normal !important;
+          }
+          ${activeSubView === 'Monthly Settlement' ? `
+          th:nth-child(1), td:nth-child(1) { width: 10% !important; }
+          th:nth-child(2), td:nth-child(2) { width: 12% !important; }
+          th:nth-child(3), td:nth-child(3) { width: 9% !important; }
+          th:nth-child(4), td:nth-child(4) { width: 8% !important; }
+          th:nth-child(5), td:nth-child(5) { width: 7% !important; }
+          th:nth-child(6), td:nth-child(6) { width: 7% !important; }
+          th:nth-child(7), td:nth-child(7) { width: 8% !important; }
+          th:nth-child(8), td:nth-child(8) { width: 10% !important; }
+          th:nth-child(9), td:nth-child(9) { width: 7% !important; }
+          th:nth-child(10), td:nth-child(10) { width: 10% !important; }
+          th:nth-child(11), td:nth-child(11) { width: 12% !important; }
+          ` : ''}
+          tr {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          thead {
+            display: table-header-group !important;
           }
         }
       `}} />
@@ -560,15 +670,22 @@ export default function SettlementViews({
       </div>
 
       {/* Main printable content block */}
-      <div ref={printAreaRef} className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden print:border-none print:shadow-none">
+      <div ref={printAreaRef} className="print-area-wrapper bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden print:border-none print:shadow-none">
         
         {/* ================= 1. MONTHLY SETTLEMENT REGISTER ================= */}
         {activeSubView === 'Monthly Settlement' && (
           <div>
             <div className="p-6 border-b border-slate-200 bg-slate-50/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-              <div>
-                <h2 className="text-md font-bold text-slate-800">Monthly Settlement Summary</h2>
-                <p className="text-xs text-slate-500">Cycle: {getCycleDisplay(selectedMonth)} | Consolidated fleet payouts for E7 Travels Chennai</p>
+              <div className="flex items-center gap-3">
+                {customLogo ? (
+                  <img src={customLogo} alt="Logo" className="w-10 h-10 object-contain shrink-0" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-10 h-10 rounded bg-blue-100 flex items-center justify-center text-blue-800 font-black text-sm shrink-0">E7</div>
+                )}
+                <div>
+                  <h2 className="text-md font-bold text-slate-800">Monthly Settlement Summary</h2>
+                  <p className="text-xs text-slate-500">Cycle: {getCycleDisplay(selectedMonth)} | Consolidated fleet payouts for E7 Travels Chennai</p>
+                </div>
               </div>
 
               {/* Aggregations */}
@@ -641,10 +758,17 @@ export default function SettlementViews({
           <div className="p-12 space-y-8 max-w-4xl mx-auto border border-slate-100 my-4 shadow-sm print:shadow-none print:border-none print:p-0">
             {/* Logo / Title Area */}
             <div className="flex justify-between items-start border-b border-slate-300 pb-6">
-              <div>
-                <h1 className="text-2xl font-black tracking-tight text-blue-800 uppercase">E7 Travels Chennai</h1>
-                <p className="text-xs text-slate-500 font-medium">Corporate Transport Logistics Operators</p>
-                <p className="text-3xs text-slate-400 font-mono">Siruseri SEZ, Navalur, Chennai - 603103</p>
+              <div className="flex items-center gap-4">
+                {customLogo ? (
+                  <img src={customLogo} alt="Logo" className="w-16 h-16 object-contain shrink-0" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-12 h-12 rounded bg-blue-100 flex items-center justify-center text-blue-800 font-black text-xl shrink-0">E7</div>
+                )}
+                <div>
+                  <h1 className="text-2xl font-black tracking-tight text-blue-800 uppercase">E7 Travels Chennai</h1>
+                  <p className="text-xs text-slate-500 font-medium">Corporate Transport Logistics Operators</p>
+                  <p className="text-3xs text-slate-400 font-mono">Siruseri SEZ, Navalur, Chennai - 603103</p>
+                </div>
               </div>
               <div className="text-right">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-widest block">Owner Payout Voucher</span>
@@ -735,9 +859,16 @@ export default function SettlementViews({
           <div className="p-12 space-y-8 max-w-4xl mx-auto border border-slate-100 my-4 shadow-sm print:shadow-none print:border-none print:p-0">
             {/* Logo / Title */}
             <div className="flex justify-between items-start border-b border-slate-300 pb-6">
-              <div>
-                <h1 className="text-2xl font-black tracking-tight text-blue-800 uppercase">E7 Travels Chennai</h1>
-                <p className="text-xs text-slate-500 font-medium">Driver Payroll Slip</p>
+              <div className="flex items-center gap-4">
+                {customLogo ? (
+                  <img src={customLogo} alt="Logo" className="w-16 h-16 object-contain shrink-0" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-12 h-12 rounded bg-blue-100 flex items-center justify-center text-blue-800 font-black text-xl shrink-0">E7</div>
+                )}
+                <div>
+                  <h1 className="text-2xl font-black tracking-tight text-blue-800 uppercase">E7 Travels Chennai</h1>
+                  <p className="text-xs text-slate-500 font-medium">Driver Payroll Slip</p>
+                </div>
               </div>
               <div className="text-right">
                 <span className="text-xs font-bold text-slate-400 block">Salary Period</span>
@@ -807,10 +938,17 @@ export default function SettlementViews({
           <div className="p-12 space-y-8 max-w-4xl mx-auto border border-slate-100 my-4 shadow-sm print:shadow-none print:border-none print:p-0">
             {/* Header info */}
             <div className="flex justify-between items-start border-b border-slate-300 pb-6">
-              <div>
-                <h1 className="text-2xl font-black text-blue-800 uppercase">E7 Travels</h1>
-                <p className="text-xs text-slate-500 font-semibold">Corporate Employee Transportation Services</p>
-                <p className="text-3xs text-slate-400 font-mono">ELCOT SEZ, Sholinganallur, OMR, Chennai</p>
+              <div className="flex items-center gap-4">
+                {customLogo ? (
+                  <img src={customLogo} alt="Logo" className="w-16 h-16 object-contain shrink-0" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-12 h-12 rounded bg-blue-100 flex items-center justify-center text-blue-800 font-black text-xl shrink-0">E7</div>
+                )}
+                <div>
+                  <h1 className="text-2xl font-black text-blue-800 uppercase">E7 Travels</h1>
+                  <p className="text-xs text-slate-500 font-semibold">Corporate Employee Transportation Services</p>
+                  <p className="text-3xs text-slate-400 font-mono">ELCOT SEZ, Sholinganallur, OMR, Chennai</p>
+                </div>
               </div>
               <div className="text-right">
                 <span className="text-sm font-black text-slate-800 block">Commercial Billing Invoice</span>
@@ -890,9 +1028,16 @@ export default function SettlementViews({
           <div className="p-12 space-y-8 max-w-4xl mx-auto border border-slate-100 my-4 shadow-sm print:shadow-none print:border-none print:p-0">
             {/* Header info */}
             <div className="flex justify-between items-start border-b border-slate-300 pb-6">
-              <div>
-                <h1 className="text-2xl font-black text-blue-800 uppercase">E7 Travels</h1>
-                <p className="text-xs text-slate-500 font-semibold">Consolidated Cash/Bank Voucher</p>
+              <div className="flex items-center gap-4">
+                {customLogo ? (
+                  <img src={customLogo} alt="Logo" className="w-16 h-16 object-contain shrink-0" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-12 h-12 rounded bg-blue-100 flex items-center justify-center text-blue-800 font-black text-xl shrink-0">E7</div>
+                )}
+                <div>
+                  <h1 className="text-2xl font-black text-blue-800 uppercase">E7 Travels</h1>
+                  <p className="text-xs text-slate-500 font-semibold">Consolidated Cash/Bank Voucher</p>
+                </div>
               </div>
               <div className="text-right">
                 <span className="text-xs text-slate-500 block">Voucher #: E7-VOU-0726-02</span>

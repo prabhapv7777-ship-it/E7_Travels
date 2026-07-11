@@ -15,6 +15,7 @@ import {
   Plus,
   Trash2,
   AlertTriangle,
+  Award,
 } from 'lucide-react';
 import { Company, Site } from '../types';
 
@@ -25,6 +26,8 @@ interface SettingsProps {
   onUpdateCompanies: (c: Company[]) => void;
   onUpdateSites: (s: Site[]) => void;
   onForceSync: () => void;
+  customLogo: string | null;
+  onUpdateLogo: (logo: string | null) => void;
 }
 
 export default function Settings({
@@ -34,6 +37,8 @@ export default function Settings({
   onUpdateCompanies,
   onUpdateSites,
   onForceSync,
+  customLogo,
+  onUpdateLogo,
 }: SettingsProps) {
   const [newCompName, setNewCompName] = useState('');
   const [newCompTerms, setNewCompTerms] = useState('Net 30');
@@ -43,6 +48,58 @@ export default function Settings({
 
   const [taxRate, setTaxRate] = useState(5);
   const [commissionRate, setCommissionRate] = useState(15);
+
+  const [originalLogo, setOriginalLogo] = useState<string | null>(() => {
+    return localStorage.getItem('e7_original_logo') || null;
+  });
+  const [bgThreshold, setBgThreshold] = useState(240);
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      setOriginalLogo(base64);
+      localStorage.setItem('e7_original_logo', base64);
+      applyBackgroundRemoval(base64, bgThreshold);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const applyBackgroundRemoval = (base64Str: string, threshold: number) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        onUpdateLogo(base64Str);
+        return;
+      }
+      ctx.drawImage(img, 0, 0);
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imgData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        // If the pixel is near-white, make it transparent
+        if (r >= threshold && g >= threshold && b >= threshold) {
+          data[i + 3] = 0; // Alpha 0
+        }
+      }
+      ctx.putImageData(imgData, 0, 0);
+      const transparentBase64 = canvas.toDataURL('image/png');
+      onUpdateLogo(transparentBase64);
+    };
+    img.onerror = () => {
+      onUpdateLogo(base64Str);
+    };
+  };
 
   const handleAddCompany = (e: React.FormEvent) => {
     e.preventDefault();
@@ -185,6 +242,91 @@ export default function Settings({
                 />
                 <span className="text-xs font-semibold text-slate-600">% Commission Share</span>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Brand Identity & Logo Customizer */}
+      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
+        <h2 className="text-md font-bold text-slate-800 tracking-tight flex items-center gap-2 mb-4">
+          <Award className="text-blue-600 h-5 w-5" /> Brand Identity & Custom Logo Manager
+        </h2>
+        
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+          <div className="md:col-span-4 flex flex-col items-center justify-center border border-slate-200 rounded-lg p-5 bg-slate-50 relative min-h-[160px]">
+            {customLogo ? (
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-24 h-24 bg-white rounded-lg border border-slate-200 p-2 flex items-center justify-center overflow-hidden shadow-2xs">
+                  <img src={customLogo} alt="Custom Branding Logo" className="max-w-full max-h-full object-contain" referrerPolicy="no-referrer" />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateLogo(null);
+                    setOriginalLogo(null);
+                    localStorage.removeItem('e7_original_logo');
+                  }}
+                  className="px-2.5 py-1 text-4xs font-bold text-rose-600 hover:text-white hover:bg-rose-600 border border-rose-200 rounded-md transition-all uppercase tracking-wider cursor-pointer"
+                >
+                  Remove Logo
+                </button>
+              </div>
+            ) : (
+              <div className="text-center">
+                <div className="w-12 h-12 bg-slate-200 rounded-full flex items-center justify-center text-slate-400 mx-auto mb-2">
+                  <Award className="h-6 w-6" />
+                </div>
+                <p className="text-3xs text-slate-500 font-bold uppercase tracking-wider">Default SVG Active</p>
+                <p className="text-[10px] text-slate-400 mt-1 max-w-[180px] mx-auto">Upload a PNG or JPG logo to customize the system and print headers.</p>
+              </div>
+            )}
+          </div>
+
+          <div className="md:col-span-8 space-y-4 flex flex-col justify-between">
+            <div>
+              <span className="text-3xs font-semibold text-slate-400 uppercase">Logo Upload & Background Remover</span>
+              <p className="text-xs text-slate-600 leading-normal mt-1.5 font-medium">
+                Upload your official company logo. If your logo has a white or non-transparent background, we can instantly remove it to blend perfectly with the blue sidebar.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+              <div>
+                <label className="relative flex flex-col items-center justify-center w-full h-10 border border-dashed border-slate-300 hover:border-blue-500 rounded-lg cursor-pointer bg-white transition-all hover:bg-blue-50/10">
+                  <span className="text-2xs font-extrabold text-blue-600 uppercase tracking-wider">Choose Image File...</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleLogoUpload}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              {customLogo && (
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 flex flex-col gap-1.5">
+                  <div className="flex justify-between items-center text-3xs font-semibold text-slate-400 uppercase">
+                    <span>Background Cutoff Threshold</span>
+                    <span className="text-blue-600 font-bold">{bgThreshold}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="150"
+                    max="255"
+                    value={bgThreshold}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setBgThreshold(val);
+                      if (originalLogo) {
+                        applyBackgroundRemoval(originalLogo, val);
+                      }
+                    }}
+                    className="w-full accent-blue-600 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <p className="text-[9px] text-slate-400 font-medium">Increase threshold to remove darker shades of off-white.</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
