@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Enquiry, Site } from '../types';
+import React, { useState, useRef, useEffect } from 'react';
+import { Enquiry, Site, Vehicle, Owner, Driver, Company } from '../types';
 import {
   PhoneCall,
   Plus,
@@ -18,24 +18,155 @@ import {
   Briefcase,
   Layers,
   Sparkles,
+  Database,
+  UserPlus,
+  ChevronLeft,
+  ChevronRight,
+  MessageSquare,
 } from 'lucide-react';
 
 interface EnquiryViewsProps {
   enquiries: Enquiry[];
   sites: Site[];
   onUpdateEnquiries: (newEnquiries: Enquiry[]) => void;
+  vehicles?: Vehicle[];
+  owners?: Owner[];
+  drivers?: Driver[];
+  companies?: Company[];
+  onUpdateVehicles?: (newVehicles: Vehicle[]) => void;
+  onUpdateOwners?: (newOwners: Owner[]) => void;
+  onUpdateDrivers?: (newDrivers: Driver[]) => void;
 }
 
 export default function EnquiryViews({
   enquiries,
   sites,
   onUpdateEnquiries,
+  vehicles = [],
+  owners = [],
+  drivers = [],
+  companies = [],
+  onUpdateVehicles,
+  onUpdateOwners,
+  onUpdateDrivers,
 }: EnquiryViewsProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'New' | 'Interested' | 'Site Offered' | 'Closed'>('all');
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Promotion to Master Registers State
+  const [promotingEnquiry, setPromotingEnquiry] = useState<Enquiry | null>(null);
+  const [promoteForm, setPromoteForm] = useState({
+    createVehicle: true,
+    createOwner: false,
+    createDriver: false,
+    registrationNumber: '',
+    model: '',
+    manufacturer: 'Toyota',
+    year: 2024,
+    fuelType: 'Diesel' as 'CNG' | 'Diesel' | 'Petrol',
+    transmission: 'Manual' as 'Manual' | 'Automatic',
+    vehicleType: 'Sedan' as 'Sedan' | 'SUV' | 'Hatchback' | 'Bus' | 'Tempo Traveler',
+    company: '',
+    site: '',
+    ownerId: 'new',
+    ownerName: '',
+    ownerPhone: '',
+    driverId: 'new',
+    driverName: '',
+    driverPhone: '',
+    driverDl: '',
+    driverDlExp: '',
+    driverAadhaar: '',
+    driverAddress: '',
+  });
+  const [promoteError, setPromoteError] = useState<string | null>(null);
+  const [promoteSuccess, setPromoteSuccess] = useState<string | null>(null);
+
+  const [activeCommentTarget, setActiveCommentTarget] = useState<{
+    id: string;
+    name: string;
+    type: 'Enquiry';
+    comments: Array<{ date: string; text: string; author: string }>;
+  } | null>(null);
+  const [newCommentText, setNewCommentText] = useState('');
+
+  const handleAddComment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeCommentTarget || !newCommentText.trim()) return;
+
+    const newComment = {
+      date: new Date().toISOString().substring(0, 16).replace('T', ' '),
+      text: newCommentText.trim(),
+      author: 'Admin User'
+    };
+
+    const updatedComments = [...(activeCommentTarget.comments || []), newComment];
+    const updated = enquiries.map(enq => enq.id === activeCommentTarget.id ? { ...enq, comments: updatedComments } : enq);
+    onUpdateEnquiries(updated);
+
+    setActiveCommentTarget({
+      ...activeCommentTarget,
+      comments: updatedComments
+    });
+    setNewCommentText('');
+  };
+
+  const formRef = useRef<HTMLDivElement>(null);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollTable = (direction: 'left' | 'right') => {
+    if (tableContainerRef.current) {
+      const scrollAmount = 400;
+      tableContainerRef.current.scrollBy({
+        left: direction === 'left' ? -scrollAmount : scrollAmount,
+        behavior: 'smooth'
+      });
+    }
+  };
+
+  const scrollToSection = (section: 'id' | 'vehicle' | 'driver' | 'company' | 'status') => {
+    if (tableContainerRef.current) {
+      let scrollPosition = 0;
+      if (section === 'id') scrollPosition = 0;
+      else if (section === 'vehicle') scrollPosition = 110;
+      else if (section === 'driver') scrollPosition = 750;
+      else if (section === 'company') scrollPosition = 1250;
+      else if (section === 'status') scrollPosition = 1600;
+
+      tableContainerRef.current.scrollTo({
+        left: scrollPosition,
+        behavior: 'smooth'
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (editingId) {
+      setTimeout(() => {
+        if (formRef.current) {
+          formRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          const firstInput = formRef.current.querySelector('input, select') as HTMLInputElement | HTMLSelectElement;
+          if (firstInput) {
+            firstInput.focus();
+          }
+        }
+      }, 100);
+    }
+  }, [editingId]);
+
+  useEffect(() => {
+    if (isAdding || editingId || promotingEnquiry) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isAdding, editingId, promotingEnquiry]);
 
   // Form State
   const [formState, setFormState] = useState<Partial<Enquiry>>({
@@ -56,6 +187,32 @@ export default function EnquiryViews({
     enquiryDate: new Date().toISOString().substring(0, 10),
     status: 'New',
     remarks: '',
+
+    // Extra Printable Form Fields
+    inductionType: 'OwnerAttach',
+    ownerId: '',
+    ownerName: '',
+    ownerMobile: '',
+    mfdYear: '',
+    fuelType: 'Diesel',
+    rcExpiry: '',
+    insuranceExpiry: '',
+    permitExpiry: '',
+    fcExpiry: '',
+    driverAltPhone: '',
+    driverEmail: '',
+    driverAadhaar: '',
+    driverDlNumber: '',
+    driverDlExpiry: '',
+    driverAddress: '',
+    gpsVendor: '',
+    gpsImei: '',
+    bankName: '',
+    bankAccountHolder: '',
+    bankAccountNumber: '',
+    bankIfsc: '',
+    sitePreference3: '',
+    sitePreference4: '',
   });
 
   const handleOpenAdd = () => {
@@ -77,6 +234,32 @@ export default function EnquiryViews({
       enquiryDate: new Date().toISOString().substring(0, 10),
       status: 'New',
       remarks: '',
+
+      // Extra Printable Form Fields
+      inductionType: 'OwnerAttach',
+      ownerId: '',
+      ownerName: '',
+      ownerMobile: '',
+      mfdYear: '',
+      fuelType: 'Diesel',
+      rcExpiry: '',
+      insuranceExpiry: '',
+      permitExpiry: '',
+      fcExpiry: '',
+      driverAltPhone: '',
+      driverEmail: '',
+      driverAadhaar: '',
+      driverDlNumber: '',
+      driverDlExpiry: '',
+      driverAddress: '',
+      gpsVendor: '',
+      gpsImei: '',
+      bankName: '',
+      bankAccountHolder: '',
+      bankAccountNumber: '',
+      bankIfsc: '',
+      sitePreference3: '',
+      sitePreference4: '',
     });
     setEditingId(null);
     setIsAdding(true);
@@ -143,6 +326,261 @@ export default function EnquiryViews({
     }
   };
 
+  const handleOpenPromote = (enq: Enquiry) => {
+    let ownerName = enq.ownerName || '';
+    let ownerPhone = enq.ownerMobile || '';
+    if (!ownerName && enq.ownerNamePhone) {
+      const regex = /([^(]+)(?:\(([^)]+)\))?/;
+      const match = enq.ownerNamePhone.match(regex);
+      if (match) {
+        ownerName = match[1].trim();
+        ownerPhone = match[2] ? match[2].trim() : '';
+      } else {
+        ownerName = enq.ownerNamePhone;
+      }
+    }
+
+    const driverName = enq.driverName || '';
+    const driverPhone = enq.driverPhone || '';
+
+    // Look for matches in existing masters to reuse profiles
+    const matchedOwner = owners.find(o => 
+      o.name.toLowerCase() === ownerName.toLowerCase() || 
+      (ownerPhone && o.phone.replace(/[^0-9]/g, '') === ownerPhone.replace(/[^0-9]/g, ''))
+    );
+    const matchedDriver = drivers.find(d => 
+      d.name.toLowerCase() === driverName.toLowerCase() || 
+      (driverPhone && d.phone.replace(/[^0-9]/g, '') === driverPhone.replace(/[^0-9]/g, ''))
+    );
+
+    let normalizedFuel: 'CNG' | 'Diesel' | 'Petrol' = 'Diesel';
+    const fLower = (enq.fuelType || '').toLowerCase();
+    if (fLower.includes('cng')) normalizedFuel = 'CNG';
+    else if (fLower.includes('petrol')) normalizedFuel = 'Petrol';
+    else if (fLower.includes('diesel')) normalizedFuel = 'Diesel';
+
+    let normalizedType: 'Sedan' | 'SUV' | 'Hatchback' | 'Bus' | 'Tempo Traveler' = 'Sedan';
+    const tLower = (enq.vehicleType || '').toLowerCase();
+    if (tLower.includes('sedan')) normalizedType = 'Sedan';
+    else if (tLower.includes('suv')) normalizedType = 'SUV';
+    else if (tLower.includes('hatchback')) normalizedType = 'Hatchback';
+    else if (tLower.includes('bus')) normalizedType = 'Bus';
+    else if (tLower.includes('tempo') || tLower.includes('traveler') || tLower.includes('traveller')) normalizedType = 'Tempo Traveler';
+
+    // Model & Year parsing
+    let parsedYear = 2024;
+    let parsedModel = enq.vehicleModelYear || '';
+    if (enq.vehicleModelYear) {
+      const yearMatch = enq.vehicleModelYear.match(/\b(20\d{2}|19\d{2})\b/);
+      if (yearMatch) {
+        parsedYear = parseInt(yearMatch[1], 10);
+        parsedModel = enq.vehicleModelYear.replace(yearMatch[0], '').replace(/[()]/g, '').trim();
+      }
+    }
+
+    setPromoteForm({
+      createVehicle: true,
+      createOwner: matchedOwner ? false : !!ownerName,
+      createDriver: matchedDriver ? false : !!driverName,
+      registrationNumber: enq.vehicleNumber || '',
+      model: parsedModel || 'Innova Crysta',
+      manufacturer: 'Toyota',
+      year: parsedYear,
+      fuelType: normalizedFuel,
+      transmission: 'Manual',
+      vehicleType: normalizedType,
+      company: enq.alreadyRunningCompany || (companies.length > 0 ? companies[0].name : ''),
+      site: enq.sitePreference1 && enq.sitePreference1 !== 'Open Preference' ? enq.sitePreference1 : (sites.length > 0 ? sites[0].name : ''),
+      ownerId: matchedOwner ? matchedOwner.id : 'new',
+      ownerName: ownerName,
+      ownerPhone: ownerPhone,
+      driverId: matchedDriver ? matchedDriver.id : 'new',
+      driverName: driverName,
+      driverPhone: driverPhone,
+      driverDl: enq.driverDlNumber || '',
+      driverDlExp: enq.driverDlExpiry || '',
+      driverAadhaar: enq.driverAadhaar || '',
+      driverAddress: enq.driverAddress || '',
+    });
+
+    setPromoteError(null);
+    setPromoteSuccess(null);
+    setPromotingEnquiry(enq);
+  };
+
+  const handleSavePromotion = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPromoteError(null);
+
+    if (!onUpdateVehicles || !onUpdateOwners || !onUpdateDrivers) {
+      setPromoteError('Master registers update handlers are not linked in parent layout.');
+      return;
+    }
+
+    const cleanReg = (promoteForm.registrationNumber || '').replace(/\s+/g, '').toUpperCase();
+    if (!cleanReg) {
+      setPromoteError('Vehicle Registration Number is required.');
+      return;
+    }
+
+    // Vehicle duplication check
+    if (promoteForm.createVehicle) {
+      const exists = vehicles.some(
+        (v) => v.registrationNumber.replace(/\s+/g, '').toUpperCase() === cleanReg
+      );
+      if (exists) {
+        setPromoteError(`Vehicle with registration number "${cleanReg}" already exists in Master Registers.`);
+        return;
+      }
+    }
+
+    let finalOwnerId = '';
+    let finalOwnerName = '';
+
+    // Handle Owner Addition/Linking
+    if (promoteForm.ownerId !== 'new') {
+      const existingOwner = owners.find(o => o.id === promoteForm.ownerId);
+      if (existingOwner) {
+        finalOwnerId = existingOwner.id;
+        finalOwnerName = existingOwner.name;
+      } else {
+        setPromoteError('Selected Owner profile was not found.');
+        return;
+      }
+    } else if (promoteForm.createOwner) {
+      if (!promoteForm.ownerName.trim()) {
+        setPromoteError('Owner Name is required to create a new profile.');
+        return;
+      }
+      if (!promoteForm.ownerPhone.trim()) {
+        setPromoteError('Owner Phone Number is required to create a new profile.');
+        return;
+      }
+
+      const newOwnerId = `OWN${(owners.length + 1).toString().padStart(2, '0')}`;
+      const newOwner: Owner = {
+        id: newOwnerId,
+        name: promoteForm.ownerName.trim(),
+        phone: promoteForm.ownerPhone.trim(),
+        email: promotingEnquiry?.driverEmail || '',
+        address: promoteForm.driverAddress.trim() || '',
+        bankName: promotingEnquiry?.bankName || '',
+        accountNumber: promotingEnquiry?.bankAccountNumber || '',
+        ifsc: promotingEnquiry?.bankIfsc || '',
+        upiId: '',
+        pan: '',
+        aadhaar: promotingEnquiry?.driverAadhaar || '',
+        remarks: 'Promoted from Enquiry ' + (promotingEnquiry?.id || ''),
+      };
+
+      onUpdateOwners([...owners, newOwner]);
+      finalOwnerId = newOwnerId;
+      finalOwnerName = newOwner.name;
+      owners.push(newOwner); // local reference update for sync in this run
+    }
+
+    let finalDriverId = '';
+    let finalDriverName = '';
+
+    // Handle Driver Addition/Linking
+    if (promoteForm.driverId !== 'new') {
+      const existingDriver = drivers.find(d => d.id === promoteForm.driverId);
+      if (existingDriver) {
+        finalDriverId = existingDriver.id;
+        finalDriverName = existingDriver.name;
+      } else {
+        setPromoteError('Selected Driver profile was not found.');
+        return;
+      }
+    } else if (promoteForm.createDriver) {
+      if (!promoteForm.driverName.trim()) {
+        setPromoteError('Driver Name is required.');
+        return;
+      }
+      if (!promoteForm.driverPhone.trim()) {
+        setPromoteError('Driver Phone is required.');
+        return;
+      }
+
+      const newDriverId = `DRV${(drivers.length + 1).toString().padStart(2, '0')}`;
+      const newDriver: Driver = {
+        id: newDriverId,
+        name: promoteForm.driverName.trim(),
+        phone: promoteForm.driverPhone.trim(),
+        address: promoteForm.driverAddress.trim() || '',
+        badgeNumber: '',
+        badgeExpiry: promotingEnquiry?.driverBatchExp || '',
+        licenceNumber: promoteForm.driverDl.trim() || '',
+        licenceExpiry: promoteForm.driverDlExp || '',
+        aadhaar: promoteForm.driverAadhaar.trim() || '',
+        pan: '',
+        emergencyContact: '',
+        salary: 0,
+        joiningDate: new Date().toISOString().substring(0, 10),
+        status: 'Active',
+      };
+
+      onUpdateDrivers([...drivers, newDriver]);
+      finalDriverId = newDriverId;
+      finalDriverName = newDriver.name;
+      drivers.push(newDriver); // local reference update
+    }
+
+    // Handle Vehicle Addition
+    if (promoteForm.createVehicle) {
+      const newVehicleId = `VEH${(vehicles.length + 1).toString().padStart(3, '0')}`;
+      const newVehicle: Vehicle = {
+        id: newVehicleId,
+        registrationNumber: cleanReg,
+        model: promoteForm.model.trim() || 'Innova',
+        manufacturer: promoteForm.manufacturer.trim() || 'Toyota',
+        year: Number(promoteForm.year) || 2024,
+        fuelType: promoteForm.fuelType,
+        transmission: promoteForm.transmission,
+        vehicleType: promoteForm.vehicleType,
+        ownerId: finalOwnerId,
+        ownerName: finalOwnerName || 'Unknown Owner',
+        driverId: finalDriverId,
+        driverName: finalDriverName || 'Unknown Driver',
+        company: promoteForm.company || '',
+        site: promoteForm.site || '',
+        joiningDate: new Date().toISOString().substring(0, 10),
+        status: 'Active',
+        emiAmount: 0,
+        emiDueDate: '',
+        insuranceExpiry: promotingEnquiry?.insuranceExpiry || '',
+        permitExpiry: promotingEnquiry?.permitExpiry || '',
+        fcExpiry: promotingEnquiry?.fcExpiry || '',
+        pollutionExpiry: '',
+        fastagNumber: '',
+        remarks: 'Promoted from Enquiry ' + (promotingEnquiry?.id || ''),
+      };
+
+      onUpdateVehicles([...vehicles, newVehicle]);
+    }
+
+    // Update enquiry status to 'Closed' and add confirmation log in remarks
+    if (promotingEnquiry) {
+      const updatedEnquiries = enquiries.map((e) => {
+        if (e.id === promotingEnquiry.id) {
+          return {
+            ...e,
+            status: 'Closed' as const,
+            remarks: (e.remarks ? e.remarks + '\n' : '') + `[SYSTEM] Vehicle selected & promoted to Master Registers on ${new Date().toLocaleDateString()}`,
+          };
+        }
+        return e;
+      });
+      onUpdateEnquiries(updatedEnquiries);
+    }
+
+    setPromoteSuccess('Successfully promoted and added records into Master Registers!');
+    setTimeout(() => {
+      setPromotingEnquiry(null);
+      setPromoteSuccess(null);
+    }, 1500);
+  };
+
   // Filter & Search Logic
   const filtered = enquiries.filter((item) => {
     const matchesSearch =
@@ -185,13 +623,15 @@ export default function EnquiryViews({
             Capture telephone inquiries, driver details, currently running company, and preferred site preferences.
           </p>
         </div>
-        <button
-          id="btn-add-enquiry-top"
-          onClick={handleOpenAdd}
-          className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold text-xs transition-all flex items-center gap-2 shadow-xs self-start md:self-auto"
-        >
-          <Plus className="h-4 w-4" /> Add Call / Enquiry
-        </button>
+        <div className="flex flex-wrap gap-2.5 self-start md:self-auto">
+          <button
+            id="btn-add-enquiry-top"
+            onClick={handleOpenAdd}
+            className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold text-xs transition-all flex items-center gap-2 shadow-xs cursor-pointer"
+          >
+            <Plus className="h-4 w-4" /> Add Call / Enquiry
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -279,32 +719,36 @@ export default function EnquiryViews({
 
       {/* Adding & Editing Form Panel */}
       {(isAdding || editingId) && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-3xs overflow-hidden">
-          <div className="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-indigo-100 text-indigo-700 rounded">
-                <Sparkles className="h-4 w-4" />
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div ref={formRef} className="bg-white rounded-xl shadow-2xl max-w-4xl w-full border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-8 flex flex-col">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-150 bg-slate-50 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-indigo-100 text-indigo-700 rounded">
+                  <Sparkles className="h-4 w-4 text-indigo-600" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900">
+                  {editingId ? `Modify Enquiry Record: ${editingId}` : 'Log New Telephone Enquiry Spec Sheet'}
+                </h3>
               </div>
-              <h3 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">
-                {editingId ? `Modify Enquiry Record: ${editingId}` : 'Log New Telephone Enquiry Spec Sheet'}
-              </h3>
+              <button
+                onClick={handleCloseForm}
+                className="p-1 hover:bg-slate-200 rounded-lg text-slate-400 hover:text-slate-600 transition-all cursor-pointer"
+              >
+                <XCircle className="h-6 w-6" />
+              </button>
             </div>
-            <button
-              onClick={handleCloseForm}
-              className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-600 transition-all"
-            >
-              <XCircle className="h-5 w-5" />
-            </button>
-          </div>
 
-          {formError && (
-            <div className="mx-6 mt-4 p-3 bg-rose-50 text-rose-700 text-xs border border-rose-200 rounded-lg flex items-center gap-2">
-              <XCircle className="h-4 w-4 shrink-0" />
-              {formError}
-            </div>
-          )}
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto max-h-[75vh]">
+              {formError && (
+                <div className="mb-4 p-3 bg-rose-50 text-rose-700 text-xs border border-rose-200 rounded-lg flex items-center gap-2">
+                  <XCircle className="h-4 w-4 shrink-0" />
+                  {formError}
+                </div>
+              )}
 
-          <form onSubmit={handleSave} className="p-6 space-y-6">
+              <form onSubmit={handleSave} className="space-y-6">
             {/* 1. VEHICLE DETAILS SEGMENT */}
             <div className="space-y-4">
               <h4 className="text-2xs font-extrabold text-amber-600 uppercase tracking-widest border-b border-amber-100 pb-1.5">
@@ -389,6 +833,63 @@ export default function EnquiryViews({
                     className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                   />
                 </div>
+
+                <div>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Fuel Type</label>
+                  <input
+                    id="enq-form-fuelType"
+                    type="text"
+                    placeholder="e.g. Diesel / CNG / Petrol"
+                    value={formState.fuelType || ''}
+                    onChange={(e) => setFormState({ ...formState, fuelType: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">RC Expiry Date</label>
+                  <input
+                    id="enq-form-rcExpiry"
+                    type="date"
+                    value={formState.rcExpiry || ''}
+                    onChange={(e) => setFormState({ ...formState, rcExpiry: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Insurance Expiry Date</label>
+                  <input
+                    id="enq-form-insuranceExpiry"
+                    type="date"
+                    value={formState.insuranceExpiry || ''}
+                    onChange={(e) => setFormState({ ...formState, insuranceExpiry: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Permit Type / Expiry</label>
+                  <input
+                    id="enq-form-permitExpiry"
+                    type="text"
+                    placeholder="e.g. All India Permit (2028-10-15)"
+                    value={formState.permitExpiry || ''}
+                    onChange={(e) => setFormState({ ...formState, permitExpiry: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Fitness Cert Expiry</label>
+                  <input
+                    id="enq-form-fcExpiry"
+                    type="date"
+                    value={formState.fcExpiry || ''}
+                    onChange={(e) => setFormState({ ...formState, fcExpiry: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                  />
+                </div>
               </div>
             </div>
 
@@ -457,6 +958,77 @@ export default function EnquiryViews({
                     className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                   />
                 </div>
+
+                <div>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Alt. Mobile No</label>
+                  <input
+                    id="enq-form-driverAltPhone"
+                    type="text"
+                    placeholder="e.g. 9840112233"
+                    value={formState.driverAltPhone || ''}
+                    onChange={(e) => setFormState({ ...formState, driverAltPhone: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Email ID</label>
+                  <input
+                    id="enq-form-driverEmail"
+                    type="email"
+                    placeholder="e.g. driver@e7travels.com"
+                    value={formState.driverEmail || ''}
+                    onChange={(e) => setFormState({ ...formState, driverEmail: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Aadhaar Number</label>
+                  <input
+                    id="enq-form-driverAadhaar"
+                    type="text"
+                    placeholder="e.g. 1234 5678 9012"
+                    value={formState.driverAadhaar || ''}
+                    onChange={(e) => setFormState({ ...formState, driverAadhaar: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">DL Number</label>
+                  <input
+                    id="enq-form-driverDlNumber"
+                    type="text"
+                    placeholder="e.g. TN072015000213"
+                    value={formState.driverDlNumber || ''}
+                    onChange={(e) => setFormState({ ...formState, driverDlNumber: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">DL Validity Date</label>
+                  <input
+                    id="enq-form-driverDlExpiry"
+                    type="date"
+                    value={formState.driverDlExpiry || ''}
+                    onChange={(e) => setFormState({ ...formState, driverDlExpiry: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="md:col-span-3">
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Permanent Address</label>
+                  <input
+                    id="enq-form-driverAddress"
+                    type="text"
+                    placeholder="e.g. No. 12, Main Street, Adyar, Chennai - 600020"
+                    value={formState.driverAddress || ''}
+                    onChange={(e) => setFormState({ ...formState, driverAddress: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
               </div>
             </div>
 
@@ -496,7 +1068,7 @@ export default function EnquiryViews({
                 </div>
 
                 <div>
-                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Site Preference 2 (Backup)</label>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Site Preference 2 (Backup 1)</label>
                   <select
                     id="enq-form-sitePref2"
                     value={formState.sitePreference2 || ''}
@@ -510,6 +1082,91 @@ export default function EnquiryViews({
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Site Preference 3 (Backup 2)</label>
+                  <select
+                    id="enq-form-sitePref3"
+                    value={formState.sitePreference3 || ''}
+                    onChange={(e) => setFormState({ ...formState, sitePreference3: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  >
+                    <option value="Open Preference">Open Preference / Any Site</option>
+                    {sites.map((s) => (
+                      <option key={s.id} value={s.name}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Site Preference 4 (Backup 3)</label>
+                  <select
+                    id="enq-form-sitePref4"
+                    value={formState.sitePreference4 || ''}
+                    onChange={(e) => setFormState({ ...formState, sitePreference4: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  >
+                    <option value="Open Preference">Open Preference / Any Site</option>
+                    {sites.map((s) => (
+                      <option key={s.id} value={s.name}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Induction Type</label>
+                  <select
+                    id="enq-form-inductionType"
+                    value={formState.inductionType || 'OwnerAttach'}
+                    onChange={(e) => setFormState({ ...formState, inductionType: e.target.value as any })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  >
+                    <option value="OwnerAttach">Owner Attach (Single/Multi)</option>
+                    <option value="CoAttached">Co-Attached</option>
+                    <option value="SubContract">Sub-Contract</option>
+                    <option value="Adhoc">Adhoc Spot</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Owner ID (If registered)</label>
+                  <input
+                    id="enq-form-ownerId"
+                    type="text"
+                    placeholder="e.g. OWN-021"
+                    value={formState.ownerId || ''}
+                    onChange={(e) => setFormState({ ...formState, ownerId: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Owner Legal Name</label>
+                  <input
+                    id="enq-form-ownerName"
+                    type="text"
+                    placeholder="e.g. Rajesh Kumar"
+                    value={formState.ownerName || ''}
+                    onChange={(e) => setFormState({ ...formState, ownerName: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Owner Mobile No</label>
+                  <input
+                    id="enq-form-ownerMobile"
+                    type="text"
+                    placeholder="e.g. 9841234560"
+                    value={formState.ownerMobile || ''}
+                    onChange={(e) => setFormState({ ...formState, ownerMobile: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
                 </div>
 
                 <div>
@@ -529,7 +1186,87 @@ export default function EnquiryViews({
               </div>
             </div>
 
-            {/* 4. DATE AND REMARKS */}
+            {/* 4. GPS & BANK ACCOUNT DETAILS */}
+            <div className="space-y-4 pt-2">
+              <h4 className="text-2xs font-extrabold text-blue-600 uppercase tracking-widest border-b border-blue-100 pb-1.5">
+                GPS & Bank Account Details
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">GPS Device Vendor</label>
+                  <input
+                    id="enq-form-gpsVendor"
+                    type="text"
+                    placeholder="e.g. AssetTrack / MapmyIndia"
+                    value={formState.gpsVendor || ''}
+                    onChange={(e) => setFormState({ ...formState, gpsVendor: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">GPS IMEI Number</label>
+                  <input
+                    id="enq-form-gpsImei"
+                    type="text"
+                    placeholder="e.g. 863452048892110"
+                    value={formState.gpsImei || ''}
+                    onChange={(e) => setFormState({ ...formState, gpsImei: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Bank Name</label>
+                  <input
+                    id="enq-form-bankName"
+                    type="text"
+                    placeholder="e.g. HDFC Bank Ltd"
+                    value={formState.bankName || ''}
+                    onChange={(e) => setFormState({ ...formState, bankName: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Account Holder Name</label>
+                  <input
+                    id="enq-form-bankAccountHolder"
+                    type="text"
+                    placeholder="e.g. Rajesh Kumar"
+                    value={formState.bankAccountHolder || ''}
+                    onChange={(e) => setFormState({ ...formState, bankAccountHolder: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Account Number</label>
+                  <input
+                    id="enq-form-bankAccountNumber"
+                    type="text"
+                    placeholder="e.g. 50100234129988"
+                    value={formState.bankAccountNumber || ''}
+                    onChange={(e) => setFormState({ ...formState, bankAccountNumber: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">IFSC Code</label>
+                  <input
+                    id="enq-form-bankIfsc"
+                    type="text"
+                    placeholder="e.g. HDFC0000120"
+                    value={formState.bankIfsc || ''}
+                    onChange={(e) => setFormState({ ...formState, bankIfsc: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 5. DATE AND REMARKS */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
               <div>
                 <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Enquiry Call Date</label>
@@ -561,19 +1298,21 @@ export default function EnquiryViews({
                 id="enq-form-btn-cancel"
                 type="button"
                 onClick={handleCloseForm}
-                className="px-4 py-2 text-xs font-semibold border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 transition-all bg-white"
+                className="px-4 py-2 text-xs font-semibold border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 transition-all bg-white cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 id="enq-form-btn-save"
                 type="submit"
-                className="px-5 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all"
+                className="px-5 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all cursor-pointer"
               >
                 {editingId ? 'Update Log' : 'Save Enquiry Log'}
               </button>
             </div>
           </form>
+            </div>
+          </div>
         </div>
       )}
 
@@ -612,8 +1351,77 @@ export default function EnquiryViews({
           </div>
         </div>
 
+        {/* Scroll Control Panel */}
+        <div className="px-5 py-3 bg-slate-100/50 border-b border-slate-200 flex flex-col md:flex-row items-center justify-between gap-3 text-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Jump to Section:</span>
+            <div className="flex flex-wrap gap-1">
+              <button
+                type="button"
+                onClick={() => scrollToSection('id')}
+                className="px-2 py-1 bg-white hover:bg-slate-50 border border-slate-200 rounded-md text-3xs font-extrabold text-slate-600 uppercase transition-all cursor-pointer"
+              >
+                🔢 Enquiry ID
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollToSection('vehicle')}
+                className="px-2 py-1 bg-white hover:bg-amber-50 border border-amber-200 hover:border-amber-300 rounded-md text-3xs font-extrabold text-amber-800 uppercase transition-all cursor-pointer"
+              >
+                🚗 Vehicle Details
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollToSection('driver')}
+                className="px-2 py-1 bg-white hover:bg-emerald-50 border border-emerald-200 hover:border-emerald-300 rounded-md text-3xs font-extrabold text-emerald-800 uppercase transition-all cursor-pointer"
+              >
+                💂 Driver Details
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollToSection('company')}
+                className="px-2 py-1 bg-white hover:bg-orange-50 border border-orange-200 hover:border-orange-300 rounded-md text-3xs font-extrabold text-orange-800 uppercase transition-all cursor-pointer"
+              >
+                🏢 Company & Preferences
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollToSection('status')}
+                className="px-2 py-1 bg-white hover:bg-indigo-50 border border-indigo-200 hover:border-indigo-300 rounded-md text-3xs font-extrabold text-indigo-800 uppercase transition-all cursor-pointer"
+              >
+                ⚙️ Status & Actions
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-end md:self-auto">
+            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Manual Scroll:</span>
+            <div className="flex gap-1">
+              <button
+                type="button"
+                onClick={() => scrollTable('left')}
+                className="p-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center cursor-pointer"
+                title="Scroll Left"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollTable('right')}
+                className="p-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center cursor-pointer"
+                title="Scroll Right"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Outer container for scrollable spreadsheet table */}
-        <div className="overflow-x-auto">
+        <div 
+          ref={tableContainerRef}
+          className="overflow-x-auto scrollbar-visible"
+        >
           {filtered.length === 0 ? (
             <div className="py-16 text-center text-slate-400 space-y-3">
               <PhoneCall className="h-10 w-10 mx-auto text-slate-300 stroke-1" />
@@ -784,9 +1592,40 @@ export default function EnquiryViews({
                       <td className="py-3 px-4 text-center">
                         <div className="flex items-center justify-center gap-2">
                           <button
+                            id={`enq-btn-comments-${enq.id}`}
+                            onClick={() => setActiveCommentTarget({
+                              id: enq.id,
+                              name: `${enq.vehicleNumber} (${enq.driverName})`,
+                              type: 'Enquiry',
+                              comments: enq.comments || []
+                            })}
+                            className="p-1 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 rounded transition-colors cursor-pointer relative"
+                            title="View / Add Comments"
+                          >
+                            <MessageSquare className="h-3.5 w-3.5" />
+                            {enq.comments && enq.comments.length > 0 && (
+                              <span className="absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-indigo-600 text-[7px] font-bold text-white">
+                                {enq.comments.length}
+                              </span>
+                            )}
+                          </button>
+                          <button
+                            id={`enq-btn-promote-${enq.id}`}
+                            onClick={() => handleOpenPromote(enq)}
+                            disabled={enq.status === 'Closed'}
+                            className={`p-1 rounded transition-colors cursor-pointer ${
+                              enq.status === 'Closed'
+                                ? 'text-slate-200 cursor-not-allowed'
+                                : 'text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700'
+                            }`}
+                            title={enq.status === 'Closed' ? "Already Closed / Promoted" : "Promote Car to Master Registers"}
+                          >
+                            <Database className="h-3.5 w-3.5" />
+                          </button>
+                          <button
                             id={`enq-btn-edit-${enq.id}`}
                             onClick={() => handleOpenEdit(enq)}
-                            className="p-1 text-slate-400 hover:bg-slate-100 hover:text-indigo-600 rounded transition-colors"
+                            className="p-1 text-slate-400 hover:bg-slate-100 hover:text-indigo-600 rounded transition-colors cursor-pointer"
                             title="Edit Record"
                           >
                             <Edit className="h-3.5 w-3.5" />
@@ -794,7 +1633,7 @@ export default function EnquiryViews({
                           <button
                             id={`enq-btn-delete-${enq.id}`}
                             onClick={() => handleDelete(enq.id)}
-                            className="p-1 text-slate-400 hover:bg-slate-100 hover:text-rose-600 rounded transition-colors"
+                            className="p-1 text-slate-400 hover:bg-slate-100 hover:text-rose-600 rounded transition-colors cursor-pointer"
                             title="Delete Record"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -815,6 +1654,486 @@ export default function EnquiryViews({
           <span>Showing {filtered.length} of {enquiries.length} logged telephone enquiries</span>
         </div>
       </div>
+
+      {/* PROMOTION MODAL */}
+      {promotingEnquiry && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-100 max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-slate-100 bg-gradient-to-r from-indigo-50/50 to-emerald-50/50 flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="p-1.5 bg-indigo-100 text-indigo-700 rounded-lg">
+                    <Database className="h-5 w-5" />
+                  </span>
+                  <h3 className="text-base font-extrabold text-slate-800 uppercase tracking-wider">
+                    Promote to Master Registers
+                  </h3>
+                </div>
+                <p className="text-3xs text-slate-500 font-extrabold uppercase tracking-wider">
+                  Log vehicle {promotingEnquiry.vehicleNumber} and crew as master reference records
+                </p>
+              </div>
+              <button
+                onClick={() => setPromotingEnquiry(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+              >
+                <XCircle className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleSavePromotion} className="flex-1 overflow-y-auto p-6 space-y-6">
+              {promoteError && (
+                <div className="p-3.5 bg-rose-50 border border-rose-100 text-rose-700 rounded-xl text-xs flex items-start gap-2 animate-pulse">
+                  <span className="font-bold">Error:</span>
+                  <span>{promoteError}</span>
+                </div>
+              )}
+
+              {promoteSuccess && (
+                <div className="p-3.5 bg-emerald-50 border border-emerald-100 text-emerald-700 rounded-xl text-xs flex items-start gap-2">
+                  <span className="font-bold">Success:</span>
+                  <span>{promoteSuccess}</span>
+                </div>
+              )}
+
+              {/* Grid Layout of Registers */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                {/* Column 1: Vehicle Register */}
+                <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-100 space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <div className="flex items-center gap-2">
+                      <Car className="h-4 w-4 text-indigo-600" />
+                      <h4 className="text-xs font-black text-slate-700 uppercase tracking-widest">1. Vehicle Master</h4>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={promoteForm.createVehicle}
+                      onChange={(e) => setPromoteForm({ ...promoteForm, createVehicle: e.target.checked })}
+                      className="h-4 w-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  {promoteForm.createVehicle && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">Registration No *</label>
+                        <input
+                          type="text"
+                          required
+                          value={promoteForm.registrationNumber}
+                          onChange={(e) => setPromoteForm({ ...promoteForm, registrationNumber: e.target.value })}
+                          className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 bg-white"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">Make/Manufacturer</label>
+                          <input
+                            type="text"
+                            required
+                            value={promoteForm.manufacturer}
+                            onChange={(e) => setPromoteForm({ ...promoteForm, manufacturer: e.target.value })}
+                            className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">Model Name</label>
+                          <input
+                            type="text"
+                            required
+                            value={promoteForm.model}
+                            onChange={(e) => setPromoteForm({ ...promoteForm, model: e.target.value })}
+                            className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 bg-white"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">Mfg Year</label>
+                          <input
+                            type="number"
+                            required
+                            value={promoteForm.year}
+                            onChange={(e) => setPromoteForm({ ...promoteForm, year: Number(e.target.value) })}
+                            className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">Type</label>
+                          <select
+                            value={promoteForm.vehicleType}
+                            onChange={(e) => setPromoteForm({ ...promoteForm, vehicleType: e.target.value as any })}
+                            className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 bg-white"
+                          >
+                            <option value="Sedan">Sedan</option>
+                            <option value="SUV">SUV</option>
+                            <option value="Hatchback">Hatchback</option>
+                            <option value="Bus">Bus</option>
+                            <option value="Tempo Traveler">Tempo Traveler</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">Fuel Type</label>
+                          <select
+                            value={promoteForm.fuelType}
+                            onChange={(e) => setPromoteForm({ ...promoteForm, fuelType: e.target.value as any })}
+                            className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 bg-white"
+                          >
+                            <option value="Diesel">Diesel</option>
+                            <option value="Petrol">Petrol</option>
+                            <option value="CNG">CNG</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">Transmission</label>
+                          <select
+                            value={promoteForm.transmission}
+                            onChange={(e) => setPromoteForm({ ...promoteForm, transmission: e.target.value as any })}
+                            className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 bg-white"
+                          >
+                            <option value="Manual">Manual</option>
+                            <option value="Automatic">Automatic</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">Running Company</label>
+                        <select
+                          value={promoteForm.company}
+                          onChange={(e) => setPromoteForm({ ...promoteForm, company: e.target.value })}
+                          className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 bg-white"
+                        >
+                          <option value="">No Assigned Company</option>
+                          {companies.map((c) => (
+                            <option key={c.name} value={c.name}>{c.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">Reporting Site</label>
+                        <select
+                          value={promoteForm.site}
+                          onChange={(e) => setPromoteForm({ ...promoteForm, site: e.target.value })}
+                          className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 bg-white"
+                        >
+                          <option value="">No Assigned Site</option>
+                          {sites.map((s) => (
+                            <option key={s.id} value={s.name}>{s.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Column 2: Owner Register */}
+                <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-100 space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <div className="flex items-center gap-2">
+                      <User className="h-4 w-4 text-amber-600" />
+                      <h4 className="text-xs font-black text-slate-700 uppercase tracking-widest">2. Owner Master</h4>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-slate-400 font-extrabold uppercase">Link / Add</span>
+                      <input
+                        type="checkbox"
+                        checked={promoteForm.createOwner || promoteForm.ownerId !== 'new'}
+                        disabled={promoteForm.ownerId !== 'new'}
+                        onChange={(e) => setPromoteForm({ ...promoteForm, createOwner: e.target.checked })}
+                        className="h-4 w-4 text-amber-600 border-slate-300 rounded focus:ring-amber-500 disabled:opacity-50"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">Owner Registry Option</label>
+                      <select
+                        value={promoteForm.ownerId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setPromoteForm({
+                            ...promoteForm,
+                            ownerId: val,
+                            createOwner: val === 'new'
+                          });
+                        }}
+                        className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500/10 focus:border-amber-500 bg-white font-extrabold text-amber-800"
+                      >
+                        <option value="new">🆕 Create New Owner Profile</option>
+                        {owners.map(o => (
+                          <option key={o.id} value={o.id}>👤 {o.name} ({o.phone})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {promoteForm.createOwner && promoteForm.ownerId === 'new' && (
+                      <div className="space-y-3 animate-in slide-in-from-top-2 duration-150">
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">Owner Legal Name *</label>
+                          <input
+                            type="text"
+                            required
+                            value={promoteForm.ownerName}
+                            onChange={(e) => setPromoteForm({ ...promoteForm, ownerName: e.target.value })}
+                            className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500/10 focus:border-amber-500 bg-white"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">Owner Contact Phone *</label>
+                          <input
+                            type="text"
+                            required
+                            value={promoteForm.ownerPhone}
+                            onChange={(e) => setPromoteForm({ ...promoteForm, ownerPhone: e.target.value })}
+                            className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500/10 focus:border-amber-500 bg-white"
+                          />
+                        </div>
+
+                        <div className="text-[10px] text-slate-400 font-extrabold uppercase leading-relaxed bg-amber-50/50 p-2 border border-amber-100 rounded-lg">
+                          💡 Bank accounts & other billing parameters will be automatically synced from the enquiry printable form fields.
+                        </div>
+                      </div>
+                    )}
+
+                    {promoteForm.ownerId !== 'new' && (
+                      <div className="p-3 bg-amber-50/60 rounded-lg border border-amber-100 text-3xs text-amber-800 font-extrabold uppercase">
+                        ✅ Linking this vehicle to existing owner registry record: ID {promoteForm.ownerId}.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Column 3: Driver Register */}
+                <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-100 space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <div className="flex items-center gap-2">
+                      <UserPlus className="h-4 w-4 text-emerald-600" />
+                      <h4 className="text-xs font-black text-slate-700 uppercase tracking-widest">3. Driver Master</h4>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-slate-400 font-extrabold uppercase">Link / Add</span>
+                      <input
+                        type="checkbox"
+                        checked={promoteForm.createDriver || promoteForm.driverId !== 'new'}
+                        disabled={promoteForm.driverId !== 'new'}
+                        onChange={(e) => setPromoteForm({ ...promoteForm, createDriver: e.target.checked })}
+                        className="h-4 w-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500 disabled:opacity-50"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">Driver Registry Option</label>
+                      <select
+                        value={promoteForm.driverId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setPromoteForm({
+                            ...promoteForm,
+                            driverId: val,
+                            createDriver: val === 'new'
+                          });
+                        }}
+                        className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 bg-white font-extrabold text-emerald-800"
+                      >
+                        <option value="new">🆕 Create New Driver Profile</option>
+                        {drivers.map(d => (
+                          <option key={d.id} value={d.id}>💂 {d.name} ({d.phone})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {promoteForm.createDriver && promoteForm.driverId === 'new' && (
+                      <div className="space-y-3 animate-in slide-in-from-top-2 duration-150">
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">Driver Full Name *</label>
+                          <input
+                            type="text"
+                            required
+                            value={promoteForm.driverName}
+                            onChange={(e) => setPromoteForm({ ...promoteForm, driverName: e.target.value })}
+                            className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 bg-white"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">Driver Mobile No *</label>
+                          <input
+                            type="text"
+                            required
+                            value={promoteForm.driverPhone}
+                            onChange={(e) => setPromoteForm({ ...promoteForm, driverPhone: e.target.value })}
+                            className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 bg-white"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">Licence / DL Number</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. TN-07-2018223344"
+                            value={promoteForm.driverDl}
+                            onChange={(e) => setPromoteForm({ ...promoteForm, driverDl: e.target.value })}
+                            className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 bg-white"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">DL Expiry Date</label>
+                          <input
+                            type="date"
+                            value={promoteForm.driverDlExp}
+                            onChange={(e) => setPromoteForm({ ...promoteForm, driverDlExp: e.target.value })}
+                            className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 bg-white"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">Aadhaar Card No</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. 5432 1100 2233"
+                            value={promoteForm.driverAadhaar}
+                            onChange={(e) => setPromoteForm({ ...promoteForm, driverAadhaar: e.target.value })}
+                            className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 bg-white"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">Driver Address</label>
+                          <textarea
+                            rows={2}
+                            value={promoteForm.driverAddress}
+                            onChange={(e) => setPromoteForm({ ...promoteForm, driverAddress: e.target.value })}
+                            className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 bg-white resize-none"
+                            placeholder="Full residential address details"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {promoteForm.driverId !== 'new' && (
+                      <div className="p-3 bg-emerald-50/60 rounded-lg border border-emerald-100 text-3xs text-emerald-800 font-extrabold uppercase">
+                        ✅ Linking this vehicle to existing driver registry record: ID {promoteForm.driverId}.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+              </div>
+            </form>
+
+            {/* Modal Footer */}
+            <div className="p-6 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setPromotingEnquiry(null)}
+                className="px-4 py-2 text-xs font-black text-slate-500 uppercase tracking-wider border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSavePromotion}
+                type="button"
+                className="px-5 py-2 text-xs font-black text-white uppercase tracking-wider bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 shadow-sm rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Database className="h-4 w-4" />
+                Save to Registers
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Comments / Remarks Activity Log Modal */}
+      {activeCommentTarget && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[85vh]">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-150 bg-slate-50 flex items-center justify-between">
+              <div>
+                <span className="px-2 py-0.5 text-[10px] font-bold bg-indigo-100 text-indigo-800 rounded-md uppercase tracking-wider mb-1 inline-block">
+                  {activeCommentTarget.type} Comments
+                </span>
+                <h3 className="text-sm font-bold text-slate-900">
+                  {activeCommentTarget.name}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveCommentTarget(null)}
+                className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+              >
+                <XCircle className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Comments List (Scrollable) */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-4 bg-slate-50/50">
+              {activeCommentTarget.comments && activeCommentTarget.comments.length > 0 ? (
+                <div className="space-y-3">
+                  {activeCommentTarget.comments.map((c, i) => (
+                    <div key={i} className="bg-white p-3.5 rounded-lg border border-slate-200/60 shadow-3xs text-left">
+                      <div className="flex justify-between items-start gap-4 mb-1">
+                        <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-indigo-500" />
+                          {c.author}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {c.date}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 whitespace-pre-wrap">{c.text}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-12 text-center text-slate-400 space-y-2">
+                  <MessageSquare className="h-8 w-8 mx-auto text-slate-300 stroke-1" />
+                  <div>
+                    <p className="text-xs font-semibold text-slate-600">No comments posted yet</p>
+                    <p className="text-4xs uppercase tracking-wider text-slate-400 mt-0.5">Be the first to leave a remark or follow-up note</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Add Comment Form */}
+            <form onSubmit={handleAddComment} className="p-4 border-t border-slate-150 bg-white">
+              <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1.5">Add Follow-up Comment / Log Remark</label>
+              <div className="flex gap-2">
+                <textarea
+                  required
+                  rows={2}
+                  value={newCommentText}
+                  onChange={(e) => setNewCommentText(e.target.value)}
+                  placeholder="Type important update details or observations..."
+                  className="flex-1 px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 resize-none"
+                />
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs transition-all flex items-center self-end shadow-xs cursor-pointer"
+                >
+                  Post
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

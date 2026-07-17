@@ -268,7 +268,7 @@ export default function Reports({ vehicles, expenses, payments }: ReportsProps) 
           <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Dynamic Pivot Worksheet</h3>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto scrollbar-visible">
           <table className="w-full text-left border-collapse text-xs font-semibold text-slate-700">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-100/50 text-3xs font-bold text-slate-600 uppercase tracking-wider">

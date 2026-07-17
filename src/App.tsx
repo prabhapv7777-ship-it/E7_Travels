@@ -50,6 +50,9 @@ import {
   FileSpreadsheet,
   Award,
   PhoneCall,
+  AlertCircle,
+  ExternalLink,
+  X,
 } from 'lucide-react';
 
 // Sub Components
@@ -63,6 +66,7 @@ import VbaExport from './components/VbaExport';
 import Settings from './components/Settings';
 import EnquiryViews from './components/EnquiryViews';
 import AdminLogin from './components/AdminLogin';
+import RulesView from './components/RulesView';
 
 export default function App() {
   // Authentication & Sync State
@@ -77,15 +81,37 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [lastSynced, setLastSynced] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<{ code: string; message: string } | null>(null);
 
   // Core ERP Master State
-  const [vehicles, setVehicles] = useState<Vehicle[]>(SAMPLE_VEHICLES);
-  const [owners, setOwners] = useState<Owner[]>(SAMPLE_OWNERS);
-  const [drivers, setDrivers] = useState<Driver[]>(SAMPLE_DRIVERS);
-  const [companies, setCompanies] = useState<Company[]>(SAMPLE_COMPANIES);
-  const [sites, setSites] = useState<Site[]>(SAMPLE_SITES);
-  const [payments, setPayments] = useState<CompanyPayment[]>(SAMPLE_PAYMENTS);
-  const [expenses, setExpenses] = useState<Expense[]>(SAMPLE_EXPENSES);
+  const [vehicles, setVehicles] = useState<Vehicle[]>(() => {
+    const saved = localStorage.getItem('e7_travels_vehicles');
+    return saved ? JSON.parse(saved) : SAMPLE_VEHICLES;
+  });
+  const [owners, setOwners] = useState<Owner[]>(() => {
+    const saved = localStorage.getItem('e7_travels_owners');
+    return saved ? JSON.parse(saved) : SAMPLE_OWNERS;
+  });
+  const [drivers, setDrivers] = useState<Driver[]>(() => {
+    const saved = localStorage.getItem('e7_travels_drivers');
+    return saved ? JSON.parse(saved) : SAMPLE_DRIVERS;
+  });
+  const [companies, setCompanies] = useState<Company[]>(() => {
+    const saved = localStorage.getItem('e7_travels_companies');
+    return saved ? JSON.parse(saved) : SAMPLE_COMPANIES;
+  });
+  const [sites, setSites] = useState<Site[]>(() => {
+    const saved = localStorage.getItem('e7_travels_sites');
+    return saved ? JSON.parse(saved) : SAMPLE_SITES;
+  });
+  const [payments, setPayments] = useState<CompanyPayment[]>(() => {
+    const saved = localStorage.getItem('e7_travels_payments');
+    return saved ? JSON.parse(saved) : SAMPLE_PAYMENTS;
+  });
+  const [expenses, setExpenses] = useState<Expense[]>(() => {
+    const saved = localStorage.getItem('e7_travels_expenses');
+    return saved ? JSON.parse(saved) : SAMPLE_EXPENSES;
+  });
   const [enquiries, setEnquiries] = useState<Enquiry[]>(() => {
     const saved = localStorage.getItem('e7_travels_enquiries');
     if (saved) {
@@ -99,13 +125,42 @@ export default function App() {
     return SAMPLE_ENQUIRIES;
   });
 
+  // Automatically save to localStorage whenever state changes
+  useEffect(() => {
+    localStorage.setItem('e7_travels_vehicles', JSON.stringify(vehicles));
+  }, [vehicles]);
+
+  useEffect(() => {
+    localStorage.setItem('e7_travels_owners', JSON.stringify(owners));
+  }, [owners]);
+
+  useEffect(() => {
+    localStorage.setItem('e7_travels_drivers', JSON.stringify(drivers));
+  }, [drivers]);
+
+  useEffect(() => {
+    localStorage.setItem('e7_travels_companies', JSON.stringify(companies));
+  }, [companies]);
+
+  useEffect(() => {
+    localStorage.setItem('e7_travels_sites', JSON.stringify(sites));
+  }, [sites]);
+
+  useEffect(() => {
+    localStorage.setItem('e7_travels_payments', JSON.stringify(payments));
+  }, [payments]);
+
+  useEffect(() => {
+    localStorage.setItem('e7_travels_expenses', JSON.stringify(expenses));
+  }, [expenses]);
+
   // Core Branding Custom Logo
   const [customLogo, setCustomLogo] = useState<string | null>(() => {
     return localStorage.getItem('e7_custom_logo') || null;
   });
 
   // Layout & Navigation State
-  const [activeTab, setActiveTab] = useState<'Dashboard' | 'Enquiries' | 'Registers' | 'Transactions' | 'Ledgers' | 'Settlement' | 'Reports' | 'VBA Export' | 'Settings'>('Dashboard');
+  const [activeTab, setActiveTab] = useState<'Dashboard' | 'Enquiries' | 'Registers' | 'Transactions' | 'Ledgers' | 'Settlement' | 'Reports' | 'VBA Export' | 'Settings' | 'Rules'>('Dashboard');
   const [activeSubTab, setActiveSubTab] = useState<string>('Vehicle Master');
   const [vehicleFilter, setVehicleFilter] = useState<'all' | 'running' | 'idle' | 'new'>('all');
 
@@ -134,12 +189,12 @@ export default function App() {
         break;
       case 'Company Payments':
       case 'Expense Entry':
+      case 'Weekly Settlement':
         setActiveTab('Transactions');
         setActiveSubTab(route);
         break;
       case 'Vehicle Ledger':
       case 'Owner Ledger':
-      case 'Driver Ledger':
       case 'Vehicle History':
         setActiveTab('Ledgers');
         setActiveSubTab(route === 'Vehicle History' ? 'Vehicle Ledger' : route);
@@ -159,6 +214,9 @@ export default function App() {
       case 'Settings':
         setActiveTab('Settings');
         break;
+      case 'Rules':
+        setActiveTab('Rules');
+        break;
       default:
         // Fallback for parent tabs
         if (route === 'Registers' || route === 'Transactions' || route === 'Ledgers' || route === 'Settlement' || route === 'VBA Export') {
@@ -175,6 +233,7 @@ export default function App() {
   // Handle Google Login Auth
   const handleLogin = async () => {
     try {
+      setAuthError(null);
       const res = await googleSignIn();
       if (res && res.user) {
         setUser({
@@ -187,9 +246,20 @@ export default function App() {
           triggerSheetInit(token);
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Google sign-in error:', err);
-      alert('Authentication failed. Please verify credentials and try again.');
+      const errorCode = err?.code || 'unknown';
+      let errorMessage = err?.message || 'Authentication failed. Please verify credentials and try again.';
+      
+      // Specifically target popup closed/blocked errors
+      if (errorCode === 'auth/popup-closed-by-user' || errorMessage.includes('popup-closed-by-user') || errorMessage.includes('popup-blocked')) {
+        errorMessage = 'Google sign-in popup was blocked or closed before completion. This typically happens when browser security settings prevent popups inside the embedded preview frame. To fix this, please click "Open in New Tab" in the top bar to run the app full-screen, or ensure your browser allows popups.';
+      }
+      
+      setAuthError({
+        code: errorCode,
+        message: errorMessage
+      });
     }
   };
 
@@ -305,8 +375,66 @@ export default function App() {
     triggerPush(vehicles, owners, newDrivers, companies, sites, payments, expenses);
   };
   const updateCompanies = (newCompanies: Company[]) => {
+    let updatedVehicles = [...vehicles];
+    let updatedPayments = [...payments];
+    let updatedSites = [...sites];
+    let hasChanges = false;
+
+    // Check for renamed company name or vendor name
+    if (companies.length === newCompanies.length) {
+      for (let i = 0; i < companies.length; i++) {
+        const oldC = companies[i];
+        const newC = newCompanies[i];
+        if (oldC.name !== newC.name) {
+          const oldName = oldC.name;
+          const newName = newC.name;
+
+          // 1. Update Vehicles
+          updatedVehicles = updatedVehicles.map(v => {
+            let changed = false;
+            let nextCompany = v.company;
+            let nextCompany2 = v.company2;
+            if (v.company === oldName) {
+              nextCompany = newName;
+              changed = true;
+            }
+            if (v.company2 === oldName) {
+              nextCompany2 = newName;
+              changed = true;
+            }
+            return changed ? { ...v, company: nextCompany, company2: nextCompany2 } : v;
+          });
+
+          // 2. Update Sites
+          updatedSites = updatedSites.map(s => {
+            if (s.companyName === oldName) {
+              return { ...s, companyName: newName };
+            }
+            return s;
+          });
+
+          // 3. Update Payments
+          updatedPayments = updatedPayments.map(p => {
+            if (p.company === oldName) {
+              return { ...p, company: newName };
+            }
+            return p;
+          });
+
+          hasChanges = true;
+        }
+      }
+    }
+
     setCompanies(newCompanies);
-    triggerPush(vehicles, owners, drivers, newCompanies, sites, payments, expenses);
+    if (hasChanges) {
+      setVehicles(updatedVehicles);
+      setSites(updatedSites);
+      setPayments(updatedPayments);
+      triggerPush(updatedVehicles, owners, drivers, newCompanies, updatedSites, updatedPayments, expenses);
+    } else {
+      triggerPush(vehicles, owners, drivers, newCompanies, sites, payments, expenses);
+    }
   };
   const updateSites = (newSites: Site[]) => {
     setSites(newSites);
@@ -340,20 +468,21 @@ export default function App() {
       
       {/* Navigation Sidebar */}
       <aside className="w-64 bg-blue-900 text-slate-100 flex flex-col shrink-0 h-screen sticky top-0 print:hidden select-none border-r border-blue-950">
-        <div className="p-6 border-b border-blue-800 flex items-center gap-3">
-          <div className="flex items-center justify-center w-9 h-9 overflow-hidden rounded bg-transparent">
+        <div className="p-4 pr-2 border-b border-blue-800 flex items-center gap-3">
+          <div className="flex items-center justify-center w-14 h-14 overflow-hidden rounded bg-transparent shrink-0">
             {customLogo ? (
-              <img src={customLogo} alt="E7 Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+              <img src={customLogo} alt="E7 Logo" className="w-14 h-14 object-contain" referrerPolicy="no-referrer" />
             ) : (
-              <svg className="w-9 h-9" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <svg className="w-14 h-14" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M4 18C4 10.268 10.268 4 18 4C25.732 4 32 10.268 32 18" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round" strokeDasharray="4 2"/>
                 <path d="M10 12H18M10 18H16M10 24H18M10 12V24" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
                 <path d="M20 12H28L22 24" stroke="#38bdf8" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             )}
           </div>
-          <div>
-            <h1 className="text-sm font-black text-white tracking-tight leading-none uppercase w-[109.0156px] h-[33px]">E7 Travels</h1>
+          <div className="flex-1 min-w-0 pl-1 flex flex-col justify-center">
+            <div className="text-2xl font-black text-white tracking-tighter leading-none">E7</div>
+            <div className="text-[11px] font-black text-white tracking-widest leading-none mt-1.5 uppercase">TRAVELS</div>
           </div>
         </div>
 
@@ -436,6 +565,16 @@ export default function App() {
               }`}
             >
               <TrendingUp className="h-4 w-4 shrink-0" /> Analytics Reports
+            </button>
+
+            <button
+              id="menu-btn-rules"
+              onClick={() => handleNavigate('Rules')}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
+                activeTab === 'Rules' ? 'bg-blue-800 text-white' : 'text-blue-100 hover:bg-blue-800/50'
+              }`}
+            >
+              <Award className="h-4 w-4 shrink-0" /> Company Rules (Tamil)
             </button>
           </div>
 
@@ -575,6 +714,49 @@ export default function App() {
         {/* Content Area */}
         <main className="flex-1 overflow-y-auto p-8 space-y-6 print:p-0 print:overflow-visible bg-slate-50">
           
+          {authError && (
+            <div id="auth-error-banner" className="bg-amber-50 border border-amber-200 text-slate-800 p-4 rounded-xl flex items-start gap-4 shadow-sm relative">
+              <div className="p-1.5 bg-amber-100 rounded-lg text-amber-700 shrink-0 mt-0.5">
+                <AlertCircle className="h-5 w-5" />
+              </div>
+              <div className="flex-1 space-y-2">
+                <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wider">Google Sign-In Notice</h4>
+                <p className="text-xs text-slate-600 leading-relaxed max-w-3xl">
+                  {authError.message}
+                </p>
+                <div className="flex flex-wrap items-center gap-3 pt-1">
+                  <a
+                    href={window.location.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold rounded-lg shadow-2xs transition-colors"
+                  >
+                    <ExternalLink className="h-3 w-3" /> Open in New Tab
+                  </a>
+                  <button
+                    onClick={handleLogin}
+                    className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold rounded-lg shadow-2xs transition-colors"
+                  >
+                    Retry Sign-In
+                  </button>
+                  <button
+                    onClick={() => setAuthError(null)}
+                    className="px-3 py-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 text-[11px] font-bold rounded-lg transition-colors"
+                  >
+                    Use Offline Sandbox Mode
+                  </button>
+                </div>
+              </div>
+              <button
+                onClick={() => setAuthError(null)}
+                className="absolute top-3 right-3 text-slate-400 hover:text-slate-600 p-1 hover:bg-amber-100 rounded-lg transition-colors"
+                title="Dismiss warning"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+          
           {/* Sub Navigation deck (Where necessary depending on chosen Tab) */}
           {['Registers', 'Transactions', 'Ledgers', 'Settlement'].includes(activeTab) && (
             <div className="flex bg-slate-200 p-1 rounded-xl max-w-max border border-slate-300/40 print:hidden shadow-3xs mb-4">
@@ -593,7 +775,7 @@ export default function App() {
                 ))}
 
               {activeTab === 'Transactions' &&
-                (['Company Payments', 'Expense Entry'] as const).map((sub) => (
+                (['Company Payments', 'Expense Entry', 'Weekly Settlement'] as const).map((sub) => (
                   <button
                     id={`sub-tab-btn-${sub}`}
                     key={sub}
@@ -607,7 +789,7 @@ export default function App() {
                 ))}
 
               {activeTab === 'Ledgers' &&
-                (['Vehicle Ledger', 'Owner Ledger', 'Driver Ledger'] as const).map((sub) => (
+                (['Vehicle Ledger', 'Owner Ledger'] as const).map((sub) => (
                   <button
                     id={`sub-tab-btn-${sub}`}
                     key={sub}
@@ -651,6 +833,13 @@ export default function App() {
               enquiries={enquiries}
               sites={sites}
               onUpdateEnquiries={updateEnquiries}
+              vehicles={vehicles}
+              owners={owners}
+              drivers={drivers}
+              companies={companies}
+              onUpdateVehicles={updateVehicles}
+              onUpdateOwners={updateOwners}
+              onUpdateDrivers={updateDrivers}
             />
           )}
 
@@ -715,6 +904,10 @@ export default function App() {
             />
           )}
 
+          {activeTab === 'Rules' && (
+            <RulesView />
+          )}
+
           {activeTab === 'VBA Export' && (
             <VbaExport
               vehicles={vehicles}
@@ -737,9 +930,17 @@ export default function App() {
               onUpdateLogo={(newLogo) => {
                 setCustomLogo(newLogo);
                 if (newLogo) {
-                  localStorage.setItem('e7_custom_logo', newLogo);
+                  try {
+                    localStorage.setItem('e7_custom_logo', newLogo);
+                  } catch (err) {
+                    console.error('Failed to save custom logo to localStorage:', err);
+                  }
                 } else {
-                  localStorage.removeItem('e7_custom_logo');
+                  try {
+                    localStorage.removeItem('e7_custom_logo');
+                  } catch (err) {
+                    console.error('Failed to remove custom logo from localStorage:', err);
+                  }
                 }
               }}
             />

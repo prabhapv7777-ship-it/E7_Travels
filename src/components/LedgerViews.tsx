@@ -70,7 +70,7 @@ export default function LedgerViews({
     ].filter(Boolean))
   ).sort().reverse();
 
-  const distinctCompanies = Array.from(new Set(vehicles.map((v) => v.company))).filter(Boolean);
+  const distinctCompanies = Array.from(new Set(vehicles.flatMap((v) => [v.company, v.company2].filter(Boolean)))).filter(Boolean);
 
   // 1. VEHICLE LEDGER COMPUTATION
   const getVehicleLedger = () => {
@@ -83,12 +83,13 @@ export default function LedgerViews({
       const matchComp = selectedCompany ? p.company === selectedCompany : true;
       let matchMonth = true;
       if (selectedMonth) {
+        const normalizedDate = toInputDateFormat(p.paymentDate);
         if (isDateSelected) {
-          matchMonth = toInputDateFormat(p.paymentDate) === selectedMonth;
+          matchMonth = normalizedDate === selectedMonth;
         } else if (isYearSelected) {
-          matchMonth = p.month.startsWith(selectedMonth);
+          matchMonth = normalizedDate.startsWith(selectedMonth);
         } else {
-          matchMonth = p.month === selectedMonth;
+          matchMonth = normalizedDate.substring(0, 7) === selectedMonth || p.month === selectedMonth;
         }
       }
       return matchVeh && matchMonth && matchComp;
@@ -98,12 +99,13 @@ export default function LedgerViews({
       const matchVeh = e.vehicleNumber === selectedVehicle;
       let matchMonth = true;
       if (selectedMonth) {
+        const normalizedDate = toInputDateFormat(e.date);
         if (isDateSelected) {
-          matchMonth = toInputDateFormat(e.date) === selectedMonth;
+          matchMonth = normalizedDate === selectedMonth;
         } else if (isYearSelected) {
-          matchMonth = e.month.startsWith(selectedMonth);
+          matchMonth = normalizedDate.startsWith(selectedMonth);
         } else {
-          matchMonth = e.month === selectedMonth;
+          matchMonth = normalizedDate.substring(0, 7) === selectedMonth || e.month === selectedMonth;
         }
       }
       return matchVeh && matchMonth;
@@ -186,12 +188,13 @@ export default function LedgerViews({
       const matchVeh = ownerVehicles.includes(p.vehicleNumber);
       let matchMonth = true;
       if (selectedMonth) {
+        const normalizedDate = toInputDateFormat(p.paymentDate);
         if (isDateSelected) {
-          matchMonth = toInputDateFormat(p.paymentDate) === selectedMonth;
+          matchMonth = normalizedDate === selectedMonth;
         } else if (isYearSelected) {
-          matchMonth = p.month.startsWith(selectedMonth);
+          matchMonth = normalizedDate.startsWith(selectedMonth);
         } else {
-          matchMonth = p.month === selectedMonth;
+          matchMonth = normalizedDate.substring(0, 7) === selectedMonth || p.month === selectedMonth;
         }
       }
       return matchVeh && matchMonth;
@@ -202,12 +205,13 @@ export default function LedgerViews({
       const matchVeh = ownerVehicles.includes(e.vehicleNumber);
       let matchMonth = true;
       if (selectedMonth) {
+        const normalizedDate = toInputDateFormat(e.date);
         if (isDateSelected) {
-          matchMonth = toInputDateFormat(e.date) === selectedMonth;
+          matchMonth = normalizedDate === selectedMonth;
         } else if (isYearSelected) {
-          matchMonth = e.month.startsWith(selectedMonth);
+          matchMonth = normalizedDate.startsWith(selectedMonth);
         } else {
-          matchMonth = e.month === selectedMonth;
+          matchMonth = normalizedDate.substring(0, 7) === selectedMonth || e.month === selectedMonth;
         }
       }
       return matchVeh && matchMonth;
@@ -234,7 +238,7 @@ export default function LedgerViews({
   // 3. DRIVER LEDGER COMPUTATION
   const getDriverLedger = () => {
     const driver = drivers.find((d) => d.id === selectedDriver);
-    if (!driver) return { salary: 0, incentive: 0, advance: 0, penalty: 0, netSalary: 0 };
+    if (!driver) return { salary: 0, incentive: 0, advance: 0, penalty: 0, netSalary: 0, driverType: 'Owner-Paid', vehicleOwner: '', vehicleOwnerId: '' };
 
     const isYearSelected = selectedMonth.length === 4;
     const isDateSelected = selectedMonth.length === 10;
@@ -242,18 +246,22 @@ export default function LedgerViews({
     // Find if the driver is currently assigned to a vehicle
     const driverVehicle = vehicles.find((v) => v.driverId === selectedDriver);
     const vehicleReg = driverVehicle ? driverVehicle.registrationNumber : '';
+    const vehicleOwner = driverVehicle ? driverVehicle.ownerName : '';
+    const vehicleOwnerId = driverVehicle ? driverVehicle.ownerId : '';
+    const driverType = driver.driverType || 'Owner-Paid';
 
     // Drivers salary entries logged as expenses
     const driverSalaryLogs = expenses.filter((e) => {
       const matchVeh = vehicleReg ? e.vehicleNumber === vehicleReg : true;
       let matchMonth = true;
       if (selectedMonth) {
+        const normalizedDate = toInputDateFormat(e.date);
         if (isDateSelected) {
-          matchMonth = toInputDateFormat(e.date) === selectedMonth;
+          matchMonth = normalizedDate === selectedMonth;
         } else if (isYearSelected) {
-          matchMonth = e.month.startsWith(selectedMonth);
+          matchMonth = normalizedDate.startsWith(selectedMonth);
         } else {
-          matchMonth = e.month === selectedMonth;
+          matchMonth = normalizedDate.substring(0, 7) === selectedMonth || e.month === selectedMonth;
         }
       }
       return matchVeh && matchMonth;
@@ -286,6 +294,9 @@ export default function LedgerViews({
       advance,
       penalty,
       netSalary,
+      driverType,
+      vehicleOwner,
+      vehicleOwnerId,
     };
   };
 
@@ -443,7 +454,7 @@ export default function LedgerViews({
             </div>
 
             {/* Ledger Transactions list */}
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto scrollbar-visible">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50/70 text-3xs font-bold text-slate-600 uppercase tracking-wider">
@@ -587,46 +598,113 @@ export default function LedgerViews({
                   <User className="h-5 w-5" />
                 </div>
                 <div>
-                  <h2 className="text-md font-bold text-slate-800">Driver Ledger: {dLedger.driverName}</h2>
-                  <p className="text-xs text-slate-500">Assigned Vehicle: {dLedger.assignedVehicle}</p>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-md font-bold text-slate-800">Driver Ledger: {dLedger.driverName}</h2>
+                    <span className={`px-2 py-0.5 text-3xs font-extrabold rounded-full border ${
+                      dLedger.driverType === 'Owner-cum-Driver'
+                        ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                        : 'bg-slate-50 border-slate-200 text-slate-700'
+                    }`}>
+                      {dLedger.driverType === 'Owner-cum-Driver' ? 'Owner-cum-Driver' : 'Owner-Paid'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Assigned Vehicle: <span className="font-mono font-semibold text-slate-700">{dLedger.assignedVehicle}</span>
+                    {dLedger.driverType === 'Owner-Paid' && dLedger.vehicleOwner && (
+                      <span> • Car Owner: <span className="font-semibold text-slate-700">{dLedger.vehicleOwner}</span></span>
+                    )}
+                  </p>
                 </div>
               </div>
 
               {/* Driver Financial Summary */}
               <div className="text-right">
-                <span className="text-3xs font-semibold text-slate-500 uppercase">Estimated Net Pay</span>
-                <p className="text-xl font-black text-emerald-700">{formatCurrency(dLedger.netSalary)}</p>
+                <span className="text-3xs font-semibold text-slate-500 uppercase">
+                  {dLedger.driverType === 'Owner-cum-Driver' ? 'Owner Settlement Mode' : 'Direct Agency Payout'}
+                </span>
+                <p className="text-xl font-black text-emerald-700">
+                  {dLedger.driverType === 'Owner-cum-Driver' ? 'Integrated' : formatCurrency(dLedger.tripIncentive - dLedger.advance - dLedger.penalty)}
+                </p>
+                {dLedger.driverType !== 'Owner-cum-Driver' && (
+                  <span className="text-3xs text-slate-400 font-semibold block">Excludes base salary settled by owner</span>
+                )}
               </div>
+            </div>
+
+            {/* Information Memo Block */}
+            <div className="px-6 pt-6">
+              {dLedger.driverType === 'Owner-cum-Driver' ? (
+                <div className="bg-indigo-50/70 border border-indigo-150 rounded-xl p-4 text-xs text-indigo-900 flex items-start gap-3">
+                  <span className="text-base">ℹ️</span>
+                  <div>
+                    <h4 className="font-bold text-indigo-950 uppercase tracking-wider text-2xs mb-0.5">Owner-cum-Driver Settlement</h4>
+                    <p className="leading-relaxed text-indigo-850">
+                      This associate owns and drives their vehicle. They are **not paid a separate driver salary** by the agency. 
+                      All gross contract billings less CNG, toll, and operational expenses are paid directly to them via the 
+                      <strong> Owner Ledger / Statement</strong>. This driver sheet serves as an operational reference log.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-blue-50/70 border border-blue-150 rounded-xl p-4 text-xs text-blue-900 flex items-start gap-3">
+                  <span className="text-base">ℹ️</span>
+                  <div>
+                    <h4 className="font-bold text-blue-950 uppercase tracking-wider text-2xs mb-0.5">Driver Salary Paid by Vehicle Owner</h4>
+                    <p className="leading-relaxed text-blue-850">
+                      The travel agency **does not pay driver salaries**. The vehicle owner 
+                      {dLedger.vehicleOwner ? <strong className="mx-1">({dLedger.vehicleOwner})</strong> : ' of the assigned car'} is 
+                      solely responsible for paying this driver's base salary of <strong>{formatCurrency(dLedger.salary)}</strong> directly. 
+                      The agency only manages trip incentives, penalties, and operational advances.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Driver Ledger breakdown */}
             <div className="p-6">
               <div className="max-w-2xl mx-auto bg-slate-50 p-6 rounded-xl border border-slate-200 space-y-4">
-                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200 pb-2">
-                  Salary Sheet - {selectedMonth || 'Current Cycle'}
+                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200 pb-2 flex justify-between items-center">
+                  <span>Ledger Sheet - {selectedMonth || 'Current Cycle'}</span>
+                  <span className="text-slate-400 text-3xs font-mono font-semibold">REF: {selectedDriver}</span>
                 </h4>
 
                 <div className="space-y-3 text-xs font-medium text-slate-700">
-                  <div className="flex justify-between">
-                    <span>Base Salary (Expected):</span>
-                    <span>{formatCurrency(dLedger.salary)}</span>
+                  <div className="flex justify-between items-center">
+                    <span>Base Salary (Expected from Owner):</span>
+                    <span className="font-semibold text-slate-500">
+                      {dLedger.driverType === 'Owner-cum-Driver' ? 'N/A (Owner Mode)' : formatCurrency(dLedger.salary)}
+                    </span>
                   </div>
+                  
+                  {dLedger.driverType !== 'Owner-cum-Driver' && (
+                    <div className="text-3xs text-slate-400 pl-4 border-l-2 border-slate-200 -mt-2">
+                      Settled directly by Owner ({dLedger.vehicleOwner || 'Unassigned'})
+                    </div>
+                  )}
+
                   <div className="flex justify-between text-emerald-600">
-                    <span>Trip Incentives / Overtime Bonus:</span>
+                    <span>Trip Incentives / Overtime (Paid by Agency):</span>
                     <span>+{formatCurrency(dLedger.tripIncentive)}</span>
                   </div>
                   <div className="flex justify-between text-rose-500">
-                    <span>Salary Advance Deductions:</span>
+                    <span>Salary Advance Deductions (Agency Managed):</span>
                     <span>-{formatCurrency(dLedger.advance)}</span>
                   </div>
                   <div className="flex justify-between text-rose-500">
-                    <span>Penalties / Challans Charged:</span>
+                    <span>Penalties / Challans Charged (Agency Managed):</span>
                     <span>-{formatCurrency(dLedger.penalty)}</span>
                   </div>
 
-                  <div className="border-t border-slate-200 pt-3 flex justify-between text-sm font-bold text-slate-900">
-                    <span>Net Disbursable Salary:</span>
-                    <span className="text-emerald-700">{formatCurrency(dLedger.netSalary)}</span>
+                  <div className="border-t border-slate-200 pt-3 flex justify-between text-sm font-bold text-slate-900 bg-white/50 p-2.5 rounded border border-slate-150">
+                    <span>
+                      {dLedger.driverType === 'Owner-cum-Driver' ? 'Reconciled Owner Balance:' : 'Net Agency Disbursable Balance:'}
+                    </span>
+                    <span className={dLedger.driverType === 'Owner-cum-Driver' ? 'text-indigo-700' : 'text-emerald-700'}>
+                      {dLedger.driverType === 'Owner-cum-Driver'
+                        ? 'See Owner Statement'
+                        : formatCurrency(dLedger.tripIncentive - dLedger.advance - dLedger.penalty)}
+                    </span>
                   </div>
                 </div>
               </div>

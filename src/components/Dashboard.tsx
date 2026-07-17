@@ -147,10 +147,8 @@ export default function Dashboard({ vehicles, expenses, payments, onNavigate }: 
     { id: 'total-expenses', title: 'Total Expenses', value: formatCurrency(totalExpenses), icon: TrendingUp, bg: 'bg-rose-50 text-rose-600 border-rose-200', nav: 'Expense Entry' },
     { id: 'net-profit', title: 'Net Profit', value: formatCurrency(netProfit), icon: ShieldCheck, bg: 'bg-emerald-50 text-emerald-700 border-emerald-200', nav: 'Profit & Loss' },
     { id: 'owner-pending', title: 'Pending Owner Pay', value: formatCurrency(pendingOwnerPayments), icon: Users, bg: 'bg-violet-50 text-violet-700 border-violet-100', nav: 'Owner Ledger' },
-    { id: 'driver-pending', title: 'Pending Driver Sal', value: formatCurrency(pendingDriverSalary), icon: CreditCard, bg: 'bg-indigo-50 text-indigo-700 border-indigo-100', nav: 'Driver Ledger' },
     { id: 'cng-cost', title: 'Total CNG Expense', value: formatCurrency(cngExpense), icon: Gauge, bg: 'bg-cyan-50 text-cyan-600 border-cyan-100', nav: 'Expense Entry' },
     { id: 'total-emi', title: 'Total EMI Cost', value: formatCurrency(emiExpense), icon: AlertCircle, bg: 'bg-teal-50 text-teal-600 border-teal-100', nav: 'Expense Entry' },
-    { id: 'service-cost', title: 'Total Service Cost', value: formatCurrency(serviceExpense), icon: Wrench, bg: 'bg-orange-50 text-orange-600 border-orange-100', nav: 'Expense Entry' },
   ];
 
   const quickNavs = [

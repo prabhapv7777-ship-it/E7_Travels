@@ -253,7 +253,7 @@ export default function SettlementViews({
     ].filter(Boolean))
   ).sort().reverse();
 
-  const distinctCompanies = Array.from(new Set(vehicles.map((v) => v.company))).filter(Boolean);
+  const distinctCompanies = Array.from(new Set(vehicles.flatMap((v) => [v.company, v.company2].filter(Boolean)))).filter(Boolean);
 
   // ================= 1. MONTHLY SETTLEMENT CALCULATIONS =================
   const getMonthlySettlementData = () => {
@@ -265,12 +265,13 @@ export default function SettlementViews({
       const billing = payments
         .filter((p) => {
           if (p.vehicleNumber !== v.registrationNumber) return false;
+          const normalizedDate = toInputDateFormat(p.paymentDate);
           if (isDateSelected) {
-            return toInputDateFormat(p.paymentDate) === selectedMonth;
+            return normalizedDate === selectedMonth;
           } else if (isYearSelected) {
-            return p.month.startsWith(selectedMonth);
+            return normalizedDate.startsWith(selectedMonth);
           } else {
-            return p.month === selectedMonth;
+            return normalizedDate.substring(0, 7) === selectedMonth || p.month === selectedMonth;
           }
         })
         .reduce((sum, p) => sum + p.amountReceived, 0);
@@ -278,12 +279,13 @@ export default function SettlementViews({
       // Category deductions
       const vehicleExpenses = expenses.filter((e) => {
         if (e.vehicleNumber !== v.registrationNumber) return false;
+        const normalizedDate = toInputDateFormat(e.date);
         if (isDateSelected) {
-          return toInputDateFormat(e.date) === selectedMonth;
+          return normalizedDate === selectedMonth;
         } else if (isYearSelected) {
-          return e.month.startsWith(selectedMonth);
+          return normalizedDate.startsWith(selectedMonth);
         } else {
-          return e.month === selectedMonth;
+          return normalizedDate.substring(0, 7) === selectedMonth || e.month === selectedMonth;
         }
       });
 
@@ -291,13 +293,13 @@ export default function SettlementViews({
       const fuel = vehicleExpenses.filter((e) => e.expenseType === 'Fuel').reduce((sum, e) => sum + e.amount, 0);
       const emi = vehicleExpenses.filter((e) => e.expenseType === 'EMI').reduce((sum, e) => sum + e.amount, 0);
       const fastag = vehicleExpenses.filter((e) => e.expenseType === 'FASTag').reduce((sum, e) => sum + e.amount, 0);
-      const advance = vehicleExpenses.filter((e) => e.expenseType === 'Advance' || e.expenseType === 'Driver Advance').reduce((sum, e) => sum + e.amount, 0);
+      const advance = vehicleExpenses.filter((e) => e.expenseType === 'Advance' || e.expenseType === 'Driver Advance' || e.expenseType === 'Deduct').reduce((sum, e) => sum + e.amount, 0);
       const repair = vehicleExpenses.filter((e) => e.expenseType === 'Repair').reduce((sum, e) => sum + e.amount, 0);
       const service = vehicleExpenses.filter((e) => e.expenseType === 'Service').reduce((sum, e) => sum + e.amount, 0);
       const penalty = vehicleExpenses.filter((e) => e.expenseType === 'Penalty').reduce((sum, e) => sum + e.amount, 0);
       
       const other = vehicleExpenses
-        .filter((e) => !['CNG', 'Fuel', 'EMI', 'FASTag', 'Advance', 'Driver Advance', 'Repair', 'Service', 'Penalty'].includes(e.expenseType))
+        .filter((e) => !['CNG', 'Fuel', 'EMI', 'FASTag', 'Advance', 'Driver Advance', 'Deduct', 'Repair', 'Service', 'Penalty'].includes(e.expenseType))
         .reduce((sum, e) => sum + e.amount, 0);
 
       const totalDeductions = cng + fuel + emi + fastag + advance + repair + service + penalty + other;
@@ -337,34 +339,38 @@ export default function SettlementViews({
     const ownerBilling = payments
       .filter((p) => {
         if (!vehicleRegs.includes(p.vehicleNumber)) return false;
+        const normalizedDate = toInputDateFormat(p.paymentDate);
         if (isDateSelected) {
-          return toInputDateFormat(p.paymentDate) === selectedMonth;
+          return normalizedDate === selectedMonth;
         } else if (isYearSelected) {
-          return p.month.startsWith(selectedMonth);
+          return normalizedDate.startsWith(selectedMonth);
         } else {
-          return p.month === selectedMonth;
+          return normalizedDate.substring(0, 7) === selectedMonth || p.month === selectedMonth;
         }
       })
       .reduce((sum, p) => sum + p.amountReceived, 0);
 
     const ownerExpenses = expenses.filter((e) => {
       if (!vehicleRegs.includes(e.vehicleNumber)) return false;
+      const normalizedDate = toInputDateFormat(e.date);
       if (isDateSelected) {
-        return toInputDateFormat(e.date) === selectedMonth;
+        return normalizedDate === selectedMonth;
       } else if (isYearSelected) {
-        return e.month.startsWith(selectedMonth);
+        return normalizedDate.startsWith(selectedMonth);
       } else {
-        return e.month === selectedMonth;
+        return normalizedDate.substring(0, 7) === selectedMonth || e.month === selectedMonth;
       }
     });
 
     const cng = ownerExpenses.filter((e) => e.expenseType === 'CNG').reduce((sum, e) => sum + e.amount, 0);
     const emi = ownerExpenses.filter((e) => e.expenseType === 'EMI').reduce((sum, e) => sum + e.amount, 0);
     const fastag = ownerExpenses.filter((e) => e.expenseType === 'FASTag').reduce((sum, e) => sum + e.amount, 0);
-    const advance = ownerExpenses.filter((e) => e.expenseType === 'Advance' || e.expenseType === 'Driver Advance').reduce((sum, e) => sum + e.amount, 0);
+    const advance = ownerExpenses.filter((e) => e.expenseType === 'Advance' || e.expenseType === 'Driver Advance' || e.expenseType === 'Deduct').reduce((sum, e) => sum + e.amount, 0);
     const repair = ownerExpenses.filter((e) => e.expenseType === 'Repair').reduce((sum, e) => sum + e.amount, 0);
     const service = ownerExpenses.filter((e) => e.expenseType === 'Service').reduce((sum, e) => sum + e.amount, 0);
     const penalty = ownerExpenses.filter((e) => e.expenseType === 'Penalty').reduce((sum, e) => sum + e.amount, 0);
+
+    const advanceExpenses = ownerExpenses.filter((e) => e.expenseType === 'Advance' || e.expenseType === 'Driver Advance' || e.expenseType === 'Deduct');
 
     const totalDeductions = cng + emi + fastag + advance + repair + service + penalty;
     const netPayable = Math.max(0, ownerBilling - totalDeductions);
@@ -374,6 +380,7 @@ export default function SettlementViews({
       vehicles: ownerVehicles,
       billing: ownerBilling,
       deductions: { cng, emi, fastag, advance, repair, service, penalty },
+      advanceExpenses,
       totalDeductions,
       netPayable,
     };
@@ -394,18 +401,19 @@ export default function SettlementViews({
       const matchVeh = regNum ? e.vehicleNumber === regNum : true;
       if (!matchVeh) return false;
       if (!selectedMonth) return true;
+      const normalizedDate = toInputDateFormat(e.date);
       if (isDateSelected) {
-        return toInputDateFormat(e.date) === selectedMonth;
+        return normalizedDate === selectedMonth;
       } else if (isYearSelected) {
-        return e.month.startsWith(selectedMonth);
+        return normalizedDate.startsWith(selectedMonth);
       } else {
-        return e.month === selectedMonth;
+        return normalizedDate.substring(0, 7) === selectedMonth || e.month === selectedMonth;
       }
     });
 
     const baseSalary = driverExpenses.filter((e) => e.expenseType === 'Driver Salary').reduce((sum, e) => sum + e.amount, 0) || driver.salary;
     const incentive = driverExpenses.filter((e) => e.expenseType === 'Advance' && e.remarks.toLowerCase().includes('incentive')).reduce((sum, e) => sum + e.amount, 0) || 3000;
-    const advance = driverExpenses.filter((e) => e.expenseType === 'Driver Advance').reduce((sum, e) => sum + e.amount, 0);
+    const advance = driverExpenses.filter((e) => e.expenseType === 'Driver Advance' || e.expenseType === 'Deduct' || e.expenseType === 'Advance').reduce((sum, e) => sum + e.amount, 0);
     const penalty = driverExpenses.filter((e) => e.expenseType === 'Penalty').reduce((sum, e) => sum + e.amount, 0);
 
     const netSalary = baseSalary + incentive - advance - penalty;
@@ -423,7 +431,7 @@ export default function SettlementViews({
 
   // ================= 4. INVOICE GENERATION DATA =================
   const getInvoiceData = () => {
-    const matchingVehicles = vehicles.filter((v) => v.company === selectedCompany);
+    const matchingVehicles = vehicles.filter((v) => v.company === selectedCompany || v.company2 === selectedCompany);
     const vehicleRegs = matchingVehicles.map((v) => v.registrationNumber);
 
     const isYearSelected = selectedMonth.length === 4;
@@ -431,23 +439,43 @@ export default function SettlementViews({
 
     const matchingPayments = payments.filter((p) => {
       if (!vehicleRegs.includes(p.vehicleNumber)) return false;
+      const normalizedDate = toInputDateFormat(p.paymentDate);
       if (isDateSelected) {
-        return toInputDateFormat(p.paymentDate) === selectedMonth;
+        return normalizedDate === selectedMonth;
       } else if (isYearSelected) {
-        return p.month.startsWith(selectedMonth);
+        return normalizedDate.startsWith(selectedMonth);
       } else {
-        return p.month === selectedMonth;
+        return normalizedDate.substring(0, 7) === selectedMonth || p.month === selectedMonth;
       }
     });
 
+    const matchingExpenses = expenses.filter((e) => {
+      if (!vehicleRegs.includes(e.vehicleNumber)) return false;
+      const normalizedDate = toInputDateFormat(e.date);
+      if (isDateSelected) {
+        return normalizedDate === selectedMonth;
+      } else if (isYearSelected) {
+        return normalizedDate.startsWith(selectedMonth);
+      } else {
+        return normalizedDate.substring(0, 7) === selectedMonth || e.month === selectedMonth;
+      }
+    });
+
+    const advanceExpenses = matchingExpenses.filter(
+      (e) => e.expenseType === 'Advance' || e.expenseType === 'Driver Advance' || e.expenseType === 'Deduct'
+    );
+    const totalAdvances = advanceExpenses.reduce((sum, e) => sum + e.amount, 0);
+
     const subtotal = matchingPayments.reduce((sum, p) => sum + p.amountReceived, 0);
     const tax = subtotal * 0.05; // 5% Service Tax / GST
-    const total = subtotal + tax;
+    const total = subtotal + tax - totalAdvances;
 
     return {
       companyName: selectedCompany,
       vehiclesCount: matchingVehicles.length,
       items: matchingPayments,
+      advanceExpenses,
+      totalAdvances,
       subtotal,
       tax,
       total,
@@ -706,7 +734,7 @@ export default function SettlementViews({
             </div>
 
             {/* Reconciliation table */}
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto scrollbar-visible">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-3xs font-bold text-slate-600 uppercase tracking-wider">
@@ -840,6 +868,49 @@ export default function SettlementViews({
               </div>
             </div>
 
+            {/* Advance Category Transaction Log */}
+            {ownerStmt.advanceExpenses && ownerStmt.advanceExpenses.length > 0 && (
+              <div className="space-y-3 mt-6">
+                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider border-b border-slate-200 pb-1.5">
+                  Advance Category Detailed Transaction Log
+                </h4>
+                <div className="overflow-x-auto border border-slate-150 rounded-lg">
+                  <table className="w-full text-left border-collapse text-[10px] font-semibold text-slate-700">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50 font-bold text-slate-600">
+                        <th className="py-2 px-3">Date</th>
+                        <th className="py-2 px-3">Vehicle</th>
+                        <th className="py-2 px-3">Type</th>
+                        <th className="py-2 px-3">Remarks / Description</th>
+                        <th className="py-2 px-3 text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {ownerStmt.advanceExpenses.map((adv) => (
+                        <tr key={adv.id} className="hover:bg-slate-50/20">
+                          <td className="py-2 px-3">{formatDate(adv.date)}</td>
+                          <td className="py-2 px-3 font-mono text-slate-900">{adv.vehicleNumber}</td>
+                          <td className="py-2 px-3">
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200/55">
+                              {adv.expenseType}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 text-slate-500 italic font-medium">{adv.remarks || '-'}</td>
+                          <td className="py-2 px-3 text-right text-rose-600 font-bold">{formatCurrency(adv.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-slate-50/50 font-bold border-t border-slate-200 text-slate-800">
+                        <td colSpan={4} className="py-2 px-3 text-right">Total Detailed Advances:</td>
+                        <td className="py-2 px-3 text-right text-rose-600 font-bold">{formatCurrency(ownerStmt.deductions.advance)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {/* Footer / Signature Area */}
             <div className="grid grid-cols-2 pt-16 gap-6 text-center text-xs font-semibold text-slate-500">
               <div className="space-y-10">
@@ -883,11 +954,23 @@ export default function SettlementViews({
                 <h3 className="text-md font-bold text-slate-800">{driverStmt.driver.name}</h3>
                 <p className="text-xs text-slate-600">ID: {driverStmt.driver.id} | Phone: {driverStmt.driver.phone}</p>
                 <p className="text-xs text-slate-500 font-mono">Licence: {driverStmt.driver.licenceNumber}</p>
+                <div className="mt-1">
+                  <span className={`px-2 py-0.5 text-3xs font-extrabold rounded border ${
+                    driverStmt.driver.driverType === 'Owner-cum-Driver'
+                      ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                      : 'bg-slate-50 border-slate-200 text-slate-700'
+                  }`}>
+                    {driverStmt.driver.driverType === 'Owner-cum-Driver' ? 'Owner-cum-Driver' : 'Owner-Paid'}
+                  </span>
+                </div>
               </div>
               <div className="text-right">
                 <span className="text-3xs font-semibold text-slate-400 uppercase">Operational Assignment:</span>
                 <p className="text-xs font-bold text-slate-700">Vehicle: {driverStmt.vehicle ? driverStmt.vehicle.registrationNumber : 'Spare'}</p>
                 <p className="text-xs text-slate-600">Model: {driverStmt.vehicle ? `${driverStmt.vehicle.manufacturer} ${driverStmt.vehicle.model}` : '-'}</p>
+                {driverStmt.vehicle && (
+                  <p className="text-xs text-slate-500 font-medium">Car Owner: {driverStmt.vehicle.ownerName}</p>
+                )}
               </div>
             </div>
 
@@ -896,26 +979,45 @@ export default function SettlementViews({
               <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider border-b border-slate-200 pb-1.5">Salary Component Reconcile</h4>
               <div className="space-y-2 text-xs font-medium text-slate-700">
                 <div className="flex justify-between">
-                  <span>Base Fixed Salary:</span>
-                  <span>{formatCurrency(driverStmt.baseSalary)}</span>
+                  <span>Base Fixed Salary {driverStmt.driver.driverType !== 'Owner-cum-Driver' ? '(Settled directly by Owner)' : '(Integrated)'}:</span>
+                  <span className={driverStmt.driver.driverType === 'Owner-cum-Driver' ? 'text-slate-400 font-normal italic' : 'font-semibold text-slate-500'}>
+                    {driverStmt.driver.driverType === 'Owner-cum-Driver' ? 'N/A' : formatCurrency(driverStmt.baseSalary)}
+                  </span>
                 </div>
                 <div className="flex justify-between text-emerald-600">
-                  <span>Trip / Route Incentives & Allowances:</span>
+                  <span>Trip / Route Incentives & Allowances (Agency Paid):</span>
                   <span>+{formatCurrency(driverStmt.incentive)}</span>
                 </div>
                 <div className="flex justify-between text-rose-500">
-                  <span>Salary Advance Deductions:</span>
+                  <span>Salary Advance Deductions (Agency Managed):</span>
                   <span>-{formatCurrency(driverStmt.advance)}</span>
                 </div>
                 <div className="flex justify-between text-rose-500">
-                  <span>Traffic Penalties / Challans Charged:</span>
+                  <span>Traffic Penalties / Challans Charged (Agency Managed):</span>
                   <span>-{formatCurrency(driverStmt.penalty)}</span>
                 </div>
 
                 <div className="border-t-2 border-slate-300 pt-3 flex justify-between text-sm font-black text-slate-900 bg-slate-50 p-3 rounded">
-                  <span>NET DISBURSABLE SALARY:</span>
-                  <span className="text-emerald-700">{formatCurrency(driverStmt.netSalary)}</span>
+                  <span>
+                    {driverStmt.driver.driverType === 'Owner-cum-Driver' ? 'RECONCILED IN OWNER BALANCE:' : 'NET AGENCY DISBURSABLE SALARY:'}
+                  </span>
+                  <span className={driverStmt.driver.driverType === 'Owner-cum-Driver' ? 'text-indigo-700' : 'text-emerald-700'}>
+                    {driverStmt.driver.driverType === 'Owner-cum-Driver' 
+                      ? 'Reconciled in Owner Statement' 
+                      : formatCurrency(driverStmt.incentive - driverStmt.advance - driverStmt.penalty)}
+                  </span>
                 </div>
+                
+                {driverStmt.driver.driverType !== 'Owner-cum-Driver' && (
+                  <p className="text-[10px] text-slate-500 italic mt-2 border-t border-dashed border-slate-200 pt-2 leading-relaxed">
+                    * Note: This statement excludes the base salary of {formatCurrency(driverStmt.baseSalary)} which is settled directly by the vehicle owner ({driverStmt.vehicle ? driverStmt.vehicle.ownerName : 'N/A'}).
+                  </p>
+                )}
+                {driverStmt.driver.driverType === 'Owner-cum-Driver' && (
+                  <p className="text-[10px] text-slate-500 italic mt-2 border-t border-dashed border-slate-200 pt-2 leading-relaxed">
+                    * Note: As an Owner-cum-Driver, all vehicle contract earnings less operational and fuel costs are settled directly within the vehicle owner's commercial payout ledger.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -993,6 +1095,49 @@ export default function SettlementViews({
               </tbody>
             </table>
 
+            {/* Advance Category Transaction Log */}
+            {invoice.advanceExpenses && invoice.advanceExpenses.length > 0 && (
+              <div className="space-y-3 mt-6">
+                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider border-b border-slate-200 pb-1.5">
+                  Advance Category Detailed Transaction Log (To Be Adjusted)
+                </h4>
+                <div className="overflow-x-auto border border-slate-150 rounded-lg">
+                  <table className="w-full text-left border-collapse text-[10px] font-semibold text-slate-700">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50 font-bold text-slate-600">
+                        <th className="py-2 px-3">Date</th>
+                        <th className="py-2 px-3">Vehicle Number</th>
+                        <th className="py-2 px-3">Advance Type</th>
+                        <th className="py-2 px-3">Remarks / Reference</th>
+                        <th className="py-2 px-3 text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {invoice.advanceExpenses.map((adv) => (
+                        <tr key={adv.id} className="hover:bg-slate-50/20">
+                          <td className="py-2 px-3">{formatDate(adv.date)}</td>
+                          <td className="py-2 px-3 font-mono text-slate-900">{adv.vehicleNumber}</td>
+                          <td className="py-2 px-3">
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200/55">
+                              {adv.expenseType}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 text-slate-500 italic font-medium">{adv.remarks || '-'}</td>
+                          <td className="py-2 px-3 text-right text-rose-600 font-bold">{formatCurrency(adv.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-slate-50/50 font-bold border-t border-slate-200 text-slate-800">
+                        <td colSpan={4} className="py-2 px-3 text-right">Total Adjusted Advances:</td>
+                        <td className="py-2 px-3 text-right text-rose-600 font-bold">{formatCurrency(invoice.totalAdvances)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {/* Subtotals & Totals */}
             <div className="border-t border-slate-200 pt-4 flex flex-col items-end gap-2 text-xs font-semibold text-slate-700">
               <div className="flex justify-between w-64">
@@ -1003,6 +1148,12 @@ export default function SettlementViews({
                 <span>GST Service Tax (5%):</span>
                 <span>+{formatCurrency(invoice.tax)}</span>
               </div>
+              {invoice.totalAdvances > 0 && (
+                <div className="flex justify-between w-64 text-rose-500 font-bold">
+                  <span>Advance Deductions:</span>
+                  <span>-{formatCurrency(invoice.totalAdvances)}</span>
+                </div>
+              )}
               <div className="flex justify-between w-64 border-t-2 border-slate-300 pt-2 text-sm font-black text-slate-900 bg-blue-50/50 p-2 rounded">
                 <span>CONSOLIDATED TOTAL DUE:</span>
                 <span className="text-blue-800">{formatCurrency(invoice.total)}</span>

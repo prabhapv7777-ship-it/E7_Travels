@@ -18,6 +18,8 @@ export interface Vehicle {
   driverName: string;
   company: string;
   site: string;
+  company2?: string;
+  site2?: string;
   joiningDate: string;
   status: 'Active' | 'Inactive';
   emiAmount: number;
@@ -28,6 +30,8 @@ export interface Vehicle {
   pollutionExpiry: string; // YYYY-MM-DD
   fastagNumber: string;
   remarks: string;
+  paymentCycle?: 'Monthly' | 'Weekly';
+  comments?: Array<{ date: string; text: string; author: string }>;
 }
 
 export interface Owner {
@@ -43,6 +47,7 @@ export interface Owner {
   pan: string;
   aadhaar: string;
   remarks: string;
+  comments?: Array<{ date: string; text: string; author: string }>;
 }
 
 export interface Driver {
@@ -60,6 +65,8 @@ export interface Driver {
   salary: number;
   joiningDate: string;
   status: 'Active' | 'Inactive';
+  driverType?: 'Owner-Paid' | 'Owner-cum-Driver';
+  comments?: Array<{ date: string; text: string; author: string }>;
 }
 
 export interface Company {
@@ -70,6 +77,9 @@ export interface Company {
   phone: string;
   email: string;
   address: string;
+  vendorName?: string;
+  companySite?: string;
+  comments?: Array<{ date: string; text: string; author: string }>;
 }
 
 export interface Site {
@@ -80,6 +90,7 @@ export interface Site {
   contactPerson: string;
   phone: string;
   remarks: string;
+  comments?: Array<{ date: string; text: string; author: string }>;
 }
 
 export interface CompanyPayment {
@@ -109,6 +120,7 @@ export type ExpenseType =
   | 'EMI'
   | 'FASTag'
   | 'Advance'
+  | 'Deduct'
   | 'Service'
   | 'Repair'
   | 'Tyre'
@@ -128,6 +140,7 @@ export const EXPENSE_TYPES: ExpenseType[] = [
   'EMI',
   'FASTag',
   'Advance',
+  'Deduct',
   'Service',
   'Repair',
   'Tyre',
@@ -172,6 +185,33 @@ export interface Enquiry {
   enquiryDate: string; // YYYY-MM-DD
   status: 'New' | 'Interested' | 'Site Offered' | 'Closed';
   remarks: string;
+  comments?: Array<{ date: string; text: string; author: string }>;
+
+  // ENHANCED VEHICLE JOINING FORM EXTRA FIELDS (for printing & full profile creation)
+  inductionType?: 'OwnerAttach' | 'DriverAttach';
+  ownerId?: string;
+  ownerName?: string;
+  ownerMobile?: string;
+  mfdYear?: string;
+  fuelType?: string;
+  rcExpiry?: string;
+  insuranceExpiry?: string;
+  permitExpiry?: string;
+  fcExpiry?: string;
+  driverAltPhone?: string;
+  driverEmail?: string;
+  driverAadhaar?: string;
+  driverDlNumber?: string;
+  driverDlExpiry?: string;
+  driverAddress?: string;
+  gpsVendor?: string;
+  gpsImei?: string;
+  bankName?: string;
+  bankAccountHolder?: string;
+  bankAccountNumber?: string;
+  bankIfsc?: string;
+  sitePreference3?: string;
+  sitePreference4?: string;
 }
 
 export const ENQUIRY_STATUSES = ['New', 'Interested', 'Site Offered', 'Closed'] as const;
