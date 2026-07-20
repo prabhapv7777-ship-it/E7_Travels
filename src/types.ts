@@ -183,7 +183,7 @@ export interface Enquiry {
   sitePreference2: string;       // SITE PREFERENCE 2
 
   enquiryDate: string; // YYYY-MM-DD
-  status: 'New' | 'Interested' | 'Site Offered' | 'Closed';
+  status: 'New' | 'Interested' | 'Site Offered' | 'Induction' | 'Closed';
   remarks: string;
   comments?: Array<{ date: string; text: string; author: string }>;
 
@@ -212,6 +212,15 @@ export interface Enquiry {
   bankIfsc?: string;
   sitePreference3?: string;
   sitePreference4?: string;
+
+  // Induction Flow Step Fields
+  inductionCompany?: string;
+  inductionDate?: string;
+  inductionCompleted?: boolean;
+  gpsRequired?: 'Yes' | 'No';
+  gpsFittingDate?: string;
+  routeActivated?: boolean;
+  routeStartDate?: string;
 }
 
-export const ENQUIRY_STATUSES = ['New', 'Interested', 'Site Offered', 'Closed'] as const;
+export const ENQUIRY_STATUSES = ['New', 'Interested', 'Site Offered', 'Induction', 'Closed'] as const;

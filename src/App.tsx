@@ -8,7 +8,15 @@ import {
   googleSignIn,
   logout,
   getAccessToken,
+  auth,
 } from './lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import {
+  saveStateToFirestore,
+  loadStateFromFirestore,
+  saveAllStateToFirestore,
+  mergeArraysById,
+} from './lib/firestoreService';
 import {
   createFleetSpreadsheet,
   loadFromSpreadsheet,
@@ -53,6 +61,11 @@ import {
   AlertCircle,
   ExternalLink,
   X,
+  Layers,
+  Cloud,
+  UploadCloud,
+  DownloadCloud,
+  CheckCircle2,
 } from 'lucide-react';
 
 // Sub Components
@@ -65,6 +78,7 @@ import Reports from './components/Reports';
 import VbaExport from './components/VbaExport';
 import Settings from './components/Settings';
 import EnquiryViews from './components/EnquiryViews';
+import InductionViews from './components/InductionViews';
 import AdminLogin from './components/AdminLogin';
 import RulesView from './components/RulesView';
 
@@ -82,6 +96,9 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [lastSynced, setLastSynced] = useState<string | null>(null);
   const [authError, setAuthError] = useState<{ code: string; message: string } | null>(null);
+  const [isFirestoreLoaded, setIsFirestoreLoaded] = useState(false);
+  const [showCloudSyncPanel, setShowCloudSyncPanel] = useState(false);
+  const [cloudStatusMsg, setCloudStatusMsg] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
 
   // Core ERP Master State
   const [vehicles, setVehicles] = useState<Vehicle[]>(() => {
@@ -181,34 +198,274 @@ export default function App() {
     return SAMPLE_ENQUIRIES;
   });
 
-  // Automatically save to localStorage whenever state changes
+  // Tracks whether the initial sync has been performed for the current login session
+  const [hasSyncedForSession, setHasSyncedForSession] = useState(false);
+
+  // Automatically manage authentication state & Firestore sync lifecycle
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        setUser({
+          email: firebaseUser.email,
+          displayName: firebaseUser.displayName,
+        });
+
+        // Trigger automatic Smart Merge only once per user sign-in session
+        if (!hasSyncedForSession) {
+          try {
+            setCloudStatusMsg('syncing');
+            const cloud = await loadStateFromFirestore();
+            
+            // Smart merge local storage / memory data with cloud Firestore data so no data is lost
+            // We use functional updates to get the most fresh local state securely
+            setVehicles((currentVehicles) => {
+              const merged = mergeArraysById(currentVehicles, cloud.vehicles || []);
+              saveStateToFirestore('vehicles', merged).catch((err) => console.error('Auto-sync vehicles failed:', err));
+              return merged;
+            });
+            setOwners((currentOwners) => {
+              const merged = mergeArraysById(currentOwners, cloud.owners || []);
+              saveStateToFirestore('owners', merged).catch((err) => console.error('Auto-sync owners failed:', err));
+              return merged;
+            });
+            setDrivers((currentDrivers) => {
+              const merged = mergeArraysById(currentDrivers, cloud.drivers || []);
+              saveStateToFirestore('drivers', merged).catch((err) => console.error('Auto-sync drivers failed:', err));
+              return merged;
+            });
+            setCompanies((currentCompanies) => {
+              const merged = mergeArraysById(currentCompanies, cloud.companies || [], ['name', 'id']);
+              saveStateToFirestore('companies', merged).catch((err) => console.error('Auto-sync companies failed:', err));
+              return merged;
+            });
+            setSites((currentSites) => {
+              const merged = mergeArraysById(currentSites, cloud.sites || []);
+              saveStateToFirestore('sites', merged).catch((err) => console.error('Auto-sync sites failed:', err));
+              return merged;
+            });
+            setPayments((currentPayments) => {
+              const merged = mergeArraysById(currentPayments, cloud.payments || []);
+              saveStateToFirestore('payments', merged).catch((err) => console.error('Auto-sync payments failed:', err));
+              return merged;
+            });
+            setExpenses((currentExpenses) => {
+              const merged = mergeArraysById(currentExpenses, cloud.expenses || []);
+              saveStateToFirestore('expenses', merged).catch((err) => console.error('Auto-sync expenses failed:', err));
+              return merged;
+            });
+            setEnquiries((currentEnquiries) => {
+              const merged = mergeArraysById(currentEnquiries, cloud.enquiries || []);
+              saveStateToFirestore('enquiries', merged).catch((err) => console.error('Auto-sync enquiries failed:', err));
+              return merged;
+            });
+
+            setIsFirestoreLoaded(true);
+            setCloudStatusMsg('success');
+            setHasSyncedForSession(true);
+            console.log('Successfully loaded and smart-merged local state with Firestore cloud database.');
+          } catch (err) {
+            console.error('Error syncing with Firestore cloud on active session:', err);
+            setCloudStatusMsg('error');
+            setIsFirestoreLoaded(true); // Fallback to local sandbox to allow standard app operations
+          }
+        }
+      } else {
+        setUser(null);
+        setIsFirestoreLoaded(false);
+        setHasSyncedForSession(false);
+        setCloudStatusMsg('idle');
+      }
+    });
+
+    return () => unsubscribe();
+  }, [hasSyncedForSession]);
+
+  // Automatically save to localStorage and Firestore cloud whenever state changes
   useEffect(() => {
     localStorage.setItem('e7_travels_vehicles', JSON.stringify(vehicles));
-  }, [vehicles]);
+    if (isFirestoreLoaded) {
+      saveStateToFirestore('vehicles', vehicles).catch((err) => {
+        console.warn('Auto-save vehicles failed (silent):', err);
+      });
+    }
+  }, [vehicles, isFirestoreLoaded]);
 
   useEffect(() => {
     localStorage.setItem('e7_travels_owners', JSON.stringify(owners));
-  }, [owners]);
+    if (isFirestoreLoaded) {
+      saveStateToFirestore('owners', owners).catch((err) => {
+        console.warn('Auto-save owners failed (silent):', err);
+      });
+    }
+  }, [owners, isFirestoreLoaded]);
 
   useEffect(() => {
     localStorage.setItem('e7_travels_drivers', JSON.stringify(drivers));
-  }, [drivers]);
+    if (isFirestoreLoaded) {
+      saveStateToFirestore('drivers', drivers).catch((err) => {
+        console.warn('Auto-save drivers failed (silent):', err);
+      });
+    }
+  }, [drivers, isFirestoreLoaded]);
 
   useEffect(() => {
     localStorage.setItem('e7_travels_companies', JSON.stringify(companies));
-  }, [companies]);
+    if (isFirestoreLoaded) {
+      saveStateToFirestore('companies', companies).catch((err) => {
+        console.warn('Auto-save companies failed (silent):', err);
+      });
+    }
+  }, [companies, isFirestoreLoaded]);
 
   useEffect(() => {
     localStorage.setItem('e7_travels_sites', JSON.stringify(sites));
-  }, [sites]);
+    if (isFirestoreLoaded) {
+      saveStateToFirestore('sites', sites).catch((err) => {
+        console.warn('Auto-save sites failed (silent):', err);
+      });
+    }
+  }, [sites, isFirestoreLoaded]);
 
   useEffect(() => {
     localStorage.setItem('e7_travels_payments', JSON.stringify(payments));
-  }, [payments]);
+    if (isFirestoreLoaded) {
+      saveStateToFirestore('payments', payments).catch((err) => {
+        console.warn('Auto-save payments failed (silent):', err);
+      });
+    }
+  }, [payments, isFirestoreLoaded]);
 
   useEffect(() => {
     localStorage.setItem('e7_travels_expenses', JSON.stringify(expenses));
-  }, [expenses]);
+    if (isFirestoreLoaded) {
+      saveStateToFirestore('expenses', expenses).catch((err) => {
+        console.warn('Auto-save expenses failed (silent):', err);
+      });
+    }
+  }, [expenses, isFirestoreLoaded]);
+
+  useEffect(() => {
+    localStorage.setItem('e7_travels_enquiries', JSON.stringify(enquiries));
+    if (isFirestoreLoaded) {
+      saveStateToFirestore('enquiries', enquiries).catch((err) => {
+        console.warn('Auto-save enquiries failed (silent):', err);
+      });
+    }
+  }, [enquiries, isFirestoreLoaded]);
+
+  // Floating Toast notification state & auto-dismissal
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+  };
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => {
+        setToast(null);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  // Manual sync triggers for Cloud Database
+  const handleForceUploadToCloud = async () => {
+    if (!user) {
+      showToast('🔒 Please sign in with Google Sync first to upload data!', 'error');
+      return;
+    }
+    try {
+      setCloudStatusMsg('syncing');
+      await saveStateToFirestore('vehicles', vehicles);
+      await saveStateToFirestore('owners', owners);
+      await saveStateToFirestore('drivers', drivers);
+      await saveStateToFirestore('companies', companies);
+      await saveStateToFirestore('sites', sites);
+      await saveStateToFirestore('payments', payments);
+      await saveStateToFirestore('expenses', expenses);
+      await saveStateToFirestore('enquiries', enquiries);
+      setCloudStatusMsg('success');
+      showToast('🚀 URL Cloud Database updated successfully with your current data!', 'success');
+    } catch (err) {
+      console.error('Error uploading state to Firestore:', err);
+      setCloudStatusMsg('error');
+      showToast('❌ Failed to upload data to cloud.', 'error');
+    }
+  };
+
+  const handleForceDownloadFromCloud = async () => {
+    if (!user) {
+      showToast('🔒 Please sign in with Google Sync first to load cloud data!', 'error');
+      return;
+    }
+    try {
+      setCloudStatusMsg('syncing');
+      const cloud = await loadStateFromFirestore();
+      
+      if (cloud.vehicles) setVehicles(cloud.vehicles);
+      if (cloud.owners) setOwners(cloud.owners);
+      if (cloud.drivers) setDrivers(cloud.drivers);
+      if (cloud.companies) setCompanies(cloud.companies);
+      if (cloud.sites) setSites(cloud.sites);
+      if (cloud.payments) setPayments(cloud.payments);
+      if (cloud.expenses) setExpenses(cloud.expenses);
+      if (cloud.enquiries) setEnquiries(cloud.enquiries);
+      
+      setCloudStatusMsg('success');
+      showToast('📥 Loaded master data from URL Cloud Database successfully!', 'success');
+    } catch (err) {
+      console.error('Error downloading state from Firestore:', err);
+      setCloudStatusMsg('error');
+      showToast('❌ Failed to load data from cloud.', 'error');
+    }
+  };
+
+  const handleManualSmartMerge = async () => {
+    if (!user) {
+      showToast('🔒 Please sign in with Google Sync first to complete a Smart Merge!', 'error');
+      return;
+    }
+    try {
+      setCloudStatusMsg('syncing');
+      const cloud = await loadStateFromFirestore();
+      
+      const mergedVehicles = mergeArraysById(vehicles, cloud.vehicles || []);
+      const mergedOwners = mergeArraysById(owners, cloud.owners || []);
+      const mergedDrivers = mergeArraysById(drivers, cloud.drivers || []);
+      const mergedCompanies = mergeArraysById(companies, cloud.companies || [], ['name', 'id']);
+      const mergedSites = mergeArraysById(sites, cloud.sites || []);
+      const mergedPayments = mergeArraysById(payments, cloud.payments || []);
+      const mergedExpenses = mergeArraysById(expenses, cloud.expenses || []);
+      const mergedEnquiries = mergeArraysById(enquiries, cloud.enquiries || []);
+
+      setVehicles(mergedVehicles);
+      setOwners(mergedOwners);
+      setDrivers(mergedDrivers);
+      setCompanies(mergedCompanies);
+      setSites(mergedSites);
+      setPayments(mergedPayments);
+      setExpenses(mergedExpenses);
+      setEnquiries(mergedEnquiries);
+
+      // Save the merged data back to the cloud
+      await saveStateToFirestore('vehicles', mergedVehicles);
+      await saveStateToFirestore('owners', mergedOwners);
+      await saveStateToFirestore('drivers', mergedDrivers);
+      await saveStateToFirestore('companies', mergedCompanies);
+      await saveStateToFirestore('sites', mergedSites);
+      await saveStateToFirestore('payments', mergedPayments);
+      await saveStateToFirestore('expenses', mergedExpenses);
+      await saveStateToFirestore('enquiries', mergedEnquiries);
+
+      setCloudStatusMsg('success');
+      showToast('🔄 Smart Merge Completed: Local browser & Cloud DB synchronized!', 'success');
+    } catch (err) {
+      console.error('Error in manual smart merge:', err);
+      setCloudStatusMsg('error');
+      showToast('❌ Failed to complete smart merge.', 'error');
+    }
+  };
 
   // Core Branding Custom Logo
   const [customLogo, setCustomLogo] = useState<string | null>(() => {
@@ -216,7 +473,7 @@ export default function App() {
   });
 
   // Layout & Navigation State
-  const [activeTab, setActiveTab] = useState<'Dashboard' | 'Enquiries' | 'Registers' | 'Transactions' | 'Ledgers' | 'Settlement' | 'Reports' | 'VBA Export' | 'Settings' | 'Rules'>('Dashboard');
+  const [activeTab, setActiveTab] = useState<'Dashboard' | 'Enquiries' | 'Induction' | 'Registers' | 'Transactions' | 'Ledgers' | 'Settlement' | 'Reports' | 'VBA Export' | 'Settings' | 'Rules'>('Dashboard');
   const [activeSubTab, setActiveSubTab] = useState<string>('Vehicle Master');
   const [vehicleFilter, setVehicleFilter] = useState<'all' | 'running' | 'idle' | 'new'>('all');
 
@@ -234,6 +491,9 @@ export default function App() {
         break;
       case 'Enquiries':
         setActiveTab('Enquiries');
+        break;
+      case 'Induction':
+        setActiveTab('Induction');
         break;
       case 'Vehicle Master':
       case 'Owner Master':
@@ -340,6 +600,9 @@ export default function App() {
     setAccessToken(null);
     setSpreadsheetId(null);
     setSyncStatus('idle');
+    setHasSyncedForSession(false);
+    setIsFirestoreLoaded(false);
+    setCloudStatusMsg('idle');
   };
 
   // Create or load sheets
@@ -643,6 +906,23 @@ export default function App() {
             </button>
 
             <button
+              id="menu-btn-induction"
+              onClick={() => handleNavigate('Induction')}
+              className={`w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
+                activeTab === 'Induction' ? 'bg-blue-800 text-white' : 'text-blue-100 hover:bg-blue-800/50'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Layers className="h-4 w-4 shrink-0" /> Induction Page
+              </div>
+              {enquiries.filter((e) => e.status === 'Induction').length > 0 && (
+                <span className="bg-amber-500 text-slate-950 px-2 py-0.5 rounded-full text-[9px] font-black leading-none">
+                  {enquiries.filter((e) => e.status === 'Induction').length}
+                </span>
+              )}
+            </button>
+
+            <button
               id="menu-btn-registers"
               onClick={() => handleNavigate('Vehicle Master')}
               className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
@@ -790,6 +1070,131 @@ export default function App() {
 
           {/* Sync Controls */}
           <div className="flex items-center gap-4">
+            {/* Interactive Cloud Database Status Badge */}
+            <div className="relative">
+              <button
+                type="button"
+                id="cloud-db-sync-trigger"
+                onClick={() => setShowCloudSyncPanel(!showCloudSyncPanel)}
+                className="flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg p-1.5 px-3 transition-all cursor-pointer shadow-3xs"
+                title="Manage Cloud Database Synchronization"
+              >
+                <span className="relative flex h-1.5 w-1.5 shrink-0">
+                  {cloudStatusMsg === 'syncing' ? (
+                    <span className="animate-spin inline-flex h-full w-full rounded-full border border-emerald-500 border-t-transparent"></span>
+                  ) : (
+                    <>
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                    </>
+                  )}
+                </span>
+                <div className="text-left select-none flex items-center gap-1.5">
+                  <div>
+                    <p className="text-4xs font-bold text-emerald-800 leading-none uppercase tracking-wider">Cloud Database</p>
+                    <p className="text-[8px] text-emerald-600 leading-none mt-0.5 font-extrabold text-emerald-700">
+                      {cloudStatusMsg === 'syncing' ? 'SYNCING...' : 'PERSISTED'}
+                    </p>
+                  </div>
+                  <Database className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                </div>
+              </button>
+
+              {/* Cloud Synchronization Panel Dropdown */}
+              {showCloudSyncPanel && (
+                <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl border border-slate-200 shadow-xl z-50 p-4 space-y-4 animate-fade-in text-slate-800">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                    <div className="flex items-center gap-1.5 text-slate-800">
+                      <Cloud className="h-4 w-4 text-indigo-500" />
+                      <h4 className="text-xs font-black uppercase tracking-wider">Cloud Database Control</h4>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowCloudSyncPanel(false)}
+                      className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors cursor-pointer"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <p className="text-4xs font-bold text-slate-400 uppercase tracking-widest">Active Database Counts</p>
+                    <div className="grid grid-cols-2 gap-2 text-[10px] font-semibold text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                      <div>🚗 Vehicles: <span className="font-extrabold text-slate-800">{vehicles.length}</span></div>
+                      <div>📞 Enquiries: <span className="font-extrabold text-slate-800">{enquiries.length}</span></div>
+                      <div>👤 Owners: <span className="font-extrabold text-slate-800">{owners.length}</span></div>
+                      <div>🪪 Drivers: <span className="font-extrabold text-slate-800">{drivers.length}</span></div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-4xs font-bold text-slate-400 uppercase tracking-widest">Available Actions</p>
+                    
+                    {/* Action 1: Force Update Cloud */}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await handleForceUploadToCloud();
+                        setShowCloudSyncPanel(false);
+                      }}
+                      className="w-full flex items-center justify-between p-2 text-left bg-indigo-50 hover:bg-indigo-100/80 border border-indigo-100 text-indigo-700 rounded-lg text-3xs font-bold transition-all cursor-pointer group"
+                      title="Saves all your current active screen data to Firestore cloud"
+                    >
+                      <span className="flex items-center gap-2">
+                        <UploadCloud className="h-4 w-4 text-indigo-600 group-hover:scale-110 transition-transform" />
+                        <div>
+                          <p className="font-extrabold uppercase tracking-wide leading-none text-indigo-900">Upload Current Data to Cloud</p>
+                          <p className="text-4xs text-indigo-600/80 font-normal mt-0.5 leading-tight">Overwrite cloud with your current view</p>
+                        </div>
+                      </span>
+                    </button>
+
+                    {/* Action 2: Manual Smart Merge */}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await handleManualSmartMerge();
+                        setShowCloudSyncPanel(false);
+                      }}
+                      className="w-full flex items-center justify-between p-2 text-left bg-emerald-50 hover:bg-emerald-100 border border-emerald-100 text-emerald-700 rounded-lg text-3xs font-bold transition-all cursor-pointer group"
+                      title="Combines cloud data with your current local browser state"
+                    >
+                      <span className="flex items-center gap-2">
+                        <RefreshCw className="h-3.5 w-3.5 text-emerald-600 group-hover:rotate-180 transition-transform duration-500" />
+                        <div>
+                          <p className="font-extrabold uppercase tracking-wide leading-none text-emerald-900">Smart Merge (Dual Sync)</p>
+                          <p className="text-4xs text-emerald-600/80 font-normal mt-0.5 leading-tight">Combine local browser entries with cloud</p>
+                        </div>
+                      </span>
+                    </button>
+
+                    {/* Action 3: Pull Force Download */}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await handleForceDownloadFromCloud();
+                        setShowCloudSyncPanel(false);
+                      }}
+                      className="w-full flex items-center justify-between p-2 text-left bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-3xs font-bold transition-all cursor-pointer group"
+                      title="Pulls data from Cloud and overrides local storage"
+                    >
+                      <span className="flex items-center gap-2">
+                        <DownloadCloud className="h-4 w-4 text-slate-500 group-hover:translate-y-0.5 transition-transform" />
+                        <div>
+                          <p className="font-extrabold uppercase tracking-wide leading-none text-slate-900">Load Master Cloud Data</p>
+                          <p className="text-4xs text-slate-500/80 font-normal mt-0.5 leading-tight">Pull from cloud and overwrite local browser</p>
+                        </div>
+                      </span>
+                    </button>
+                  </div>
+
+                  <p className="text-[9px] text-slate-400 text-center pt-1 border-t border-slate-100 font-medium">
+                    * Cloud data is updated automatically on every addition/edit.
+                  </p>
+                </div>
+              )}
+            </div>
+
             {user ? (
               <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-lg p-1.5 px-3">
                 <span className="relative flex h-2 w-2">
@@ -970,6 +1375,23 @@ export default function App() {
               onUpdateVehicles={updateVehicles}
               onUpdateOwners={updateOwners}
               onUpdateDrivers={updateDrivers}
+              onNavigate={handleNavigate}
+            />
+          )}
+
+          {activeTab === 'Induction' && (
+            <InductionViews
+              enquiries={enquiries}
+              sites={sites}
+              onUpdateEnquiries={updateEnquiries}
+              vehicles={vehicles}
+              owners={owners}
+              drivers={drivers}
+              companies={companies}
+              onUpdateVehicles={updateVehicles}
+              onUpdateOwners={updateOwners}
+              onUpdateDrivers={updateDrivers}
+              onNavigate={handleNavigate}
             />
           )}
 
@@ -1079,6 +1501,32 @@ export default function App() {
 
         </main>
       </div>
+
+      {/* FLOATING TOAST NOTIFICATION */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 flex items-center gap-2.5 px-4 py-3 rounded-xl border shadow-2xl z-[9999] transition-all duration-300 animate-slide-up ${
+          toast.type === 'success' 
+            ? 'bg-emerald-50 text-emerald-800 border-emerald-200 animate-fade-in' 
+            : toast.type === 'error' 
+            ? 'bg-rose-50 text-rose-800 border-rose-200 animate-fade-in' 
+            : 'bg-blue-50 text-blue-800 border-blue-200 animate-fade-in'
+        }`}>
+          {toast.type === 'success' ? (
+            <CheckCircle2 className="h-4.5 w-4.5 text-emerald-600 shrink-0" />
+          ) : toast.type === 'error' ? (
+            <AlertCircle className="h-4.5 w-4.5 text-rose-600 shrink-0" />
+          ) : (
+            <Database className="h-4.5 w-4.5 text-blue-600 shrink-0" />
+          )}
+          <span className="text-[11px] font-bold tracking-tight">{toast.message}</span>
+          <button 
+            onClick={() => setToast(null)} 
+            className="p-0.5 hover:bg-black/5 rounded text-slate-400 hover:text-slate-600 transition-colors cursor-pointer ml-1"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

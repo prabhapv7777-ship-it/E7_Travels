@@ -253,6 +253,7 @@ export default function PrintEnquiryReport({
                 <option value="New">New</option>
                 <option value="Interested">Interested</option>
                 <option value="Site Offered">Site Offered</option>
+                <option value="Induction">Induction</option>
                 <option value="Closed">Closed</option>
               </select>
             </div>
@@ -632,6 +633,7 @@ export default function PrintEnquiryReport({
                       if (enq.status === 'New') statusBadge = 'text-amber-600 border-amber-200 bg-amber-50';
                       if (enq.status === 'Interested') statusBadge = 'text-blue-600 border-blue-200 bg-blue-50';
                       if (enq.status === 'Site Offered') statusBadge = 'text-emerald-600 border-emerald-200 bg-emerald-50';
+                      if (enq.status === 'Induction') statusBadge = 'text-indigo-600 border-indigo-200 bg-indigo-50';
                       if (enq.status === 'Closed') statusBadge = 'text-slate-500 border-slate-200 bg-slate-50';
 
                       return (
@@ -814,7 +816,7 @@ export default function PrintEnquiryReport({
             </div>
 
             {/* Summary Statistics Panel */}
-            <div className="grid grid-cols-5 gap-3 border border-slate-200 rounded-lg p-3 bg-slate-50/50">
+            <div className="grid grid-cols-6 gap-3 border border-slate-200 rounded-lg p-3 bg-slate-50/50">
               <div className="text-center border-r border-slate-200 last:border-0 py-1">
                 <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest block">Total Records</span>
                 <span className="text-sm font-bold text-slate-800">{filteredEnquiries.length}</span>
@@ -830,6 +832,10 @@ export default function PrintEnquiryReport({
               <div className="text-center border-r border-slate-200 last:border-0 py-1">
                 <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest block">Site Offered</span>
                 <span className="text-sm font-bold text-emerald-600">{filteredEnquiries.filter(e => e.status === 'Site Offered').length}</span>
+              </div>
+              <div className="text-center border-r border-slate-200 last:border-0 py-1">
+                <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest block">Induction</span>
+                <span className="text-sm font-bold text-indigo-600">{filteredEnquiries.filter(e => e.status === 'Induction').length}</span>
               </div>
               <div className="text-center border-r border-slate-200 last:border-0 py-1">
                 <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest block">Closed</span>

@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net (default deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Master fleet documents containing synchronized master lists
+    match /fleet/{documentId} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

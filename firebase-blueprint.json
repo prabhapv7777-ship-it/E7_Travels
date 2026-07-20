@@ -1,0 +1,22 @@
+{
+  "entities": {
+    "FleetDocument": {
+      "title": "Fleet Document",
+      "description": "General document storing arrays of fleet data",
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "description": "The raw array of fleet master records"
+        }
+      },
+      "required": ["data"]
+    }
+  },
+  "firestore": {
+    "/fleet/{documentId}": {
+      "schema": "FleetDocument",
+      "description": "Master data storage for vehicles, owners, drivers, companies, sites, payments, expenses, and enquiries."
+    }
+  }
+}

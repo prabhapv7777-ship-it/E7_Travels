@@ -24,6 +24,7 @@ import {
   ChevronRight,
   MessageSquare,
   Printer,
+  ExternalLink,
 } from 'lucide-react';
 import PrintJoiningForm from './PrintJoiningForm';
 import PrintEnquiryReport from './PrintEnquiryReport';
@@ -39,6 +40,7 @@ interface EnquiryViewsProps {
   onUpdateVehicles?: (newVehicles: Vehicle[]) => void;
   onUpdateOwners?: (newOwners: Owner[]) => void;
   onUpdateDrivers?: (newDrivers: Driver[]) => void;
+  onNavigate?: (route: string) => void;
 }
 
 export default function EnquiryViews({
@@ -52,9 +54,12 @@ export default function EnquiryViews({
   onUpdateVehicles,
   onUpdateOwners,
   onUpdateDrivers,
+  onNavigate,
 }: EnquiryViewsProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'New' | 'Interested' | 'Site Offered' | 'Closed'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'New' | 'Interested' | 'Site Offered' | 'Induction' | 'Closed'>('all');
+  const [sortBy, setSortBy] = useState<'enquiryDate' | 'id' | 'vehicleNumber' | 'driverName' | 'status'>('enquiryDate');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -91,6 +96,7 @@ export default function EnquiryViews({
   });
   const [promoteError, setPromoteError] = useState<string | null>(null);
   const [promoteSuccess, setPromoteSuccess] = useState<string | null>(null);
+  const [infoNotification, setInfoNotification] = useState<string | null>(null);
 
   const [activeCommentTarget, setActiveCommentTarget] = useState<{
     id: string;
@@ -331,6 +337,22 @@ export default function EnquiryViews({
       const updated = enquiries.filter((item) => item.id !== id);
       onUpdateEnquiries(updated);
     }
+  };
+
+  const handleMoveToInduction = (id: string) => {
+    const updated = enquiries.map((item) =>
+      item.id === id ? { ...item, status: 'Induction' as const } : item
+    );
+    onUpdateEnquiries(updated);
+
+    const enq = enquiries.find(e => e.id === id);
+    const label = enq ? `${enq.vehicleNumber} (${enq.driverName})` : id;
+    setInfoNotification(`Successfully moved "${label}" to the Vehicle Induction Stage!`);
+    
+    // Automatically dismiss after 6 seconds
+    setTimeout(() => {
+      setInfoNotification((current) => current?.includes(label) ? null : current);
+    }, 6000);
   };
 
   const handleOpenPromote = (enq: Enquiry) => {
@@ -610,11 +632,25 @@ export default function EnquiryViews({
     return matchesSearch && matchesStatus;
   });
 
+  const sortedAndFiltered = [...filtered].sort((a, b) => {
+    let valA = a[sortBy] || '';
+    let valB = b[sortBy] || '';
+
+    // Simple alphanumeric sort
+    if (typeof valA === 'string' && typeof valB === 'string') {
+      return sortOrder === 'asc'
+        ? valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' })
+        : valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
+    }
+    return 0;
+  });
+
   // KPI Calculations
   const totalCount = enquiries.length;
   const newCount = enquiries.filter((e) => e.status === 'New').length;
   const interestedCount = enquiries.filter((e) => e.status === 'Interested').length;
   const siteOfferedCount = enquiries.filter((e) => e.status === 'Site Offered').length;
+  const inductionCount = enquiries.filter((e) => e.status === 'Induction').length;
   const closedCount = enquiries.filter((e) => e.status === 'Closed').length;
 
   return (
@@ -649,8 +685,28 @@ export default function EnquiryViews({
         </div>
       </div>
 
+      {infoNotification && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-850 rounded-xl p-4 flex items-center justify-between shadow-2xs animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="flex items-center gap-3">
+            <span className="p-2 bg-emerald-100 text-emerald-700 rounded-lg shrink-0 flex items-center justify-center">
+              <CheckCircle className="h-4 w-4" />
+            </span>
+            <div>
+              <p className="text-xs font-bold text-emerald-900">{infoNotification}</p>
+              <p className="text-[10px] text-emerald-600 mt-0.5">The enquiry details are now accessible on the Vehicle Induction Page.</p>
+            </div>
+          </div>
+          <button 
+            onClick={() => setInfoNotification(null)}
+            className="p-1 hover:bg-emerald-100/50 rounded-lg text-emerald-500 hover:text-emerald-700 transition-all cursor-pointer font-bold text-xs"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
         <button
           id="kpi-card-total-calls"
           onClick={() => setStatusFilter('all')}
@@ -712,6 +768,22 @@ export default function EnquiryViews({
           </div>
           <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
             <Building className="h-4 w-4" />
+          </div>
+        </button>
+
+        <button
+          id="kpi-card-induction"
+          onClick={() => setStatusFilter('Induction')}
+          className={`p-4 bg-white rounded-xl border flex items-center justify-between shadow-3xs transition-all cursor-pointer text-left focus:outline-none hover:shadow-xs hover:border-indigo-400 ${
+            statusFilter === 'Induction' ? 'ring-2 ring-indigo-500 border-indigo-500 bg-indigo-50/20' : 'border-slate-200'
+          }`}
+        >
+          <div>
+            <p className="text-3xs font-extrabold text-slate-400 uppercase tracking-wider">Going for Induction</p>
+            <p className="text-lg font-bold text-indigo-600 mt-1">{inductionCount}</p>
+          </div>
+          <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+            <Layers className="h-4 w-4" />
           </div>
         </button>
 
@@ -1195,6 +1267,7 @@ export default function EnquiryViews({
                     <option value="New">New</option>
                     <option value="Interested">Interested</option>
                     <option value="Site Offered">Site Offered</option>
+                    <option value="Induction">Induction</option>
                     <option value="Closed">Closed</option>
                   </select>
                 </div>
@@ -1335,21 +1408,49 @@ export default function EnquiryViews({
       <div className="bg-white rounded-xl border border-slate-200 shadow-3xs overflow-hidden">
         
         {/* Card Header with Excel style filters */}
-        <div className="p-5 border-b border-slate-200 bg-slate-50/50 flex flex-col md:flex-row gap-4 justify-between items-center">
-          <div className="relative w-full md:w-80">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-            <input
-              id="enq-search"
-              type="text"
-              placeholder="Search registration, owner, driver, or site preferences..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-            />
+        <div className="p-5 border-b border-slate-200 bg-slate-50/50 flex flex-col xl:flex-row gap-4 justify-between items-center">
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full xl:w-auto">
+            <div className="relative w-full sm:w-80">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <input
+                id="enq-search"
+                type="text"
+                placeholder="Search registration, owner, driver, or site preferences..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+              />
+            </div>
+
+            {/* Sort Options */}
+            <div className="flex items-center gap-2 self-start sm:self-auto bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 shadow-3xs hover:border-slate-300 transition-all shrink-0">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Sort By:</span>
+              <select
+                id="enq-sort-by"
+                value={`${sortBy}-${sortOrder}`}
+                onChange={(e) => {
+                  const [field, order] = e.target.value.split('-');
+                  setSortBy(field as any);
+                  setSortOrder(order as any);
+                }}
+                className="text-3xs font-black uppercase tracking-wider text-slate-700 bg-transparent border-0 focus:outline-none focus:ring-0 cursor-pointer"
+              >
+                <option value="enquiryDate-desc">Date (Latest First)</option>
+                <option value="enquiryDate-asc">Date (Oldest First)</option>
+                <option value="id-desc">Enquiry ID (Newest)</option>
+                <option value="id-asc">Enquiry ID (Oldest)</option>
+                <option value="vehicleNumber-asc">Vehicle No (A-Z)</option>
+                <option value="vehicleNumber-desc">Vehicle No (Z-A)</option>
+                <option value="driverName-asc">Driver Name (A-Z)</option>
+                <option value="driverName-desc">Driver Name (Z-A)</option>
+                <option value="status-asc">Status (A-Z)</option>
+                <option value="status-desc">Status (Z-A)</option>
+              </select>
+            </div>
           </div>
 
-          <div className="flex flex-wrap gap-1.5 self-start md:self-auto">
-            {(['all', 'New', 'Interested', 'Site Offered', 'Closed'] as const).map((st) => (
+          <div className="flex flex-wrap gap-1.5 self-start xl:self-auto">
+            {(['all', 'New', 'Interested', 'Site Offered', 'Induction', 'Closed'] as const).map((st) => (
               <button
                 id={`status-filter-${st}`}
                 key={st}
@@ -1437,7 +1538,7 @@ export default function EnquiryViews({
           ref={tableContainerRef}
           className="overflow-x-auto scrollbar-visible"
         >
-          {filtered.length === 0 ? (
+          {sortedAndFiltered.length === 0 ? (
             <div className="py-16 text-center text-slate-400 space-y-3">
               <PhoneCall className="h-10 w-10 mx-auto text-slate-300 stroke-1" />
               <div>
@@ -1509,10 +1610,11 @@ export default function EnquiryViews({
               </thead>
 
               <tbody className="divide-y divide-slate-100">
-                {filtered.map((enq) => {
+                {sortedAndFiltered.map((enq) => {
                   let badgeColor = 'bg-amber-50 text-amber-700 border-amber-200';
                   if (enq.status === 'Interested') badgeColor = 'bg-blue-50 text-blue-700 border-blue-200';
                   if (enq.status === 'Site Offered') badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                  if (enq.status === 'Induction') badgeColor = 'bg-indigo-50 text-indigo-700 border-indigo-200';
                   if (enq.status === 'Closed') badgeColor = 'bg-slate-100 text-slate-600 border-slate-200';
 
                   return (
@@ -1632,19 +1734,34 @@ export default function EnquiryViews({
                               </span>
                             )}
                           </button>
-                          <button
-                            id={`enq-btn-promote-${enq.id}`}
-                            onClick={() => handleOpenPromote(enq)}
-                            disabled={enq.status === 'Closed'}
-                            className={`p-1 rounded transition-colors cursor-pointer ${
-                              enq.status === 'Closed'
-                                ? 'text-slate-200 cursor-not-allowed'
-                                : 'text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700'
-                            }`}
-                            title={enq.status === 'Closed' ? "Already Closed / Promoted" : "Promote Car to Master Registers"}
-                          >
-                            <Database className="h-3.5 w-3.5" />
-                          </button>
+                          {enq.status === 'Induction' ? (
+                            <button
+                              id={`enq-btn-goto-induction-${enq.id}`}
+                              onClick={() => onNavigate?.('Induction')}
+                              className="p-1 rounded transition-colors cursor-pointer text-emerald-650 hover:bg-emerald-50 hover:text-emerald-800"
+                              title="Go to Vehicle Induction Page"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5 text-emerald-600" />
+                            </button>
+                          ) : (
+                            <button
+                              id={`enq-btn-induction-${enq.id}`}
+                              onClick={() => handleMoveToInduction(enq.id)}
+                              disabled={enq.status === 'Closed'}
+                              className={`p-1 rounded transition-colors cursor-pointer ${
+                                enq.status === 'Closed'
+                                  ? 'text-slate-200 cursor-not-allowed'
+                                  : 'text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700'
+                              }`}
+                              title={
+                                enq.status === 'Closed'
+                                  ? "Already Closed / Promoted"
+                                  : "Move to Vehicle Induction Stage"
+                              }
+                            >
+                              <Layers className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                           <button
                             id={`enq-btn-edit-${enq.id}`}
                             onClick={() => handleOpenEdit(enq)}
@@ -1674,7 +1791,7 @@ export default function EnquiryViews({
         {/* Excel style Table Legend / Helper */}
         <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between text-3xs text-slate-400 font-extrabold uppercase tracking-widest gap-2">
           <span>* Columns required for initial enquiry logging validation.</span>
-          <span>Showing {filtered.length} of {enquiries.length} logged telephone enquiries</span>
+          <span>Showing {sortedAndFiltered.length} of {enquiries.length} logged telephone enquiries</span>
         </div>
       </div>
 
