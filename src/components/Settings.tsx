@@ -19,6 +19,7 @@ import {
   Edit2,
   X,
   XCircle,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { Company, Site } from '../types';
 
@@ -29,6 +30,7 @@ interface SettingsProps {
   onUpdateCompanies: (c: Company[]) => void;
   onUpdateSites: (s: Site[]) => void;
   onForceSync: () => void;
+  onExportToSheets?: () => void;
   customLogo: string | null;
   onUpdateLogo: (logo: string | null) => void;
 }
@@ -161,6 +163,7 @@ export default function Settings({
   onUpdateCompanies,
   onUpdateSites,
   onForceSync,
+  onExportToSheets,
   customLogo,
   onUpdateLogo,
 }: SettingsProps) {
@@ -486,22 +489,30 @@ export default function Settings({
 
           <div className="border border-slate-200 rounded-lg p-4 bg-slate-50 flex flex-col justify-between">
             <div>
-              <span className="text-3xs font-semibold text-slate-400 uppercase">Conflict Reconciliation</span>
+              <span className="text-3xs font-semibold text-slate-400 uppercase">Google Sheets Sync Controls</span>
               <p className="text-xs font-bold text-slate-800 mt-1 flex items-center gap-1">
-                <Database className="text-blue-500 h-4 w-4" /> Dual-Mode State engine
+                <Database className="text-blue-500 h-4 w-4" /> Dual-Mode Sync & Save
               </p>
-              <p className="text-3xs text-slate-500 mt-2">
-                In case of offline operation or network drops, data is automatically stored in standard client state and pushes to
-                Google Drive as soon as connectivity resumes.
+              <p className="text-3xs text-slate-500 mt-2 font-medium">
+                Store your current local ERP registers to your connected spreadsheet, or reload remote database records.
               </p>
             </div>
-            <button
-              id="sync-settings-btn"
-              onClick={onForceSync}
-              className="mt-4 px-3 py-1 text-2xs font-semibold bg-white border border-slate-250 text-slate-700 hover:bg-slate-50 rounded-md shadow-3xs flex items-center justify-center gap-1"
-            >
-              <RefreshCw className="h-3 w-3" /> Force Remote Synchronization
-            </button>
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                id="btn-store-local-to-sheets"
+                onClick={onExportToSheets}
+                className="w-full px-3 py-1.5 text-2xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-md shadow-3xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+              >
+                <FileSpreadsheet className="h-3.5 w-3.5" /> Save Current Data to Google Sheet
+              </button>
+              <button
+                id="sync-settings-btn"
+                onClick={onForceSync}
+                className="w-full px-3 py-1.5 text-2xs font-bold bg-white border border-slate-250 text-slate-750 hover:bg-slate-50 rounded-md shadow-3xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+              >
+                <RefreshCw className="h-3.5 w-3.5" /> Overwrite Local from Sheet
+              </button>
+            </div>
           </div>
 
           {/* Standard Rates */}

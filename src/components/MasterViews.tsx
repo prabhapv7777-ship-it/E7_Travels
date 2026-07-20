@@ -333,6 +333,8 @@ export default function MasterViews({
 
     if (editingId) {
       onUpdateOwners(owners.map((o) => (o.id === editingId ? ownerRecord : o)));
+      // Auto-update matched owner name in vehicles to prevent mismatch
+      onUpdateVehicles(vehicles.map((v) => v.ownerId === editingId ? { ...v, ownerName: ownerRecord.name } : v));
     } else {
       onUpdateOwners([...owners, ownerRecord]);
     }
@@ -368,6 +370,8 @@ export default function MasterViews({
 
     if (editingId) {
       onUpdateDrivers(drivers.map((d) => (d.id === editingId ? driverRecord : d)));
+      // Auto-update matched driver name in vehicles to prevent mismatch
+      onUpdateVehicles(vehicles.map((v) => v.driverId === editingId ? { ...v, driverName: driverRecord.name } : v));
     } else {
       onUpdateDrivers([...drivers, driverRecord]);
     }
@@ -488,6 +492,36 @@ export default function MasterViews({
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+      {/* Database Reconciliation Banner for Orphan Owners/Drivers */}
+      {(owners.filter(o => !vehicles.some(v => v.ownerId === o.id)).length > 0 || 
+        drivers.filter(d => !vehicles.some(v => v.driverId === d.id)).length > 0) && (
+        <div className="bg-amber-50 border-b border-amber-200 p-4 px-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in fade-in duration-300">
+          <div className="flex items-start gap-3">
+            <div className="p-1.5 bg-amber-100 rounded-lg text-amber-700 mt-0.5 sm:mt-0">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-amber-850 uppercase tracking-wider">Unlinked Master Records Detected</h4>
+              <p className="text-xs text-slate-600 mt-1">
+                We found <span className="font-semibold text-amber-800">{owners.filter(o => !vehicles.some(v => v.ownerId === o.id)).length} Owner(s)</span> and <span className="font-semibold text-amber-800">{drivers.filter(d => !vehicles.some(v => v.driverId === d.id)).length} Driver(s)</span> with no active vehicles (from previously deleted vehicle records).
+              </p>
+            </div>
+          </div>
+          <button
+            id="btn-reconcile-orphans"
+            onClick={() => {
+              const activeOwnerIds = new Set(vehicles.map((v) => v.ownerId).filter(Boolean));
+              const activeDriverIds = new Set(vehicles.map((v) => v.driverId).filter(Boolean));
+              onUpdateOwners(owners.filter((o) => activeOwnerIds.has(o.id)));
+              onUpdateDrivers(drivers.filter((d) => activeDriverIds.has(d.id)));
+            }}
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5 shrink-0 self-stretch sm:self-auto justify-center cursor-pointer"
+          >
+            <CheckCircle className="h-4 w-4" /> Clean Up & Sync Master Registers
+          </button>
+        </div>
+      )}
+
       {/* View Header with Search and Insert button */}
       <div className="p-6 border-b border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -541,6 +575,10 @@ export default function MasterViews({
                   <button
                     id="btn-confirm-clear-vehicles"
                     onClick={() => {
+                      const ownerIdsToRemove = new Set(vehicles.map((v) => v.ownerId).filter(Boolean));
+                      const driverIdsToRemove = new Set(vehicles.map((v) => v.driverId).filter(Boolean));
+                      onUpdateOwners(owners.filter((o) => !ownerIdsToRemove.has(o.id)));
+                      onUpdateDrivers(drivers.filter((d) => !driverIdsToRemove.has(d.id)));
                       onUpdateVehicles([]);
                       setShowClearConfirm(false);
                     }}
@@ -850,6 +888,16 @@ export default function MasterViews({
                 />
               </div>
               <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Pollution Expiry</label>
+                <input
+                  id="field-pollutionExpiry"
+                  type="date"
+                  value={vehicleForm.pollutionExpiry || ''}
+                  onChange={(e) => setVehicleForm({ ...vehicleForm, pollutionExpiry: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                />
+              </div>
+              <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">FASTag ID / Number</label>
                 <input
                   id="field-fastagNumber"
@@ -1019,6 +1067,25 @@ export default function MasterViews({
                 />
               </div>
               <div className="md:col-span-3">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Remarks</label>
+                <input
+                  id="field-owner-remarks"
+                  type="text"
+                  value={ownerForm.remarks || ''}
+                  onChange={(e) => setOwnerForm({ ...ownerForm, remarks: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Associated Car Number(s) (From Vehicle Master)</label>
+                <input
+                  type="text"
+                  value={vehicles.filter(v => v.ownerId === ownerForm.id).map(v => v.registrationNumber).join(', ') || 'Unassigned'}
+                  disabled
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-slate-50 text-slate-500 font-semibold"
+                />
+              </div>
+              <div className="md:col-span-3">
                 <button
                   id="btn-save-owner"
                   type="submit"
@@ -1091,6 +1158,16 @@ export default function MasterViews({
                 />
               </div>
               <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Syllabus Badge Expiry</label>
+                <input
+                  id="field-driver-badgeExpiry"
+                  type="date"
+                  value={driverForm.badgeExpiry || ''}
+                  onChange={(e) => setDriverForm({ ...driverForm, badgeExpiry: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                />
+              </div>
+              <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Salary Base (₹)</label>
                 <input
                   id="field-driver-salary"
@@ -1123,12 +1200,32 @@ export default function MasterViews({
                 />
               </div>
               <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">PAN Card</label>
+                <input
+                  id="field-driver-pan"
+                  type="text"
+                  value={driverForm.pan || ''}
+                  onChange={(e) => setDriverForm({ ...driverForm, pan: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                />
+              </div>
+              <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Emergency Contact Info</label>
                 <input
                   id="field-driver-emergencyContact"
                   type="text"
                   value={driverForm.emergencyContact || ''}
                   onChange={(e) => setDriverForm({ ...driverForm, emergencyContact: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Joining Date</label>
+                <input
+                  id="field-driver-joiningDate"
+                  type="date"
+                  value={driverForm.joiningDate || ''}
+                  onChange={(e) => setDriverForm({ ...driverForm, joiningDate: e.target.value })}
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                 />
               </div>
@@ -1143,6 +1240,15 @@ export default function MasterViews({
                   <option value="Active">Active</option>
                   <option value="Inactive">Inactive</option>
                 </select>
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Assigned Car Number(s) (From Vehicle Master)</label>
+                <input
+                  type="text"
+                  value={vehicles.filter(v => v.driverId === driverForm.id).map(v => v.registrationNumber).join(', ') || 'Unassigned'}
+                  disabled
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-slate-50 text-slate-500 font-semibold"
+                />
               </div>
               <div className="md:col-span-3">
                 <button
@@ -1431,7 +1537,13 @@ export default function MasterViews({
                           id={`btn-edit-vehicle-${v.id}`}
                           onClick={() => {
                             setEditingId(v.id);
-                            setVehicleForm(v);
+                            const currentOwner = owners.find(o => o.id === v.ownerId);
+                            const currentDriver = drivers.find(d => d.id === v.driverId);
+                            setVehicleForm({
+                              ...v,
+                              ownerName: currentOwner ? currentOwner.name : v.ownerName,
+                              driverName: currentDriver ? currentDriver.name : v.driverName
+                            });
                           }}
                           className="p-1 hover:bg-slate-100 text-slate-600 rounded"
                         >
@@ -1467,6 +1579,7 @@ export default function MasterViews({
               <tr className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600 uppercase tracking-wider">
                 <th className="py-3.5 px-4">Owner ID</th>
                 <th className="py-3.5 px-4">Full Name</th>
+                <th className="py-3.5 px-4">Car Number</th>
                 <th className="py-3.5 px-4">Phone Number</th>
                 <th className="py-3.5 px-4">Email</th>
                 <th className="py-3.5 px-4">Bank & Account</th>
@@ -1476,58 +1589,63 @@ export default function MasterViews({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">
-              {filteredOwners.map((o) => (
-                <tr key={o.id} className="hover:bg-slate-50/50">
-                  <td className="py-3 px-4 font-mono font-medium text-slate-500">{o.id}</td>
-                  <td className="py-3 px-4 font-semibold text-slate-800">{o.name}</td>
-                  <td className="py-3 px-4 text-slate-700">{o.phone}</td>
-                  <td className="py-3 px-4 text-slate-600 text-xs">{o.email || '-'}</td>
-                  <td className="py-3 px-4 text-xs">
-                    {o.bankName ? `${o.bankName} - ${o.accountNumber}` : '-'}
-                  </td>
-                  <td className="py-3 px-4 font-mono text-xs">{o.pan || '-'}</td>
-                  <td className="py-3 px-4 font-mono text-xs">{o.aadhaar || '-'}</td>
-                  <td className="py-3 px-4 text-center">
-                    <div className="flex items-center justify-center gap-2">
-                      <button
-                        id={`btn-comments-owner-${o.id}`}
-                        onClick={() => setActiveCommentTarget({
-                          id: o.id,
-                          name: o.name,
-                          type: 'Owner',
-                          comments: o.comments || []
-                        })}
-                        className="p-1 hover:bg-indigo-50 text-indigo-600 rounded cursor-pointer relative"
-                        title="View / Add Comments"
-                      >
-                        <MessageSquare className="h-4 w-4" />
-                        {o.comments && o.comments.length > 0 && (
-                          <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-indigo-600 text-[8px] font-bold text-white">
-                            {o.comments.length}
-                          </span>
-                        )}
-                      </button>
-                      <button
-                        id={`btn-edit-owner-${o.id}`}
-                        onClick={() => {
-                          setEditingId(o.id);
-                          setOwnerForm(o);
-                        }}
-                        className="p-1 hover:bg-slate-100 text-slate-600 rounded"
-                      >
-                        <Edit2 className="h-4 w-4" />
-                      </button>
-                      <button
-                        id={`btn-delete-owner-${o.id}`}
-                        onClick={() => handleDeleteRecord(o.id, o.name)}
-                        className="p-1 hover:bg-rose-50 text-rose-600 rounded"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {filteredOwners.map((o) => {
+                const linkedVehicles = vehicles.filter((v) => v.ownerId === o.id);
+                const carNo = linkedVehicles.length > 0 ? linkedVehicles.map(v => v.registrationNumber).join(', ') : 'Unassigned';
+                return (
+                  <tr key={o.id} className="hover:bg-slate-50/50">
+                    <td className="py-3 px-4 font-mono font-medium text-slate-500">{o.id}</td>
+                    <td className="py-3 px-4 font-semibold text-slate-800">{o.name}</td>
+                    <td className="py-3 px-4 font-mono text-xs text-blue-600 font-semibold">{carNo}</td>
+                    <td className="py-3 px-4 text-slate-700">{o.phone}</td>
+                    <td className="py-3 px-4 text-slate-600 text-xs">{o.email || '-'}</td>
+                    <td className="py-3 px-4 text-xs">
+                      {o.bankName ? `${o.bankName} - ${o.accountNumber}` : '-'}
+                    </td>
+                    <td className="py-3 px-4 font-mono text-xs">{o.pan || '-'}</td>
+                    <td className="py-3 px-4 font-mono text-xs">{o.aadhaar || '-'}</td>
+                    <td className="py-3 px-4 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          id={`btn-comments-owner-${o.id}`}
+                          onClick={() => setActiveCommentTarget({
+                            id: o.id,
+                            name: o.name,
+                            type: 'Owner',
+                            comments: o.comments || []
+                          })}
+                          className="p-1 hover:bg-indigo-50 text-indigo-600 rounded cursor-pointer relative"
+                          title="View / Add Comments"
+                        >
+                          <MessageSquare className="h-4 w-4" />
+                          {o.comments && o.comments.length > 0 && (
+                            <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-indigo-600 text-[8px] font-bold text-white">
+                              {o.comments.length}
+                            </span>
+                          )}
+                        </button>
+                        <button
+                          id={`btn-edit-owner-${o.id}`}
+                          onClick={() => {
+                            setEditingId(o.id);
+                            setOwnerForm(o);
+                          }}
+                          className="p-1 hover:bg-slate-100 text-slate-600 rounded"
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </button>
+                        <button
+                          id={`btn-delete-owner-${o.id}`}
+                          onClick={() => handleDeleteRecord(o.id, o.name)}
+                          className="p-1 hover:bg-rose-50 text-rose-600 rounded"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {filteredOwners.length === 0 && (
                 <tr>
                   <td colSpan={8} className="text-center py-8 text-slate-400">
@@ -1546,6 +1664,7 @@ export default function MasterViews({
               <tr className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600 uppercase tracking-wider">
                 <th className="py-3.5 px-4">Driver ID</th>
                 <th className="py-3.5 px-4">Full Name</th>
+                <th className="py-3.5 px-4">Car Number</th>
                 <th className="py-3.5 px-4">Phone Number</th>
                 <th className="py-3.5 px-4">Licence Details</th>
                 <th className="py-3.5 px-4">Badge Number</th>
@@ -1557,76 +1676,81 @@ export default function MasterViews({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">
-              {filteredDrivers.map((d) => (
-                <tr key={d.id} className="hover:bg-slate-50/50">
-                  <td className="py-3 px-4 font-mono font-medium text-slate-500">{d.id}</td>
-                  <td className="py-3 px-4 font-semibold text-slate-800">{d.name}</td>
-                  <td className="py-3 px-4 text-slate-700">{d.phone}</td>
-                  <td className="py-3 px-4 text-xs">
-                    {d.licenceNumber} <span className="text-slate-400">({formatDate(d.licenceExpiry)})</span>
-                  </td>
-                  <td className="py-3 px-4 font-mono text-xs">{d.badgeNumber || '-'}</td>
-                  <td className="py-3 px-4 text-xs">
-                    <span className={`px-2 py-0.5 text-2xs font-bold rounded border ${
-                      d.driverType === 'Owner-cum-Driver'
-                        ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
-                        : 'bg-slate-50 border-slate-200 text-slate-700'
-                    }`}>
-                      {d.driverType === 'Owner-cum-Driver' ? 'Owner-cum-Driver' : 'Owner-Paid'}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-right font-medium">₹{d.salary.toLocaleString()}</td>
-                  <td className="py-3 px-4 text-slate-600 text-xs">{formatDate(d.joiningDate)}</td>
-                  <td className="py-3 px-4 text-center">
-                    <span
-                      className={`px-2 py-0.5 text-2xs font-semibold rounded-full ${
-                        d.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'
-                      }`}
-                    >
-                      {d.status}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-center">
-                    <div className="flex items-center justify-center gap-2">
-                      <button
-                        id={`btn-comments-driver-${d.id}`}
-                        onClick={() => setActiveCommentTarget({
-                          id: d.id,
-                          name: d.name,
-                          type: 'Driver',
-                          comments: d.comments || []
-                        })}
-                        className="p-1 hover:bg-indigo-50 text-indigo-600 rounded cursor-pointer relative"
-                        title="View / Add Comments"
+              {filteredDrivers.map((d) => {
+                const linkedVehicles = vehicles.filter((v) => v.driverId === d.id);
+                const carNo = linkedVehicles.length > 0 ? linkedVehicles.map(v => v.registrationNumber).join(', ') : 'Unassigned';
+                return (
+                  <tr key={d.id} className="hover:bg-slate-50/50">
+                    <td className="py-3 px-4 font-mono font-medium text-slate-500">{d.id}</td>
+                    <td className="py-3 px-4 font-semibold text-slate-800">{d.name}</td>
+                    <td className="py-3 px-4 font-mono text-xs text-blue-600 font-semibold">{carNo}</td>
+                    <td className="py-3 px-4 text-slate-700">{d.phone}</td>
+                    <td className="py-3 px-4 text-xs">
+                      {d.licenceNumber} <span className="text-slate-400">({formatDate(d.licenceExpiry)})</span>
+                    </td>
+                    <td className="py-3 px-4 font-mono text-xs">{d.badgeNumber || '-'}</td>
+                    <td className="py-3 px-4 text-xs">
+                      <span className={`px-2 py-0.5 text-2xs font-bold rounded border ${
+                        d.driverType === 'Owner-cum-Driver'
+                          ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                          : 'bg-slate-50 border-slate-200 text-slate-700'
+                      }`}>
+                        {d.driverType === 'Owner-cum-Driver' ? 'Owner-cum-Driver' : 'Owner-Paid'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-right font-medium">₹{d.salary.toLocaleString()}</td>
+                    <td className="py-3 px-4 text-slate-600 text-xs">{formatDate(d.joiningDate)}</td>
+                    <td className="py-3 px-4 text-center">
+                      <span
+                        className={`px-2 py-0.5 text-2xs font-semibold rounded-full ${
+                          d.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'
+                        }`}
                       >
-                        <MessageSquare className="h-4 w-4" />
-                        {d.comments && d.comments.length > 0 && (
-                          <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-indigo-600 text-[8px] font-bold text-white">
-                            {d.comments.length}
-                          </span>
-                        )}
-                      </button>
-                      <button
-                        id={`btn-edit-driver-${d.id}`}
-                        onClick={() => {
-                          setEditingId(d.id);
-                          setDriverForm(d);
-                        }}
-                        className="p-1 hover:bg-slate-100 text-slate-600 rounded"
-                      >
-                        <Edit2 className="h-4 w-4" />
-                      </button>
-                      <button
-                        id={`btn-delete-driver-${d.id}`}
-                        onClick={() => handleDeleteRecord(d.id, d.name)}
-                        className="p-1 hover:bg-rose-50 text-rose-600 rounded"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        {d.status}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          id={`btn-comments-driver-${d.id}`}
+                          onClick={() => setActiveCommentTarget({
+                            id: d.id,
+                            name: d.name,
+                            type: 'Driver',
+                            comments: d.comments || []
+                          })}
+                          className="p-1 hover:bg-indigo-50 text-indigo-600 rounded cursor-pointer relative"
+                          title="View / Add Comments"
+                        >
+                          <MessageSquare className="h-4 w-4" />
+                          {d.comments && d.comments.length > 0 && (
+                            <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-indigo-600 text-[8px] font-bold text-white">
+                              {d.comments.length}
+                            </span>
+                          )}
+                        </button>
+                        <button
+                          id={`btn-edit-driver-${d.id}`}
+                          onClick={() => {
+                            setEditingId(d.id);
+                            setDriverForm(d);
+                          }}
+                          className="p-1 hover:bg-slate-100 text-slate-600 rounded"
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </button>
+                        <button
+                          id={`btn-delete-driver-${d.id}`}
+                          onClick={() => handleDeleteRecord(d.id, d.name)}
+                          className="p-1 hover:bg-rose-50 text-rose-600 rounded"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {filteredDrivers.length === 0 && (
                 <tr>
                   <td colSpan={9} className="text-center py-8 text-slate-400">
@@ -1814,6 +1938,16 @@ export default function MasterViews({
                 onClick={() => {
                   const id = deleteCandidate.id;
                   if (activeSubView === 'Vehicle Master') {
+                    const vehicleToDelete = vehicles.find((v) => v.id === id);
+                    if (vehicleToDelete) {
+                      // Automatically delete the associated owner and driver
+                      if (vehicleToDelete.ownerId) {
+                        onUpdateOwners(owners.filter((o) => o.id !== vehicleToDelete.ownerId));
+                      }
+                      if (vehicleToDelete.driverId) {
+                        onUpdateDrivers(drivers.filter((d) => d.id !== vehicleToDelete.driverId));
+                      }
+                    }
                     onUpdateVehicles(vehicles.filter((v) => v.id !== id));
                   } else if (activeSubView === 'Owner Master') {
                     onUpdateOwners(owners.filter((o) => o.id !== id));

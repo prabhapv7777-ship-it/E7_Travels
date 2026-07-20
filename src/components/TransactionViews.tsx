@@ -54,6 +54,7 @@ export default function TransactionViews({
   const [dateSortOrder, setDateSortOrder] = useState<'desc' | 'asc'>('desc');
   const [editingPayment, setEditingPayment] = useState<CompanyPayment | null>(null);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   useEffect(() => {
     if (isAdding) {
@@ -443,6 +444,8 @@ export default function TransactionViews({
                 className="pl-8 pr-4 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 w-44"
               />
             </div>
+
+
 
             <button
               id="add-tx-btn"

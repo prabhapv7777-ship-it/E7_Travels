@@ -86,19 +86,72 @@ export default function App() {
   // Core ERP Master State
   const [vehicles, setVehicles] = useState<Vehicle[]>(() => {
     const saved = localStorage.getItem('e7_travels_vehicles');
-    return saved ? JSON.parse(saved) : SAMPLE_VEHICLES;
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      const parsedIds = new Set(parsed.map((v: Vehicle) => v.id));
+      
+      // Update registration number for VEH008 if it's the old sample value
+      const updatedParsed = parsed.map((v: Vehicle) => {
+        if (v.id === 'VEH008' && v.registrationNumber === 'TN 31 CJ 6721') {
+          return { ...v, registrationNumber: 'TN 10 BZ 4981' };
+        }
+        return v;
+      });
+
+      const missingFromSample = SAMPLE_VEHICLES.filter(v => !parsedIds.has(v.id));
+      if (missingFromSample.length > 0) {
+        const merged = [...updatedParsed, ...missingFromSample];
+        localStorage.setItem('e7_travels_vehicles', JSON.stringify(merged));
+        return merged;
+      }
+      return updatedParsed;
+    }
+    return SAMPLE_VEHICLES;
   });
   const [owners, setOwners] = useState<Owner[]>(() => {
     const saved = localStorage.getItem('e7_travels_owners');
-    return saved ? JSON.parse(saved) : SAMPLE_OWNERS;
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      const parsedIds = new Set(parsed.map((o: Owner) => o.id));
+      const missingFromSample = SAMPLE_OWNERS.filter(o => !parsedIds.has(o.id));
+      if (missingFromSample.length > 0) {
+        const merged = [...parsed, ...missingFromSample];
+        localStorage.setItem('e7_travels_owners', JSON.stringify(merged));
+        return merged;
+      }
+      return parsed;
+    }
+    return SAMPLE_OWNERS;
   });
   const [drivers, setDrivers] = useState<Driver[]>(() => {
     const saved = localStorage.getItem('e7_travels_drivers');
-    return saved ? JSON.parse(saved) : SAMPLE_DRIVERS;
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      const parsedIds = new Set(parsed.map((d: Driver) => d.id));
+      const missingFromSample = SAMPLE_DRIVERS.filter(d => !parsedIds.has(d.id));
+      if (missingFromSample.length > 0) {
+        const merged = [...parsed, ...missingFromSample];
+        localStorage.setItem('e7_travels_drivers', JSON.stringify(merged));
+        return merged;
+      }
+      return parsed;
+    }
+    return SAMPLE_DRIVERS;
   });
   const [companies, setCompanies] = useState<Company[]>(() => {
     const saved = localStorage.getItem('e7_travels_companies');
-    return saved ? JSON.parse(saved) : SAMPLE_COMPANIES;
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      const parsedNames = new Set(parsed.map((c: Company) => c.name));
+      const missingFromSample = SAMPLE_COMPANIES.filter(c => !parsedNames.has(c.name));
+      if (missingFromSample.length > 0) {
+        const merged = [...parsed, ...missingFromSample];
+        localStorage.setItem('e7_travels_companies', JSON.stringify(merged));
+        return merged;
+      }
+      return parsed;
+    }
+    return SAMPLE_COMPANIES;
   });
   const [sites, setSites] = useState<Site[]>(() => {
     const saved = localStorage.getItem('e7_travels_sites');
@@ -116,9 +169,12 @@ export default function App() {
     const saved = localStorage.getItem('e7_travels_enquiries');
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (parsed.length < SAMPLE_ENQUIRIES.length) {
-        localStorage.setItem('e7_travels_enquiries', JSON.stringify(SAMPLE_ENQUIRIES));
-        return SAMPLE_ENQUIRIES;
+      const parsedIds = new Set(parsed.map((e: Enquiry) => e.id));
+      const missingFromSample = SAMPLE_ENQUIRIES.filter(e => !parsedIds.has(e.id));
+      if (missingFromSample.length > 0) {
+        const merged = [...parsed, ...missingFromSample];
+        localStorage.setItem('e7_travels_enquiries', JSON.stringify(merged));
+        return merged;
       }
       return parsed;
     }
@@ -252,8 +308,23 @@ export default function App() {
       let errorMessage = err?.message || 'Authentication failed. Please verify credentials and try again.';
       
       // Specifically target popup closed/blocked errors
-      if (errorCode === 'auth/popup-closed-by-user' || errorMessage.includes('popup-closed-by-user') || errorMessage.includes('popup-blocked')) {
-        errorMessage = 'Google sign-in popup was blocked or closed before completion. This typically happens when browser security settings prevent popups inside the embedded preview frame. To fix this, please click "Open in New Tab" in the top bar to run the app full-screen, or ensure your browser allows popups.';
+      const isPopupIssue = 
+        errorCode === 'auth/popup-closed-by-user' || 
+        errorCode === 'auth/cancelled-popup-request' || 
+        errorCode === 'auth/popup-blocked' || 
+        errorMessage.toLowerCase().includes('popup-closed-by-user') || 
+        errorMessage.toLowerCase().includes('cancelled-popup-request') || 
+        errorMessage.toLowerCase().includes('popup-blocked') ||
+        errorMessage.toLowerCase().includes('popup');
+
+      const isInternalError = 
+        errorCode === 'auth/internal-error' || 
+        errorMessage.toLowerCase().includes('internal-error');
+
+      if (isPopupIssue) {
+        errorMessage = 'Google sign-in popup was blocked, closed, or cancelled before completion. This is extremely common when browser security settings prevent popups inside embedded preview frames. To log in successfully, please click "Open in New Tab" in the top bar to run the app in full-screen, or ensure your browser allows popups.';
+      } else if (isInternalError) {
+        errorMessage = 'Google Sign-In returned an internal error (auth/internal-error). This is common when Google Sign-In is not yet fully enabled in your Firebase console or when this preview URL is not listed in your project\'s Authorized Domains. To resolve this: 1. Ensure you have run/approved the Firebase setup tool to auto-provision authentication. 2. Verify Google is enabled under Firebase Authentication > Sign-in method. 3. Try clicking "Open in New Tab" in the top bar to bypass embedded iframe restrictions.';
       }
       
       setAuthError({
@@ -287,6 +358,7 @@ export default function App() {
           sites,
           payments,
           expenses,
+          enquiries,
         });
         if (sheetId) {
           localStorage.setItem('e7_travels_sheets_id', sheetId);
@@ -305,6 +377,10 @@ export default function App() {
           if (remoteData.sites.length > 0) setSites(remoteData.sites);
           if (remoteData.payments.length > 0) setPayments(remoteData.payments);
           if (remoteData.expenses.length > 0) setExpenses(remoteData.expenses);
+          if (remoteData.enquiries && remoteData.enquiries.length > 0) {
+            setEnquiries(remoteData.enquiries);
+            localStorage.setItem('e7_travels_enquiries', JSON.stringify(remoteData.enquiries));
+          }
         }
         setSyncStatus('success');
         setLastSynced(new Date().toLocaleTimeString());
@@ -325,7 +401,8 @@ export default function App() {
     c = companies,
     s = sites,
     p = payments,
-    e = expenses
+    e = expenses,
+    enq = enquiries
   ) => {
     const token = accessToken || await getAccessToken();
     if (!token || !spreadsheetId) return;
@@ -340,6 +417,7 @@ export default function App() {
         sites: s,
         payments: p,
         expenses: e,
+        enquiries: enq,
       });
       setSyncStatus('success');
       setLastSynced(new Date().toLocaleTimeString());
@@ -358,6 +436,57 @@ export default function App() {
       triggerSheetInit(token);
     } else {
       alert('Local sandbox mode: Please log in using Google Auth to sync with Google Drive.');
+    }
+  };
+
+  // Explicit save/overwrite/store current local data to Google Sheets
+  const handleExportToSheets = async () => {
+    const token = accessToken || await getAccessToken();
+    if (!token) {
+      alert('Authentication required: Please sign in with Google Sync to export data.');
+      return;
+    }
+
+    setIsSyncing(true);
+    setSyncStatus('idle');
+    try {
+      let sheetId = spreadsheetId || localStorage.getItem('e7_travels_sheets_id');
+      if (!sheetId) {
+        sheetId = await createFleetSpreadsheet(token, {
+          vehicles,
+          owners,
+          drivers,
+          companies,
+          sites,
+          payments,
+          expenses,
+          enquiries,
+        });
+        if (sheetId) {
+          localStorage.setItem('e7_travels_sheets_id', sheetId);
+          setSpreadsheetId(sheetId);
+        }
+      } else {
+        await pushToSpreadsheet(token, sheetId, {
+          vehicles,
+          owners,
+          drivers,
+          companies,
+          sites,
+          payments,
+          expenses,
+          enquiries,
+        });
+      }
+      setSyncStatus('success');
+      setLastSynced(new Date().toLocaleTimeString());
+      alert('Success! Your current local database has been fully written and stored in your Google Sheet.');
+    } catch (err: any) {
+      console.error('Export sheets error:', err);
+      setSyncStatus('error');
+      alert(`Sync failed: ${err?.message || 'Unknown error occurred.'}`);
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -451,6 +580,7 @@ export default function App() {
   const updateEnquiries = (newEnquiries: Enquiry[]) => {
     setEnquiries(newEnquiries);
     localStorage.setItem('e7_travels_enquiries', JSON.stringify(newEnquiries));
+    triggerPush(vehicles, owners, drivers, companies, sites, payments, expenses, newEnquiries);
   };
 
   if (!adminEmail) {
@@ -926,6 +1056,7 @@ export default function App() {
               onUpdateCompanies={updateCompanies}
               onUpdateSites={updateSites}
               onForceSync={handleForceRefresh}
+              onExportToSheets={handleExportToSheets}
               customLogo={customLogo}
               onUpdateLogo={(newLogo) => {
                 setCustomLogo(newLogo);

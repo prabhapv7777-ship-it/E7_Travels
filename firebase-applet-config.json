@@ -3,7 +3,10 @@
   "appId": "1:678191200626:web:41c38fa7e9e392da2985eb",
   "apiKey": "AIzaSyCP-ozoga1bfJiBp8aYU3WAbubcwasWZuY",
   "authDomain": "cedar-vial-g3bk6.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-e7travelsfleeter-7831b2b1-8c2e-451d-8c58-df75c7d4aafc",
   "storageBucket": "cedar-vial-g3bk6.firebasestorage.app",
   "messagingSenderId": "678191200626",
-  "measurementId": ""
+  "measurementId": "",
+  "oAuthClientId": "678191200626-mg90besujmjgp38ta52qllvve5fcjpg4.apps.googleusercontent.com",
+  "recaptchaSiteKey": ""
 }

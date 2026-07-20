@@ -23,7 +23,10 @@ import {
   ChevronLeft,
   ChevronRight,
   MessageSquare,
+  Printer,
 } from 'lucide-react';
+import PrintJoiningForm from './PrintJoiningForm';
+import PrintEnquiryReport from './PrintEnquiryReport';
 
 interface EnquiryViewsProps {
   enquiries: Enquiry[];
@@ -55,6 +58,10 @@ export default function EnquiryViews({
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Print States
+  const [isPrintingReport, setIsPrintingReport] = useState(false);
+  const [selectedEnquiryForFormPrint, setSelectedEnquiryForFormPrint] = useState<Enquiry | null>(null);
 
   // Promotion to Master Registers State
   const [promotingEnquiry, setPromotingEnquiry] = useState<Enquiry | null>(null);
@@ -158,7 +165,7 @@ export default function EnquiryViews({
   }, [editingId]);
 
   useEffect(() => {
-    if (isAdding || editingId || promotingEnquiry) {
+    if (isAdding || editingId || promotingEnquiry || isPrintingReport || selectedEnquiryForFormPrint) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
@@ -166,7 +173,7 @@ export default function EnquiryViews({
     return () => {
       document.body.style.overflow = '';
     };
-  }, [isAdding, editingId, promotingEnquiry]);
+  }, [isAdding, editingId, promotingEnquiry, isPrintingReport, selectedEnquiryForFormPrint]);
 
   // Form State
   const [formState, setFormState] = useState<Partial<Enquiry>>({
@@ -624,6 +631,14 @@ export default function EnquiryViews({
           </p>
         </div>
         <div className="flex flex-wrap gap-2.5 self-start md:self-auto">
+          <button
+            id="btn-print-enquiries"
+            onClick={() => setIsPrintingReport(true)}
+            className="px-4 py-2.5 bg-white border border-slate-300 text-slate-750 rounded-lg hover:bg-slate-50 font-bold text-xs transition-all flex items-center gap-2 shadow-3xs cursor-pointer"
+            title="Print and filter call lead reports"
+          >
+            <Printer className="h-4 w-4 text-slate-500" /> Print Report / List
+          </button>
           <button
             id="btn-add-enquiry-top"
             onClick={handleOpenAdd}
@@ -1592,6 +1607,14 @@ export default function EnquiryViews({
                       <td className="py-3 px-4 text-center">
                         <div className="flex items-center justify-center gap-2">
                           <button
+                            id={`enq-btn-print-${enq.id}`}
+                            onClick={() => setSelectedEnquiryForFormPrint(enq)}
+                            className="p-1 text-slate-400 hover:bg-slate-100 hover:text-indigo-600 rounded transition-colors cursor-pointer"
+                            title="Print Vehicle Joining Form"
+                          >
+                            <Printer className="h-3.5 w-3.5" />
+                          </button>
+                          <button
                             id={`enq-btn-comments-${enq.id}`}
                             onClick={() => setActiveCommentTarget({
                               id: enq.id,
@@ -2133,6 +2156,24 @@ export default function EnquiryViews({
             </form>
           </div>
         </div>
+      )}
+
+      {/* Enquiry List Print Report & Filters Center */}
+      {isPrintingReport && (
+        <PrintEnquiryReport
+          enquiries={enquiries}
+          sites={sites}
+          onClose={() => setIsPrintingReport(false)}
+          initialStatusFilter={statusFilter}
+        />
+      )}
+
+      {/* Individual Joining Form Print Modal */}
+      {selectedEnquiryForFormPrint && (
+        <PrintJoiningForm
+          enquiry={selectedEnquiryForFormPrint}
+          onClose={() => setSelectedEnquiryForFormPrint(null)}
+        />
       )}
     </div>
   );
