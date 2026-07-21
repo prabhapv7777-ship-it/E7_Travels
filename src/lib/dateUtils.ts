@@ -96,3 +96,24 @@ export function formatMonth(monthStr: string | null | undefined): string {
   }
   return trimmed;
 }
+
+/**
+ * Returns today's date in YYYY-MM-DD format using local time.
+ */
+export function getTodayDateString(): string {
+  const d = new Date();
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Returns current month in YYYY-MM format using local time.
+ */
+export function getCurrentMonthString(): string {
+  const d = new Date();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${year}-${month}`;
+}

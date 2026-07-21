@@ -768,7 +768,7 @@ export default function PrintEnquiryReport({
                           {/* Status */}
                           {columns.status && (
                             <td className="py-2 px-2 border-r border-slate-200 text-center whitespace-nowrap">
-                              <span className={`px-2 py-1 text-[0.85em] font-black uppercase rounded-md border ${statusBadge} shadow-3xs`}>
+                              <span className={`inline-flex items-center justify-center px-2 py-0.5 text-[0.8em] font-black uppercase rounded-md border ${statusBadge} shadow-3xs leading-none align-middle`}>
                                 {enq.status}
                               </span>
                             </td>

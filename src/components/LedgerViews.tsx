@@ -16,7 +16,7 @@ import {
   Building,
 } from 'lucide-react';
 import { Vehicle, Owner, Driver, CompanyPayment, Expense } from '../types';
-import { formatDate, formatMonth, toInputDateFormat } from '../lib/dateUtils';
+import { formatDate, formatMonth, toInputDateFormat, getCurrentMonthString, getTodayDateString } from '../lib/dateUtils';
 
 interface LedgerViewsProps {
   vehicles: Vehicle[];
@@ -38,7 +38,7 @@ export default function LedgerViews({
   const [selectedVehicle, setSelectedVehicle] = useState(vehicles[0]?.registrationNumber || '');
   const [selectedOwner, setSelectedOwner] = useState(owners[0]?.id || '');
   const [selectedDriver, setSelectedDriver] = useState(drivers[0]?.id || '');
-  const [selectedMonth, setSelectedMonth] = useState('2026-07');
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthString());
   const [selectedCompany, setSelectedCompany] = useState('');
 
   const formatCurrency = (val: number) => {
@@ -55,6 +55,7 @@ export default function LedgerViews({
       ...expenses.map((e) => e.month),
       '2026-06',
       '2026-07',
+      getCurrentMonthString(),
     ])
   ).sort().reverse();
 
@@ -126,9 +127,10 @@ export default function LedgerViews({
 
     // Add Payments as Credits
     matchedPayments.forEach((p) => {
+      const periodText = p.fromDate && p.toDate ? ` (Period: ${formatDate(p.fromDate)} to ${formatDate(p.toDate)})` : '';
       rows.push({
         date: p.paymentDate || `${p.month}-05`,
-        description: `Contract Billing - Invoice ${p.invoiceNumber}`,
+        description: `Contract Billing - Invoice ${p.invoiceNumber}${periodText}`,
         type: 'Billing',
         category: 'Revenue',
         credit: p.amountReceived,
@@ -600,11 +602,11 @@ export default function LedgerViews({
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="text-md font-bold text-slate-800">Driver Ledger: {dLedger.driverName}</h2>
-                    <span className={`px-2 py-0.5 text-3xs font-extrabold rounded-full border ${
+                    <span className={`inline-flex items-center justify-center px-2 py-0.5 text-3xs font-extrabold rounded-full border ${
                       dLedger.driverType === 'Owner-cum-Driver'
                         ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
                         : 'bg-slate-50 border-slate-200 text-slate-700'
-                    }`}>
+                    } leading-none align-middle`}>
                       {dLedger.driverType === 'Owner-cum-Driver' ? 'Owner-cum-Driver' : 'Owner-Paid'}
                     </span>
                   </div>

@@ -24,7 +24,7 @@ import {
   Users,
 } from 'lucide-react';
 import { Vehicle, Expense, CompanyPayment } from '../types';
-import { formatDate, formatMonth, toInputDateFormat } from '../lib/dateUtils';
+import { formatDate, formatMonth, toInputDateFormat, getCurrentMonthString, getTodayDateString } from '../lib/dateUtils';
 
 interface ReportsProps {
   vehicles: Vehicle[];
@@ -50,6 +50,7 @@ export default function Reports({ vehicles, expenses, payments }: ReportsProps) 
       ...expenses.map((e) => e.month),
       '2026-06',
       '2026-07',
+      getCurrentMonthString(),
     ])
   ).sort().reverse();
 
@@ -62,6 +63,7 @@ export default function Reports({ vehicles, expenses, payments }: ReportsProps) 
       ...payments.map((p) => toInputDateFormat(p.paymentDate)),
       ...expenses.map((e) => toInputDateFormat(e.date)),
       '2026-07-08',
+      getTodayDateString(),
     ].filter(Boolean))
   ).sort().reverse();
 

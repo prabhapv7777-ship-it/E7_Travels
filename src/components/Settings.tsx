@@ -20,6 +20,7 @@ import {
   X,
   XCircle,
   FileSpreadsheet,
+  ExternalLink,
 } from 'lucide-react';
 import { Company, Site } from '../types';
 
@@ -33,6 +34,8 @@ interface SettingsProps {
   onExportToSheets?: () => void;
   customLogo: string | null;
   onUpdateLogo: (logo: string | null) => void;
+  onUpdateSpreadsheetId?: (id: string | null) => void;
+  lastSynced?: string | null;
 }
 
 // Resizes a raster image down to a maximum bounding box to protect localStorage quota.
@@ -166,10 +169,52 @@ export default function Settings({
   onExportToSheets,
   customLogo,
   onUpdateLogo,
+  onUpdateSpreadsheetId,
+  lastSynced,
 }: SettingsProps) {
   const [newSiteName, setNewSiteName] = useState('');
   const [newSiteLocation, setNewSiteLocation] = useState('');
   const [deleteCandidate, setDeleteCandidate] = useState<{ id: string; type: 'company' | 'site'; title: string } | null>(null);
+
+  // ================= SPREADSHEET CONFIG STATE =================
+  const [tempSpreadsheetInput, setTempSpreadsheetInput] = useState(spreadsheetId || '');
+  const [feedbackMsg, setFeedbackMsg] = useState('');
+
+  useEffect(() => {
+    setTempSpreadsheetInput(spreadsheetId || '');
+  }, [spreadsheetId]);
+
+  const handleSaveSpreadsheetId = () => {
+    if (!tempSpreadsheetInput || !tempSpreadsheetInput.trim()) {
+      setFeedbackMsg('Please enter a valid spreadsheet link or ID');
+      setTimeout(() => setFeedbackMsg(''), 3000);
+      return;
+    }
+
+    const input = tempSpreadsheetInput.trim();
+    // Try to extract spreadsheet ID if it is a full Google Sheet URL
+    let extractedId = input;
+    const regex = /\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/;
+    const match = input.match(regex);
+    if (match && match[1]) {
+      extractedId = match[1];
+    }
+
+    if (onUpdateSpreadsheetId) {
+      onUpdateSpreadsheetId(extractedId);
+      setFeedbackMsg('Spreadsheet ID updated successfully!');
+      setTimeout(() => setFeedbackMsg(''), 3000);
+    }
+  };
+
+  const handleResetSpreadsheetId = () => {
+    if (onUpdateSpreadsheetId) {
+      onUpdateSpreadsheetId(null);
+      setTempSpreadsheetInput('');
+      setFeedbackMsg('Spreadsheet ID cleared.');
+      setTimeout(() => setFeedbackMsg(''), 3000);
+    }
+  };
 
   // Client Corporate Registry Modal State
   const [isAddingClient, setIsAddingClient] = useState(false);
@@ -469,22 +514,68 @@ export default function Settings({
         </h2>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="border border-slate-200 rounded-lg p-4 bg-slate-50 flex flex-col justify-between">
+          <div className="border border-slate-200 rounded-lg p-4 bg-slate-50 flex flex-col justify-between gap-4">
             <div>
               <span className="text-3xs font-semibold text-slate-400 uppercase">Synchronisation Mode</span>
               <p className="text-xs font-bold text-slate-800 mt-1 flex items-center gap-1">
                 <CheckCircle className="text-emerald-500 h-4 w-4" /> Live Google Sheets Database
               </p>
-              <p className="text-3xs text-slate-500 mt-2">
+              <p className="text-3xs text-slate-500 mt-2 leading-relaxed">
                 All changes made on vehicles, owners, drivers, billing payments, and operational deductions are saved
                 directly to the designated spreadsheet.
               </p>
             </div>
             {spreadsheetId && (
-              <p className="text-3xs text-slate-400 font-mono mt-3 truncate">
-                Spreadsheet ID: {spreadsheetId}
-              </p>
+              <div className="pt-2 border-t border-slate-150">
+                <a
+                  href={`https://docs.google.com/spreadsheets/d/${spreadsheetId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-3xs font-bold text-blue-600 hover:underline flex items-center gap-1.5 cursor-pointer"
+                >
+                  Open Google Sheet <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
             )}
+          </div>
+
+          <div className="border border-slate-200 rounded-lg p-4 bg-slate-50 flex flex-col justify-between gap-3">
+            <div>
+              <span className="text-3xs font-semibold text-slate-400 uppercase">Change App Spreadsheet Link</span>
+              <p className="text-3xs text-slate-500 mt-1">
+                Paste a Google Sheet URL or custom Spreadsheet ID to link a different database sheet.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <input
+                type="text"
+                placeholder="Paste Google Sheets link or ID..."
+                value={tempSpreadsheetInput}
+                onChange={(e) => setTempSpreadsheetInput(e.target.value)}
+                className="w-full px-2.5 py-1.5 border border-slate-250 bg-white rounded-lg text-3xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleSaveSpreadsheetId}
+                  className="flex-1 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-4xs font-extrabold rounded-md shadow-3xs transition-all uppercase tracking-wider cursor-pointer"
+                >
+                  Connect Sheet
+                </button>
+                {spreadsheetId && (
+                  <button
+                    type="button"
+                    onClick={handleResetSpreadsheetId}
+                    className="px-3 py-1 border border-slate-200 text-rose-600 hover:bg-rose-50 text-4xs font-bold rounded-md transition-all uppercase tracking-wider cursor-pointer"
+                  >
+                    Disconnect
+                  </button>
+                )}
+              </div>
+              {feedbackMsg && (
+                <p className="text-[10px] font-bold text-emerald-600 animate-pulse mt-1">{feedbackMsg}</p>
+              )}
+            </div>
           </div>
 
           <div className="border border-slate-200 rounded-lg p-4 bg-slate-50 flex flex-col justify-between">
@@ -496,6 +587,12 @@ export default function Settings({
               <p className="text-3xs text-slate-500 mt-2 font-medium">
                 Store your current local ERP registers to your connected spreadsheet, or reload remote database records.
               </p>
+              {lastSynced && (
+                <p className="text-4xs font-bold text-emerald-600 mt-2 flex items-center gap-1 uppercase tracking-wide">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Last Synced: {lastSynced}
+                </p>
+              )}
             </div>
             <div className="mt-4 flex flex-col gap-2">
               <button

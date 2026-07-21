@@ -9,8 +9,10 @@ import {
   logout,
   getAccessToken,
   auth,
+  db,
 } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { onSnapshot, doc } from 'firebase/firestore';
 import {
   saveStateToFirestore,
   loadStateFromFirestore,
@@ -66,6 +68,7 @@ import {
   UploadCloud,
   DownloadCloud,
   CheckCircle2,
+  Files,
 } from 'lucide-react';
 
 // Sub Components
@@ -81,6 +84,7 @@ import EnquiryViews from './components/EnquiryViews';
 import InductionViews from './components/InductionViews';
 import AdminLogin from './components/AdminLogin';
 import RulesView from './components/RulesView';
+import DocumentViews from './components/DocumentViews';
 
 export default function App() {
   // Authentication & Sync State
@@ -94,11 +98,33 @@ export default function App() {
   const [spreadsheetId, setSpreadsheetId] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [lastSynced, setLastSynced] = useState<string | null>(null);
+  const [lastSynced, setLastSynced] = useState<string | null>(() => {
+    return localStorage.getItem('e7_travels_last_synced') || null;
+  });
+
+  const updateLastSyncedTime = () => {
+    const formattedTime = new Date().toLocaleTimeString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
+    setLastSynced(formattedTime);
+    localStorage.setItem('e7_travels_last_synced', formattedTime);
+  };
   const [authError, setAuthError] = useState<{ code: string; message: string } | null>(null);
   const [isFirestoreLoaded, setIsFirestoreLoaded] = useState(false);
   const [showCloudSyncPanel, setShowCloudSyncPanel] = useState(false);
   const [cloudStatusMsg, setCloudStatusMsg] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
+  const [cloudResultModal, setCloudResultModal] = useState<{
+    status: 'success' | 'error' | 'warning';
+    title: string;
+    message: string;
+  } | null>(null);
+
+  // Keep track of the last data string received from the server to prevent redundant write-back loops
+  const lastReceivedFromServer = React.useRef<Partial<Record<string, string>>>({});
 
   // Core ERP Master State
   const [vehicles, setVehicles] = useState<Vehicle[]>(() => {
@@ -210,59 +236,83 @@ export default function App() {
           displayName: firebaseUser.displayName,
         });
 
-        // Trigger automatic Smart Merge only once per user sign-in session
+        // Trigger automatic load/sync only once per user sign-in session
         if (!hasSyncedForSession) {
           try {
             setCloudStatusMsg('syncing');
             const cloud = await loadStateFromFirestore();
             
-            // Smart merge local storage / memory data with cloud Firestore data so no data is lost
-            // We use functional updates to get the most fresh local state securely
-            setVehicles((currentVehicles) => {
-              const merged = mergeArraysById(currentVehicles, cloud.vehicles || []);
-              saveStateToFirestore('vehicles', merged).catch((err) => console.error('Auto-sync vehicles failed:', err));
-              return merged;
-            });
-            setOwners((currentOwners) => {
-              const merged = mergeArraysById(currentOwners, cloud.owners || []);
-              saveStateToFirestore('owners', merged).catch((err) => console.error('Auto-sync owners failed:', err));
-              return merged;
-            });
-            setDrivers((currentDrivers) => {
-              const merged = mergeArraysById(currentDrivers, cloud.drivers || []);
-              saveStateToFirestore('drivers', merged).catch((err) => console.error('Auto-sync drivers failed:', err));
-              return merged;
-            });
-            setCompanies((currentCompanies) => {
-              const merged = mergeArraysById(currentCompanies, cloud.companies || [], ['name', 'id']);
-              saveStateToFirestore('companies', merged).catch((err) => console.error('Auto-sync companies failed:', err));
-              return merged;
-            });
-            setSites((currentSites) => {
-              const merged = mergeArraysById(currentSites, cloud.sites || []);
-              saveStateToFirestore('sites', merged).catch((err) => console.error('Auto-sync sites failed:', err));
-              return merged;
-            });
-            setPayments((currentPayments) => {
-              const merged = mergeArraysById(currentPayments, cloud.payments || []);
-              saveStateToFirestore('payments', merged).catch((err) => console.error('Auto-sync payments failed:', err));
-              return merged;
-            });
-            setExpenses((currentExpenses) => {
-              const merged = mergeArraysById(currentExpenses, cloud.expenses || []);
-              saveStateToFirestore('expenses', merged).catch((err) => console.error('Auto-sync expenses failed:', err));
-              return merged;
-            });
-            setEnquiries((currentEnquiries) => {
-              const merged = mergeArraysById(currentEnquiries, cloud.enquiries || []);
-              saveStateToFirestore('enquiries', merged).catch((err) => console.error('Auto-sync enquiries failed:', err));
-              return merged;
-            });
+            // Overwrite local state with cloud state if it exists, to avoid resurrecting deleted records.
+            // If the document does not exist, upload current local state to seed the database.
+            if (cloud.vehicles !== undefined) {
+              setVehicles(cloud.vehicles);
+              lastReceivedFromServer.current['vehicles'] = JSON.stringify(cloud.vehicles);
+            } else {
+              saveStateToFirestore('vehicles', vehicles).catch((err) => console.error('Auto-sync vehicles failed:', err));
+            }
+
+            if (cloud.owners !== undefined) {
+              setOwners(cloud.owners);
+              lastReceivedFromServer.current['owners'] = JSON.stringify(cloud.owners);
+            } else {
+              saveStateToFirestore('owners', owners).catch((err) => console.error('Auto-sync owners failed:', err));
+            }
+
+            if (cloud.drivers !== undefined) {
+              setDrivers(cloud.drivers);
+              lastReceivedFromServer.current['drivers'] = JSON.stringify(cloud.drivers);
+            } else {
+              saveStateToFirestore('drivers', drivers).catch((err) => console.error('Auto-sync drivers failed:', err));
+            }
+
+            if (cloud.companies !== undefined) {
+              setCompanies(cloud.companies);
+              lastReceivedFromServer.current['companies'] = JSON.stringify(cloud.companies);
+            } else {
+              saveStateToFirestore('companies', companies).catch((err) => console.error('Auto-sync companies failed:', err));
+            }
+
+            if (cloud.sites !== undefined) {
+              setSites(cloud.sites);
+              lastReceivedFromServer.current['sites'] = JSON.stringify(cloud.sites);
+            } else {
+              saveStateToFirestore('sites', sites).catch((err) => console.error('Auto-sync sites failed:', err));
+            }
+
+            if (cloud.payments !== undefined) {
+              setPayments(cloud.payments);
+              lastReceivedFromServer.current['payments'] = JSON.stringify(cloud.payments);
+            } else {
+              saveStateToFirestore('payments', payments).catch((err) => console.error('Auto-sync payments failed:', err));
+            }
+
+            if (cloud.expenses !== undefined) {
+              setExpenses(cloud.expenses);
+              lastReceivedFromServer.current['expenses'] = JSON.stringify(cloud.expenses);
+            } else {
+              saveStateToFirestore('expenses', expenses).catch((err) => console.error('Auto-sync expenses failed:', err));
+            }
+
+            if (cloud.enquiries !== undefined) {
+              const cloudIds = new Set(cloud.enquiries.map((e: Enquiry) => e.id));
+              const missingEnquiries = SAMPLE_ENQUIRIES.filter((e) => !cloudIds.has(e.id));
+              if (missingEnquiries.length > 0) {
+                const merged = [...cloud.enquiries, ...missingEnquiries];
+                setEnquiries(merged);
+                lastReceivedFromServer.current['enquiries'] = JSON.stringify(merged);
+                saveStateToFirestore('enquiries', merged).catch((err) => console.error('Auto-sync missing enquiries back to Firestore failed:', err));
+              } else {
+                setEnquiries(cloud.enquiries);
+                lastReceivedFromServer.current['enquiries'] = JSON.stringify(cloud.enquiries);
+              }
+            } else {
+              saveStateToFirestore('enquiries', enquiries).catch((err) => console.error('Auto-sync enquiries failed:', err));
+            }
 
             setIsFirestoreLoaded(true);
             setCloudStatusMsg('success');
             setHasSyncedForSession(true);
-            console.log('Successfully loaded and smart-merged local state with Firestore cloud database.');
+            console.log('Successfully loaded and connected to Firestore cloud database.');
           } catch (err) {
             console.error('Error syncing with Firestore cloud on active session:', err);
             setCloudStatusMsg('error');
@@ -278,78 +328,158 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, [hasSyncedForSession]);
+  }, [hasSyncedForSession, vehicles, owners, drivers, companies, sites, payments, expenses, enquiries]);
+
+  // Real-time Firestore sync listeners to propagate changes instantly across tabs/devices
+  useEffect(() => {
+    if (!isFirestoreLoaded || !user) return;
+
+    const keys = [
+      'vehicles',
+      'owners',
+      'drivers',
+      'companies',
+      'sites',
+      'payments',
+      'expenses',
+      'enquiries',
+    ] as const;
+
+    const setters: Record<typeof keys[number], React.Dispatch<React.SetStateAction<any>>> = {
+      vehicles: setVehicles,
+      owners: setOwners,
+      drivers: setDrivers,
+      companies: setCompanies,
+      sites: setSites,
+      payments: setPayments,
+      expenses: setExpenses,
+      enquiries: setEnquiries,
+    };
+
+    const unsubscribes = keys.map((key) => {
+      return onSnapshot(doc(db, 'fleet', key), (snapshot) => {
+        // Skip updating if snapshot is a local write that hasn't finished propagating
+        if (snapshot.metadata.hasPendingWrites) {
+          return;
+        }
+        if (snapshot.exists()) {
+          const cloudData = snapshot.data().data;
+          const cloudStr = JSON.stringify(cloudData);
+          
+          setters[key]((currentLocal: any) => {
+            const localStr = JSON.stringify(currentLocal);
+            if (localStr !== cloudStr) {
+              console.log(`Real-time update received from Firestore for key: ${key}`);
+              lastReceivedFromServer.current[key] = cloudStr;
+              return cloudData;
+            }
+            return currentLocal;
+          });
+        }
+      }, (error) => {
+        console.error(`Real-time subscription error for key ${key}:`, error);
+      });
+    });
+
+    return () => {
+      unsubscribes.forEach((unsub) => unsub());
+    };
+  }, [isFirestoreLoaded, user]);
 
   // Automatically save to localStorage and Firestore cloud whenever state changes
   useEffect(() => {
-    localStorage.setItem('e7_travels_vehicles', JSON.stringify(vehicles));
+    const str = JSON.stringify(vehicles);
+    localStorage.setItem('e7_travels_vehicles', str);
     if (isFirestoreLoaded) {
-      saveStateToFirestore('vehicles', vehicles).catch((err) => {
-        console.warn('Auto-save vehicles failed (silent):', err);
-      });
+      if (lastReceivedFromServer.current['vehicles'] !== str) {
+        saveStateToFirestore('vehicles', vehicles).catch((err) => {
+          console.warn('Auto-save vehicles failed (silent):', err);
+        });
+      }
     }
   }, [vehicles, isFirestoreLoaded]);
 
   useEffect(() => {
-    localStorage.setItem('e7_travels_owners', JSON.stringify(owners));
+    const str = JSON.stringify(owners);
+    localStorage.setItem('e7_travels_owners', str);
     if (isFirestoreLoaded) {
-      saveStateToFirestore('owners', owners).catch((err) => {
-        console.warn('Auto-save owners failed (silent):', err);
-      });
+      if (lastReceivedFromServer.current['owners'] !== str) {
+        saveStateToFirestore('owners', owners).catch((err) => {
+          console.warn('Auto-save owners failed (silent):', err);
+        });
+      }
     }
   }, [owners, isFirestoreLoaded]);
 
   useEffect(() => {
-    localStorage.setItem('e7_travels_drivers', JSON.stringify(drivers));
+    const str = JSON.stringify(drivers);
+    localStorage.setItem('e7_travels_drivers', str);
     if (isFirestoreLoaded) {
-      saveStateToFirestore('drivers', drivers).catch((err) => {
-        console.warn('Auto-save drivers failed (silent):', err);
-      });
+      if (lastReceivedFromServer.current['drivers'] !== str) {
+        saveStateToFirestore('drivers', drivers).catch((err) => {
+          console.warn('Auto-save drivers failed (silent):', err);
+        });
+      }
     }
   }, [drivers, isFirestoreLoaded]);
 
   useEffect(() => {
-    localStorage.setItem('e7_travels_companies', JSON.stringify(companies));
+    const str = JSON.stringify(companies);
+    localStorage.setItem('e7_travels_companies', str);
     if (isFirestoreLoaded) {
-      saveStateToFirestore('companies', companies).catch((err) => {
-        console.warn('Auto-save companies failed (silent):', err);
-      });
+      if (lastReceivedFromServer.current['companies'] !== str) {
+        saveStateToFirestore('companies', companies).catch((err) => {
+          console.warn('Auto-save companies failed (silent):', err);
+        });
+      }
     }
   }, [companies, isFirestoreLoaded]);
 
   useEffect(() => {
-    localStorage.setItem('e7_travels_sites', JSON.stringify(sites));
+    const str = JSON.stringify(sites);
+    localStorage.setItem('e7_travels_sites', str);
     if (isFirestoreLoaded) {
-      saveStateToFirestore('sites', sites).catch((err) => {
-        console.warn('Auto-save sites failed (silent):', err);
-      });
+      if (lastReceivedFromServer.current['sites'] !== str) {
+        saveStateToFirestore('sites', sites).catch((err) => {
+          console.warn('Auto-save sites failed (silent):', err);
+        });
+      }
     }
   }, [sites, isFirestoreLoaded]);
 
   useEffect(() => {
-    localStorage.setItem('e7_travels_payments', JSON.stringify(payments));
+    const str = JSON.stringify(payments);
+    localStorage.setItem('e7_travels_payments', str);
     if (isFirestoreLoaded) {
-      saveStateToFirestore('payments', payments).catch((err) => {
-        console.warn('Auto-save payments failed (silent):', err);
-      });
+      if (lastReceivedFromServer.current['payments'] !== str) {
+        saveStateToFirestore('payments', payments).catch((err) => {
+          console.warn('Auto-save payments failed (silent):', err);
+        });
+      }
     }
   }, [payments, isFirestoreLoaded]);
 
   useEffect(() => {
-    localStorage.setItem('e7_travels_expenses', JSON.stringify(expenses));
+    const str = JSON.stringify(expenses);
+    localStorage.setItem('e7_travels_expenses', str);
     if (isFirestoreLoaded) {
-      saveStateToFirestore('expenses', expenses).catch((err) => {
-        console.warn('Auto-save expenses failed (silent):', err);
-      });
+      if (lastReceivedFromServer.current['expenses'] !== str) {
+        saveStateToFirestore('expenses', expenses).catch((err) => {
+          console.warn('Auto-save expenses failed (silent):', err);
+        });
+      }
     }
   }, [expenses, isFirestoreLoaded]);
 
   useEffect(() => {
-    localStorage.setItem('e7_travels_enquiries', JSON.stringify(enquiries));
+    const str = JSON.stringify(enquiries);
+    localStorage.setItem('e7_travels_enquiries', str);
     if (isFirestoreLoaded) {
-      saveStateToFirestore('enquiries', enquiries).catch((err) => {
-        console.warn('Auto-save enquiries failed (silent):', err);
-      });
+      if (lastReceivedFromServer.current['enquiries'] !== str) {
+        saveStateToFirestore('enquiries', enquiries).catch((err) => {
+          console.warn('Auto-save enquiries failed (silent):', err);
+        });
+      }
     }
   }, [enquiries, isFirestoreLoaded]);
 
@@ -373,6 +503,11 @@ export default function App() {
   const handleForceUploadToCloud = async () => {
     if (!user) {
       showToast('🔒 Please sign in with Google Sync first to upload data!', 'error');
+      setCloudResultModal({
+        status: 'warning',
+        title: 'Data Not Saved to Cloud',
+        message: 'Your current records are NOT stored in the cloud because you are in Offline Sandbox Mode. To sync and persist your data securely in the Firestore Cloud Database, please sign in using the "Sign in with Google Sync" option in the top bar.'
+      });
       return;
     }
     try {
@@ -387,16 +522,31 @@ export default function App() {
       await saveStateToFirestore('enquiries', enquiries);
       setCloudStatusMsg('success');
       showToast('🚀 URL Cloud Database updated successfully with your current data!', 'success');
+      setCloudResultModal({
+        status: 'success',
+        title: 'Successfully Saved to Cloud',
+        message: 'All your current active master fleet records (Vehicles, Owners, Drivers, Companies, Sites, Payments, Expenses, and Enquiries) have been successfully stored and persisted in the secure cloud database!'
+      });
     } catch (err) {
       console.error('Error uploading state to Firestore:', err);
       setCloudStatusMsg('error');
       showToast('❌ Failed to upload data to cloud.', 'error');
+      setCloudResultModal({
+        status: 'error',
+        title: 'Failed to Save to Cloud',
+        message: `Your current records could not be stored in the cloud. Error: ${err instanceof Error ? err.message : 'Unknown error'}. Please verify your connection and try again.`
+      });
     }
   };
 
   const handleForceDownloadFromCloud = async () => {
     if (!user) {
       showToast('🔒 Please sign in with Google Sync first to load cloud data!', 'error');
+      setCloudResultModal({
+        status: 'warning',
+        title: 'Cloud Pull Blocked',
+        message: 'You are currently in Offline Sandbox Mode. To pull master datasets from the secure Firestore Cloud Database, you must first sign in using the "Sign in with Google Sync" option.'
+      });
       return;
     }
     try {
@@ -414,16 +564,31 @@ export default function App() {
       
       setCloudStatusMsg('success');
       showToast('📥 Loaded master data from URL Cloud Database successfully!', 'success');
+      setCloudResultModal({
+        status: 'success',
+        title: 'Master Cloud Data Loaded',
+        message: 'Successfully pulled and loaded the latest master fleet records from the Firestore Cloud Database. Your current browser workspace is now synchronized with the cloud dataset!'
+      });
     } catch (err) {
       console.error('Error downloading state from Firestore:', err);
       setCloudStatusMsg('error');
       showToast('❌ Failed to load data from cloud.', 'error');
+      setCloudResultModal({
+        status: 'error',
+        title: 'Failed to Pull from Cloud',
+        message: `Could not retrieve records from the cloud. Error: ${err instanceof Error ? err.message : 'Unknown error'}.`
+      });
     }
   };
 
   const handleManualSmartMerge = async () => {
     if (!user) {
       showToast('🔒 Please sign in with Google Sync first to complete a Smart Merge!', 'error');
+      setCloudResultModal({
+        status: 'warning',
+        title: 'Smart Merge Blocked',
+        message: 'You are currently in Offline Sandbox Mode. To perform a bidirectional smart merge of local and cloud databases, you must first sign in using the "Sign in with Google Sync" option.'
+      });
       return;
     }
     try {
@@ -460,10 +625,20 @@ export default function App() {
 
       setCloudStatusMsg('success');
       showToast('🔄 Smart Merge Completed: Local browser & Cloud DB synchronized!', 'success');
+      setCloudResultModal({
+        status: 'success',
+        title: 'Smart Merge Successfully Saved',
+        message: 'Bidirectional synchronization complete! Your browser records and cloud records have been intelligently merged, and the combined dataset is successfully stored in the Cloud Database.'
+      });
     } catch (err) {
       console.error('Error in manual smart merge:', err);
       setCloudStatusMsg('error');
       showToast('❌ Failed to complete smart merge.', 'error');
+      setCloudResultModal({
+        status: 'error',
+        title: 'Smart Merge Failed',
+        message: `Failed to synchronize records with the cloud database. Error: ${err instanceof Error ? err.message : 'Unknown error'}.`
+      });
     }
   };
 
@@ -473,7 +648,7 @@ export default function App() {
   });
 
   // Layout & Navigation State
-  const [activeTab, setActiveTab] = useState<'Dashboard' | 'Enquiries' | 'Induction' | 'Registers' | 'Transactions' | 'Ledgers' | 'Settlement' | 'Reports' | 'VBA Export' | 'Settings' | 'Rules'>('Dashboard');
+  const [activeTab, setActiveTab] = useState<'Dashboard' | 'Enquiries' | 'Induction' | 'Registers' | 'Transactions' | 'Ledgers' | 'Settlement' | 'Reports' | 'VBA Export' | 'Settings' | 'Rules' | 'Documents'>('Dashboard');
   const [activeSubTab, setActiveSubTab] = useState<string>('Vehicle Master');
   const [vehicleFilter, setVehicleFilter] = useState<'all' | 'running' | 'idle' | 'new'>('all');
 
@@ -533,14 +708,20 @@ export default function App() {
       case 'Rules':
         setActiveTab('Rules');
         break;
+      case 'Tax Invoice':
+      case 'Letter Head':
+        setActiveTab('Documents');
+        setActiveSubTab(route);
+        break;
       default:
         // Fallback for parent tabs
-        if (route === 'Registers' || route === 'Transactions' || route === 'Ledgers' || route === 'Settlement' || route === 'VBA Export') {
+        if (route === 'Registers' || route === 'Transactions' || route === 'Ledgers' || route === 'Settlement' || route === 'VBA Export' || route === 'Documents') {
           setActiveTab(route as any);
           if (route === 'Registers') setActiveSubTab('Vehicle Master');
           else if (route === 'Transactions') setActiveSubTab('Company Payments');
           else if (route === 'Ledgers') setActiveSubTab('Vehicle Ledger');
           else if (route === 'Settlement') setActiveSubTab('Monthly Settlement');
+          else if (route === 'Documents') setActiveSubTab('Tax Invoice');
         }
         break;
     }
@@ -633,20 +814,20 @@ export default function App() {
       if (sheetId) {
         const remoteData = await loadFromSpreadsheet(token, sheetId);
         if (remoteData) {
-          if (remoteData.vehicles.length > 0) setVehicles(remoteData.vehicles);
-          if (remoteData.owners.length > 0) setOwners(remoteData.owners);
-          if (remoteData.drivers.length > 0) setDrivers(remoteData.drivers);
-          if (remoteData.companies.length > 0) setCompanies(remoteData.companies);
-          if (remoteData.sites.length > 0) setSites(remoteData.sites);
-          if (remoteData.payments.length > 0) setPayments(remoteData.payments);
-          if (remoteData.expenses.length > 0) setExpenses(remoteData.expenses);
+          if (remoteData.vehicles && Array.isArray(remoteData.vehicles)) setVehicles(remoteData.vehicles);
+          if (remoteData.owners && Array.isArray(remoteData.owners)) setOwners(remoteData.owners);
+          if (remoteData.drivers && Array.isArray(remoteData.drivers)) setDrivers(remoteData.drivers);
+          if (remoteData.companies && Array.isArray(remoteData.companies)) setCompanies(remoteData.companies);
+          if (remoteData.sites && Array.isArray(remoteData.sites)) setSites(remoteData.sites);
+          if (remoteData.payments && Array.isArray(remoteData.payments)) setPayments(remoteData.payments);
+          if (remoteData.expenses && Array.isArray(remoteData.expenses)) setExpenses(remoteData.expenses);
           if (remoteData.enquiries && remoteData.enquiries.length > 0) {
             setEnquiries(remoteData.enquiries);
             localStorage.setItem('e7_travels_enquiries', JSON.stringify(remoteData.enquiries));
           }
         }
         setSyncStatus('success');
-        setLastSynced(new Date().toLocaleTimeString());
+        updateLastSyncedTime();
       }
     } catch (err) {
       console.error('Sync sheets error:', err);
@@ -683,7 +864,7 @@ export default function App() {
         enquiries: enq,
       });
       setSyncStatus('success');
-      setLastSynced(new Date().toLocaleTimeString());
+      updateLastSyncedTime();
     } catch (err) {
       console.error('Error during automatic data push:', err);
       setSyncStatus('error');
@@ -742,7 +923,7 @@ export default function App() {
         });
       }
       setSyncStatus('success');
-      setLastSynced(new Date().toLocaleTimeString());
+      updateLastSyncedTime();
       alert('Success! Your current local database has been fully written and stored in your Google Sheet.');
     } catch (err: any) {
       console.error('Export sheets error:', err);
@@ -988,6 +1169,31 @@ export default function App() {
             </button>
           </div>
 
+          {/* Section: DOCUMENTS */}
+          <div className="space-y-1">
+            <span className="text-4xs font-bold text-blue-300 uppercase tracking-widest pl-3 block mb-1">DOCUMENT</span>
+            
+            <button
+              id="menu-btn-tax-invoice"
+              onClick={() => handleNavigate('Tax Invoice')}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
+                activeTab === 'Documents' && activeSubTab === 'Tax Invoice' ? 'bg-blue-800 text-white' : 'text-blue-100 hover:bg-blue-800/50'
+              }`}
+            >
+              <FileText className="h-4 w-4 shrink-0" /> Tax Invoice
+            </button>
+
+            <button
+              id="menu-btn-letter-head"
+              onClick={() => handleNavigate('Letter Head')}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
+                activeTab === 'Documents' && activeSubTab === 'Letter Head' ? 'bg-blue-800 text-white' : 'text-blue-100 hover:bg-blue-800/50'
+              }`}
+            >
+              <Files className="h-4 w-4 shrink-0" /> Letter Head
+            </button>
+          </div>
+
           {/* Section: INTEGRATIONS */}
           <div className="space-y-1">
             <span className="text-4xs font-bold text-blue-300 uppercase tracking-widest pl-3 block mb-1">DEVELOPER ZONE</span>
@@ -1227,10 +1433,45 @@ export default function App() {
             {/* Sync Status Badge */}
             <div className="flex items-center gap-2">
               <div className="text-right">
-                <p className="text-4xs font-bold text-slate-400 uppercase">Spreadsheet Link</p>
-                <p className="text-3xs font-extrabold text-slate-600 leading-none mt-0.5">
-                  {user ? (syncStatus === 'success' ? 'Synchronised' : 'Pending Save') : 'Sandbox Mode'}
-                </p>
+                {spreadsheetId ? (
+                  <a
+                    href={`https://docs.google.com/spreadsheets/d/${spreadsheetId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group inline-flex flex-col items-end hover:opacity-85 text-right cursor-pointer"
+                    title="Open Connected Google Sheet in New Tab"
+                  >
+                    <p className="text-4xs font-bold text-blue-600 group-hover:underline uppercase flex items-center gap-1">
+                      Spreadsheet Link <ExternalLink className="h-2.5 w-2.5 inline shrink-0" />
+                    </p>
+                    <p className="text-3xs font-extrabold text-slate-600 leading-none mt-0.5">
+                      {user ? (
+                        syncStatus === 'success' ? (
+                          `Synchronised ${lastSynced ? `at ${lastSynced}` : ''}`
+                        ) : (
+                          'Pending Save'
+                        )
+                      ) : (
+                        'Sandbox Mode'
+                      )}
+                    </p>
+                  </a>
+                ) : (
+                  <div>
+                    <p className="text-4xs font-bold text-slate-400 uppercase">Spreadsheet Link</p>
+                    <p className="text-3xs font-extrabold text-slate-600 leading-none mt-0.5">
+                      {user ? (
+                        syncStatus === 'success' ? (
+                          `Synchronised ${lastSynced ? `at ${lastSynced}` : ''}`
+                        ) : (
+                          'Pending Save'
+                        )
+                      ) : (
+                        'Sandbox Mode'
+                      )}
+                    </p>
+                  </div>
+                )}
               </div>
               <button
                 id="sync-trigger-btn"
@@ -1293,7 +1534,7 @@ export default function App() {
           )}
           
           {/* Sub Navigation deck (Where necessary depending on chosen Tab) */}
-          {['Registers', 'Transactions', 'Ledgers', 'Settlement'].includes(activeTab) && (
+          {['Registers', 'Transactions', 'Ledgers', 'Settlement', 'Documents'].includes(activeTab) && (
             <div className="flex bg-slate-200 p-1 rounded-xl max-w-max border border-slate-300/40 print:hidden shadow-3xs mb-4">
               {activeTab === 'Registers' &&
                 (['Vehicle Master', 'Owner Master', 'Driver Master', 'Company Master', 'Site Master'] as const).map((sub) => (
@@ -1348,6 +1589,20 @@ export default function App() {
                     }`}
                   >
                     {sub.split(' ')[0]}
+                  </button>
+                ))}
+
+              {activeTab === 'Documents' &&
+                (['Tax Invoice', 'Letter Head'] as const).map((sub) => (
+                  <button
+                    id={`sub-tab-btn-${sub}`}
+                    key={sub}
+                    onClick={() => setActiveSubTab(sub as any)}
+                    className={`px-4 py-1.5 text-2xs font-bold rounded-lg transition-all ${
+                      activeSubTab === sub ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    {sub}
                   </button>
                 ))}
             </div>
@@ -1460,6 +1715,14 @@ export default function App() {
             <RulesView />
           )}
 
+          {activeTab === 'Documents' && (
+            <DocumentViews
+              vehicles={vehicles}
+              companies={companies}
+              activeSubView={activeSubTab as any}
+            />
+          )}
+
           {activeTab === 'VBA Export' && (
             <VbaExport
               vehicles={vehicles}
@@ -1480,6 +1743,7 @@ export default function App() {
               onForceSync={handleForceRefresh}
               onExportToSheets={handleExportToSheets}
               customLogo={customLogo}
+              lastSynced={lastSynced}
               onUpdateLogo={(newLogo) => {
                 setCustomLogo(newLogo);
                 if (newLogo) {
@@ -1494,6 +1758,14 @@ export default function App() {
                   } catch (err) {
                     console.error('Failed to remove custom logo from localStorage:', err);
                   }
+                }
+              }}
+              onUpdateSpreadsheetId={(id) => {
+                setSpreadsheetId(id);
+                if (id) {
+                  localStorage.setItem('e7_travels_sheets_id', id);
+                } else {
+                  localStorage.removeItem('e7_travels_sheets_id');
                 }
               }}
             />
@@ -1525,6 +1797,59 @@ export default function App() {
           >
             <X className="h-3 w-3" />
           </button>
+        </div>
+      )}
+
+      {/* CLOUD DATABASE STATUS POPUP MODAL */}
+      {cloudResultModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[10000] p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-slate-150 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-6 text-left">
+              <div className="flex items-center gap-3 mb-4">
+                {cloudResultModal.status === 'success' ? (
+                  <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600">
+                    <CheckCircle2 className="h-6 w-6" />
+                  </div>
+                ) : cloudResultModal.status === 'error' ? (
+                  <div className="p-2 bg-rose-50 rounded-lg text-rose-600">
+                    <AlertCircle className="h-6 w-6" />
+                  </div>
+                ) : (
+                  <div className="p-2 bg-amber-50 rounded-lg text-amber-600">
+                    <AlertCircle className="h-6 w-6" />
+                  </div>
+                )}
+                <h3 className="text-base font-black text-slate-900 uppercase tracking-wide">
+                  {cloudResultModal.title}
+                </h3>
+              </div>
+              
+              <div className="text-xs font-semibold text-slate-700 leading-relaxed space-y-2">
+                <p>{cloudResultModal.message}</p>
+                <div className="pt-2">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Database Engine Status</span>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className={`inline-block h-2 w-2 rounded-full ${
+                      cloudResultModal.status === 'success' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
+                    }`} />
+                    <span className="text-[10px] font-bold text-slate-600 font-mono">
+                      {cloudResultModal.status === 'success' ? 'Firestore Online & Synchronized' : 'Firestore Sandbox/Offline'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 px-6 py-4 flex justify-end border-t border-slate-150">
+              <button
+                type="button"
+                onClick={() => setCloudResultModal(null)}
+                className="px-5 py-2 text-xs font-extrabold bg-[#114b3e] hover:bg-[#0c392f] text-white rounded-lg transition-all shadow-xs cursor-pointer uppercase tracking-wider"
+              >
+                Acknowledge
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

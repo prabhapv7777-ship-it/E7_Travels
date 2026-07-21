@@ -102,6 +102,8 @@ export interface CompanyPayment {
   paymentDate: string;
   amountReceived: number;
   remarks: string;
+  fromDate?: string;
+  toDate?: string;
 }
 
 export interface Expense {
@@ -112,6 +114,7 @@ export interface Expense {
   expenseType: ExpenseType;
   amount: number;
   remarks: string;
+  adjustedInInvoice?: string; // Tracks weekly payment invoice this advance was adjusted/deducted in
 }
 
 export type ExpenseType =

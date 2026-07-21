@@ -51,7 +51,8 @@ export const saveAllStateToFirestore = async (state: FleetState) => {
 export function mergeArraysById<T extends Record<string, any>>(
   local: T[] = [],
   cloud: T[] = [],
-  keyFields: string[] = ['id', 'name']
+  keyFields: string[] = ['id', 'name'],
+  preferCloud: boolean = false
 ): T[] {
   const mergedMap = new Map<string, T>();
   
@@ -64,28 +65,54 @@ export function mergeArraysById<T extends Record<string, any>>(
     return null;
   };
 
-  // Add cloud items first
-  if (cloud && Array.isArray(cloud)) {
-    cloud.forEach((item) => {
-      const k = getKey(item);
-      if (k) mergedMap.set(k, item);
-    });
-  }
+  if (preferCloud) {
+    // Add local items first
+    if (local && Array.isArray(local)) {
+      local.forEach((item) => {
+        const k = getKey(item);
+        if (k) mergedMap.set(k, item);
+      });
+    }
 
-  // Add local items (overwriting or merging with cloud)
-  if (local && Array.isArray(local)) {
-    local.forEach((item) => {
-      const k = getKey(item);
-      if (k) {
-        const existing = mergedMap.get(k);
-        if (existing) {
-          // Merge properties, giving preference to local
-          mergedMap.set(k, { ...existing, ...item });
-        } else {
-          mergedMap.set(k, item);
+    // Add cloud items (overwriting local items with cloud values)
+    if (cloud && Array.isArray(cloud)) {
+      cloud.forEach((item) => {
+        const k = getKey(item);
+        if (k) {
+          const existing = mergedMap.get(k);
+          if (existing) {
+            // Overwrite with cloud properties
+            mergedMap.set(k, { ...existing, ...item, ...item });
+          } else {
+            mergedMap.set(k, item);
+          }
         }
-      }
-    });
+      });
+    }
+  } else {
+    // Add cloud items first
+    if (cloud && Array.isArray(cloud)) {
+      cloud.forEach((item) => {
+        const k = getKey(item);
+        if (k) mergedMap.set(k, item);
+      });
+    }
+
+    // Add local items (overwriting or merging with cloud, giving preference to local)
+    if (local && Array.isArray(local)) {
+      local.forEach((item) => {
+        const k = getKey(item);
+        if (k) {
+          const existing = mergedMap.get(k);
+          if (existing) {
+            // Merge properties, giving preference to local
+            mergedMap.set(k, { ...existing, ...item });
+          } else {
+            mergedMap.set(k, item);
+          }
+        }
+      });
+    }
   }
 
   return Array.from(mergedMap.values());

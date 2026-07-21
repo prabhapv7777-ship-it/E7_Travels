@@ -58,8 +58,8 @@ export default function EnquiryViews({
 }: EnquiryViewsProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'New' | 'Interested' | 'Site Offered' | 'Induction' | 'Closed'>('all');
-  const [sortBy, setSortBy] = useState<'enquiryDate' | 'id' | 'vehicleNumber' | 'driverName' | 'status'>('enquiryDate');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [sortBy, setSortBy] = useState<'enquiryDate' | 'id' | 'vehicleNumber' | 'driverName' | 'status'>('id');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -129,6 +129,50 @@ export default function EnquiryViews({
 
   const formRef = useRef<HTMLDivElement>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
+
+  const [isDragging, setIsDragging] = useState(false);
+  const [startX, setStartX] = useState(0);
+  const [scrollLeftState, setScrollLeftState] = useState(0);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return; // Only left click
+    const target = e.target as HTMLElement;
+    if (
+      target.tagName === 'BUTTON' || 
+      target.tagName === 'INPUT' || 
+      target.tagName === 'SELECT' || 
+      target.tagName === 'TEXTAREA' ||
+      target.tagName === 'A' ||
+      target.closest('button') ||
+      target.closest('input') ||
+      target.closest('select') ||
+      target.closest('textarea') ||
+      target.closest('a')
+    ) {
+      return;
+    }
+    if (tableContainerRef.current) {
+      setIsDragging(true);
+      setStartX(e.pageX - tableContainerRef.current.offsetLeft);
+      setScrollLeftState(tableContainerRef.current.scrollLeft);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging || !tableContainerRef.current) return;
+    e.preventDefault();
+    const x = e.pageX - tableContainerRef.current.offsetLeft;
+    const walk = (x - startX) * 1.5;
+    tableContainerRef.current.scrollLeft = scrollLeftState - walk;
+  };
 
   const scrollTable = (direction: 'left' | 'right') => {
     if (tableContainerRef.current) {
@@ -242,8 +286,8 @@ export default function EnquiryViews({
       driverArea: '',
       driverBatchExp: '',
       alreadyRunningCompany: '',
-      sitePreference1: sites.length > 0 ? sites[0].name : 'Open Preference',
-      sitePreference2: sites.length > 1 ? sites[1].name : 'Open Preference',
+      sitePreference1: 'Open Preference',
+      sitePreference2: 'Open Preference',
       enquiryDate: new Date().toISOString().substring(0, 10),
       status: 'New',
       remarks: '',
@@ -610,8 +654,21 @@ export default function EnquiryViews({
     }, 1500);
   };
 
+  // Filter out any enquiries that have been moved to the Master Register (present in vehicles list)
+  const masterVehicleNumbers = new Set(
+    (vehicles || []).map((v) => (v.registrationNumber || '').replace(/\s+/g, '').toUpperCase())
+  );
+
+  const visibleEnquiries = enquiries.filter((item) => {
+    const regNum = (item.vehicleNumber || '').replace(/\s+/g, '').toUpperCase();
+    if (regNum && masterVehicleNumbers.has(regNum)) {
+      return false; // Exclude
+    }
+    return true; // Keep
+  });
+
   // Filter & Search Logic
-  const filtered = enquiries.filter((item) => {
+  const filtered = visibleEnquiries.filter((item) => {
     const matchesSearch =
       (item.vehicleNumber || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (item.vehicleType || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -646,12 +703,12 @@ export default function EnquiryViews({
   });
 
   // KPI Calculations
-  const totalCount = enquiries.length;
-  const newCount = enquiries.filter((e) => e.status === 'New').length;
-  const interestedCount = enquiries.filter((e) => e.status === 'Interested').length;
-  const siteOfferedCount = enquiries.filter((e) => e.status === 'Site Offered').length;
-  const inductionCount = enquiries.filter((e) => e.status === 'Induction').length;
-  const closedCount = enquiries.filter((e) => e.status === 'Closed').length;
+  const totalCount = visibleEnquiries.length;
+  const newCount = visibleEnquiries.filter((e) => e.status === 'New').length;
+  const interestedCount = visibleEnquiries.filter((e) => e.status === 'Interested').length;
+  const siteOfferedCount = visibleEnquiries.filter((e) => e.status === 'Site Offered').length;
+  const inductionCount = visibleEnquiries.filter((e) => e.status === 'Induction').length;
+  const closedCount = visibleEnquiries.filter((e) => e.status === 'Closed').length;
 
   return (
     <div className="space-y-6">
@@ -804,6 +861,47 @@ export default function EnquiryViews({
         </button>
       </div>
 
+      {/* Search and Sort Controls Block placed BELOW Enquiry Desk KPI Box */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-3xs flex flex-col md:flex-row gap-4 justify-between items-center">
+        <div className="relative w-full md:w-96">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+          <input
+            id="enq-search"
+            type="text"
+            placeholder="Search registration, owner, driver, or site preferences..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+          />
+        </div>
+
+        {/* Sort Options */}
+        <div className="flex items-center gap-2 self-start md:self-auto bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 shadow-3xs hover:border-slate-300 transition-all shrink-0">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Sort By:</span>
+          <select
+            id="enq-sort-by"
+            value={`${sortBy}-${sortOrder}`}
+            onChange={(e) => {
+              const [field, order] = e.target.value.split('-');
+              setSortBy(field as any);
+              setSortOrder(order as any);
+            }}
+            className="text-3xs font-black uppercase tracking-wider text-slate-700 bg-transparent border-0 focus:outline-none focus:ring-0 cursor-pointer"
+          >
+            <option value="enquiryDate-desc">Date (Latest First)</option>
+            <option value="enquiryDate-asc">Date (Oldest First)</option>
+            <option value="id-desc">Enquiry ID (Newest)</option>
+            <option value="id-asc">Enquiry ID (Oldest)</option>
+            <option value="vehicleNumber-asc">Vehicle No (A-Z)</option>
+            <option value="vehicleNumber-desc">Vehicle No (Z-A)</option>
+            <option value="driverName-asc">Driver Name (A-Z)</option>
+            <option value="driverName-desc">Driver Name (Z-A)</option>
+            <option value="status-asc">Status (A-Z)</option>
+            <option value="status-desc">Status (Z-A)</option>
+          </select>
+        </div>
+      </div>
+
       {/* Adding & Editing Form Panel */}
       {(isAdding || editingId) && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
@@ -922,14 +1020,30 @@ export default function EnquiryViews({
                 </div>
 
                 <div>
-                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Fuel Type</label>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Fuel Type (Scroll & Select)</label>
+                  <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-slate-200 snap-x snap-mandatory max-w-full" style={{ scrollBehavior: 'smooth' }}>
+                    {['CNG', 'PETROL', 'DIESEL', 'EV'].map((fuel) => {
+                      const isSelected = (formState.fuelType || '').toUpperCase() === fuel;
+                      return (
+                        <button
+                          key={fuel}
+                          type="button"
+                          onClick={() => setFormState({ ...formState, fuelType: fuel })}
+                          className={`snap-start px-3 py-1.5 rounded-lg text-xs font-bold border transition-all shrink-0 cursor-pointer ${
+                            isSelected
+                              ? 'bg-amber-500 border-amber-600 text-white shadow-xs scale-[1.02]'
+                              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                          }`}
+                        >
+                          {fuel}
+                        </button>
+                      );
+                    })}
+                  </div>
                   <input
                     id="enq-form-fuelType"
-                    type="text"
-                    placeholder="e.g. Diesel / CNG / Petrol"
+                    type="hidden"
                     value={formState.fuelType || ''}
-                    onChange={(e) => setFormState({ ...formState, fuelType: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                   />
                 </div>
 
@@ -1407,66 +1521,6 @@ export default function EnquiryViews({
       {/* Spreadsheet List Card */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-3xs overflow-hidden">
         
-        {/* Card Header with Excel style filters */}
-        <div className="p-5 border-b border-slate-200 bg-slate-50/50 flex flex-col xl:flex-row gap-4 justify-between items-center">
-          <div className="flex flex-col sm:flex-row items-center gap-3 w-full xl:w-auto">
-            <div className="relative w-full sm:w-80">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-              <input
-                id="enq-search"
-                type="text"
-                placeholder="Search registration, owner, driver, or site preferences..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-              />
-            </div>
-
-            {/* Sort Options */}
-            <div className="flex items-center gap-2 self-start sm:self-auto bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 shadow-3xs hover:border-slate-300 transition-all shrink-0">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Sort By:</span>
-              <select
-                id="enq-sort-by"
-                value={`${sortBy}-${sortOrder}`}
-                onChange={(e) => {
-                  const [field, order] = e.target.value.split('-');
-                  setSortBy(field as any);
-                  setSortOrder(order as any);
-                }}
-                className="text-3xs font-black uppercase tracking-wider text-slate-700 bg-transparent border-0 focus:outline-none focus:ring-0 cursor-pointer"
-              >
-                <option value="enquiryDate-desc">Date (Latest First)</option>
-                <option value="enquiryDate-asc">Date (Oldest First)</option>
-                <option value="id-desc">Enquiry ID (Newest)</option>
-                <option value="id-asc">Enquiry ID (Oldest)</option>
-                <option value="vehicleNumber-asc">Vehicle No (A-Z)</option>
-                <option value="vehicleNumber-desc">Vehicle No (Z-A)</option>
-                <option value="driverName-asc">Driver Name (A-Z)</option>
-                <option value="driverName-desc">Driver Name (Z-A)</option>
-                <option value="status-asc">Status (A-Z)</option>
-                <option value="status-desc">Status (Z-A)</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-1.5 self-start xl:self-auto">
-            {(['all', 'New', 'Interested', 'Site Offered', 'Induction', 'Closed'] as const).map((st) => (
-              <button
-                id={`status-filter-${st}`}
-                key={st}
-                onClick={() => setStatusFilter(st)}
-                className={`px-3 py-1.5 text-3xs font-extrabold uppercase tracking-wider rounded-lg border transition-all ${
-                  statusFilter === st
-                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-3xs'
-                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                {st === 'all' ? 'All Call Leads' : st}
-              </button>
-            ))}
-          </div>
-        </div>
-
         {/* Scroll Control Panel */}
         <div className="px-5 py-3 bg-slate-100/50 border-b border-slate-200 flex flex-col md:flex-row items-center justify-between gap-3 text-xs">
           <div className="flex flex-col sm:flex-row sm:items-center gap-2">
@@ -1536,7 +1590,12 @@ export default function EnquiryViews({
         {/* Outer container for scrollable spreadsheet table */}
         <div 
           ref={tableContainerRef}
-          className="overflow-x-auto scrollbar-visible"
+          className="overflow-auto max-h-[600px] scrollbar-visible"
+          onMouseDown={handleMouseDown}
+          onMouseLeave={handleMouseLeave}
+          onMouseUp={handleMouseUp}
+          onMouseMove={handleMouseMove}
+          style={{ cursor: isDragging ? 'grabbing' : 'default', userSelect: isDragging ? 'none' : 'text' }}
         >
           {sortedAndFiltered.length === 0 ? (
             <div className="py-16 text-center text-slate-400 space-y-3">
@@ -1550,42 +1609,42 @@ export default function EnquiryViews({
             <table className="w-full text-left text-xs border-collapse min-w-[1400px]">
               <thead>
                 {/* PRIMARY COLOR GROUP HEADERS */}
-                <tr className="border-b border-slate-200 font-extrabold uppercase tracking-wider text-3xs">
+                <tr className="border-b border-slate-200 font-extrabold uppercase tracking-wider text-3xs h-[32px]">
                   {/* ENQ001 Header Column */}
-                  <th rowSpan={2} className="py-3 px-3 text-center align-middle bg-purple-100 text-purple-900 border-r border-b border-purple-200 font-black font-mono w-[110px]">
+                  <th rowSpan={2} className="sticky top-0 z-20 py-3 px-3 text-center align-middle bg-purple-100 text-purple-900 border-r border-b border-purple-200 font-black font-mono w-[110px]">
                     ENQUIRY ID
                   </th>
 
                   {/* VEHICLE DETAILS Group Header (Yellow hue from picture) */}
-                  <th colSpan={6} className="py-2 px-4 text-center bg-amber-100 text-amber-950 border-r border-b border-amber-200 font-black text-2xs uppercase tracking-widest">
+                  <th colSpan={6} className="sticky top-0 z-20 py-1.5 px-4 text-center bg-amber-100 text-amber-950 border-r border-b border-amber-200 font-black text-2xs uppercase tracking-widest h-[32px]">
                     VECHILE DETAILS
                   </th>
 
                   {/* DRIVER DETAILS Group Header (Green hue from picture) */}
-                  <th colSpan={5} className="py-2 px-4 text-center bg-emerald-100/90 text-emerald-950 border-r border-b border-emerald-200 font-black text-2xs uppercase tracking-widest">
+                  <th colSpan={5} className="sticky top-0 z-20 py-1.5 px-4 text-center bg-emerald-100 text-emerald-950 border-r border-b border-emerald-200 font-black text-2xs uppercase tracking-widest h-[32px]">
                     DRIVER DETAILS
                   </th>
 
                   {/* ALREADY RUNNING COMPANY (Orange/Peach hue from picture) */}
-                  <th rowSpan={2} className="py-3 px-3 text-center align-middle bg-orange-100 text-orange-950 border-r border-b border-orange-200 font-black leading-tight w-[160px]">
+                  <th rowSpan={2} className="sticky top-0 z-20 py-3 px-3 text-center align-middle bg-orange-100 text-orange-950 border-r border-b border-orange-200 font-black leading-tight w-[160px]">
                     ALREADY RUNNING COMPANY
                   </th>
 
                   {/* SITE PREFERENCE 1 (Orange/Peach hue from picture) */}
-                  <th rowSpan={2} className="py-3 px-3 text-center align-middle bg-amber-50 text-amber-950 border-r border-b border-amber-200 font-black leading-tight w-[150px]">
+                  <th rowSpan={2} className="sticky top-0 z-20 py-3 px-3 text-center align-middle bg-amber-50 text-amber-950 border-r border-b border-amber-200 font-black leading-tight w-[150px]">
                     SITE PREFERENCE 1
                   </th>
 
                   {/* SITE PREFERENCE 2 (Pink/Red hue from picture) */}
-                  <th rowSpan={2} className="py-3 px-3 text-center align-middle bg-rose-100 text-rose-950 border-r border-b border-rose-200 font-black leading-tight w-[150px]">
+                  <th rowSpan={2} className="sticky top-0 z-20 py-3 px-3 text-center align-middle bg-rose-100 text-rose-950 border-r border-b border-rose-200 font-black leading-tight w-[150px]">
                     SITE PREFERENCE 2
                   </th>
 
                   {/* STATUS & ACTIONS */}
-                  <th rowSpan={2} className="py-3 px-4 text-center align-middle bg-slate-100 text-slate-700 border-r border-b border-slate-200 font-extrabold w-[110px]">
+                  <th rowSpan={2} className="sticky top-0 z-20 py-3 px-4 text-center align-middle bg-slate-100 text-slate-700 border-r border-b border-slate-200 font-extrabold w-[110px]">
                     STATUS
                   </th>
-                  <th rowSpan={2} className="py-3 px-4 text-center align-middle bg-slate-100 text-slate-700 border-b border-slate-200 font-extrabold w-[100px]">
+                  <th rowSpan={2} className="sticky top-0 z-20 py-3 px-4 text-center align-middle bg-slate-100 text-slate-700 border-b border-slate-200 font-extrabold w-[100px]">
                     ACTIONS
                   </th>
                 </tr>
@@ -1593,19 +1652,19 @@ export default function EnquiryViews({
                 {/* SECONDARY DETAILED SUB-HEADERS */}
                 <tr className="bg-slate-50 border-b border-slate-200 font-black text-4xs uppercase tracking-wider text-slate-500">
                   {/* Vehicle Sub-columns */}
-                  <th className="py-2 px-3 border-r border-slate-200 bg-amber-50/50">NUMBER</th>
-                  <th className="py-2 px-3 border-r border-slate-200 bg-amber-50/50">TYPE</th>
-                  <th className="py-2 px-3 border-r border-slate-200 bg-amber-50/50">MODEL/YEAR</th>
-                  <th className="py-2 px-3 border-r border-slate-200 bg-amber-50/50">COLOR</th>
-                  <th className="py-2 px-3 border-r border-slate-200 bg-amber-50/50">OWNER NAME/PHONE</th>
-                  <th className="py-2 px-3 border-r border-slate-200 bg-amber-50/50">REFERENCE</th>
+                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-amber-50">NUMBER</th>
+                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-amber-50">TYPE</th>
+                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-amber-50">MODEL/YEAR</th>
+                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-amber-50">COLOR</th>
+                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-amber-50">OWNER NAME/PHONE</th>
+                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-amber-50">REFERENCE</th>
 
                   {/* Driver Sub-columns */}
-                  <th className="py-2 px-3 border-r border-slate-200 bg-emerald-50/30">NAME</th>
-                  <th className="py-2 px-3 border-r border-slate-200 bg-emerald-50/30">AGE</th>
-                  <th className="py-2 px-3 border-r border-slate-200 bg-emerald-50/30">PHONE NO</th>
-                  <th className="py-2 px-3 border-r border-slate-200 bg-emerald-50/30">AREA</th>
-                  <th className="py-2 px-3 border-r border-slate-200 bg-emerald-50/30">BATCH EXP</th>
+                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-emerald-50">NAME</th>
+                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-emerald-50">AGE</th>
+                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-emerald-50">PHONE NO</th>
+                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-emerald-50">AREA</th>
+                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-emerald-50">BATCH EXP</th>
                 </tr>
               </thead>
 
@@ -1700,7 +1759,7 @@ export default function EnquiryViews({
 
                       {/* STATUS */}
                       <td className="py-3 px-4 border-r border-slate-100 text-center whitespace-nowrap">
-                        <span className={`px-2 py-0.5 text-[9px] font-extrabold uppercase rounded-full border ${badgeColor}`}>
+                        <span className={`inline-flex items-center justify-center px-2.5 py-1 text-[9px] font-black uppercase rounded-full border ${badgeColor} leading-none align-middle min-w-[75px]`}>
                           {enq.status}
                         </span>
                       </td>
@@ -1711,10 +1770,10 @@ export default function EnquiryViews({
                           <button
                             id={`enq-btn-print-${enq.id}`}
                             onClick={() => setSelectedEnquiryForFormPrint(enq)}
-                            className="p-1 text-slate-400 hover:bg-slate-100 hover:text-indigo-600 rounded transition-colors cursor-pointer"
+                            className="p-1.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600 rounded-lg transition-all cursor-pointer flex items-center justify-center"
                             title="Print Vehicle Joining Form"
                           >
-                            <Printer className="h-3.5 w-3.5" />
+                            <Printer className="h-3.5 w-3.5 text-blue-600" />
                           </button>
                           <button
                             id={`enq-btn-comments-${enq.id}`}
@@ -1724,12 +1783,12 @@ export default function EnquiryViews({
                               type: 'Enquiry',
                               comments: enq.comments || []
                             })}
-                            className="p-1 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 rounded transition-colors cursor-pointer relative"
+                            className="p-1.5 text-slate-400 hover:bg-slate-100 hover:text-purple-600 rounded-lg transition-all cursor-pointer relative flex items-center justify-center"
                             title="View / Add Comments"
                           >
-                            <MessageSquare className="h-3.5 w-3.5" />
+                            <MessageSquare className="h-3.5 w-3.5 text-purple-600" />
                             {enq.comments && enq.comments.length > 0 && (
-                              <span className="absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-indigo-600 text-[7px] font-bold text-white">
+                              <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-purple-600 text-[8px] font-black text-white border border-white shadow-xs">
                                 {enq.comments.length}
                               </span>
                             )}
@@ -1738,7 +1797,7 @@ export default function EnquiryViews({
                             <button
                               id={`enq-btn-goto-induction-${enq.id}`}
                               onClick={() => onNavigate?.('Induction')}
-                              className="p-1 rounded transition-colors cursor-pointer text-emerald-650 hover:bg-emerald-50 hover:text-emerald-800"
+                              className="p-1.5 text-slate-400 hover:bg-slate-100 hover:text-emerald-600 rounded-lg transition-all cursor-pointer flex items-center justify-center"
                               title="Go to Vehicle Induction Page"
                             >
                               <ExternalLink className="h-3.5 w-3.5 text-emerald-600" />
@@ -1748,10 +1807,10 @@ export default function EnquiryViews({
                               id={`enq-btn-induction-${enq.id}`}
                               onClick={() => handleMoveToInduction(enq.id)}
                               disabled={enq.status === 'Closed'}
-                              className={`p-1 rounded transition-colors cursor-pointer ${
+                              className={`p-1.5 rounded-lg transition-all flex items-center justify-center ${
                                 enq.status === 'Closed'
                                   ? 'text-slate-200 cursor-not-allowed'
-                                  : 'text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700'
+                                  : 'text-slate-400 hover:bg-slate-100 hover:text-teal-600 cursor-pointer'
                               }`}
                               title={
                                 enq.status === 'Closed'
@@ -1759,24 +1818,24 @@ export default function EnquiryViews({
                                   : "Move to Vehicle Induction Stage"
                               }
                             >
-                              <Layers className="h-3.5 w-3.5" />
+                              <Layers className={`h-3.5 w-3.5 ${enq.status === 'Closed' ? 'text-slate-300' : 'text-teal-600'}`} />
                             </button>
                           )}
                           <button
                             id={`enq-btn-edit-${enq.id}`}
                             onClick={() => handleOpenEdit(enq)}
-                            className="p-1 text-slate-400 hover:bg-slate-100 hover:text-indigo-600 rounded transition-colors cursor-pointer"
+                            className="p-1.5 text-slate-400 hover:bg-slate-100 hover:text-amber-600 rounded-lg transition-all cursor-pointer flex items-center justify-center"
                             title="Edit Record"
                           >
-                            <Edit className="h-3.5 w-3.5" />
+                            <Edit className="h-3.5 w-3.5 text-amber-500" />
                           </button>
                           <button
                             id={`enq-btn-delete-${enq.id}`}
                             onClick={() => handleDelete(enq.id)}
-                            className="p-1 text-slate-400 hover:bg-slate-100 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                            className="p-1.5 text-slate-400 hover:bg-slate-100 hover:text-rose-600 rounded-lg transition-all cursor-pointer flex items-center justify-center"
                             title="Delete Record"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Trash2 className="h-3.5 w-3.5 text-rose-600" />
                           </button>
                         </div>
                       </td>

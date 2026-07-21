@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Plus,
   Trash2,
@@ -28,7 +28,7 @@ import {
   EXPENSE_TYPES,
   ExpenseType,
 } from '../types';
-import { formatDate, toInputDateFormat, formatMonth } from '../lib/dateUtils';
+import { formatDate, toInputDateFormat, formatMonth, getTodayDateString, getCurrentMonthString } from '../lib/dateUtils';
 
 interface TransactionViewsProps {
   vehicles: Vehicle[];
@@ -71,13 +71,58 @@ export default function TransactionViews({
 
   // Weekly Payment Calculator States
   const [weeklyVehicle, setWeeklyVehicle] = useState('');
-  const [weeklyDate, setWeeklyDate] = useState('2026-07-08');
-  const [weeklyMonth, setWeeklyMonth] = useState('2026-07');
+  const [weeklyDate, setWeeklyDate] = useState(getTodayDateString());
+  const [weeklyMonth, setWeeklyMonth] = useState(getCurrentMonthString());
+  const [weeklyFromDate, setWeeklyFromDate] = useState('');
+  const [weeklyToDate, setWeeklyToDate] = useState('');
   const [weeklyInvoice, setWeeklyInvoice] = useState('');
   const [weeklyGross, setWeeklyGross] = useState<number>(0);
   const [weeklyAdminCharge, setWeeklyAdminCharge] = useState<number>(0);
   const [weeklyRemarks, setWeeklyRemarks] = useState('');
   const [weeklySuccess, setWeeklySuccess] = useState<string | null>(null);
+  
+  // Outstanding Advances for Selected Vehicle
+  const [selectedAdvanceIds, setSelectedAdvanceIds] = useState<string[]>([]);
+
+  const outstandingAdvances = useMemo(() => {
+    if (!weeklyVehicle) return [];
+    return expenses.filter(
+      (e) =>
+        e.vehicleNumber === weeklyVehicle &&
+        (e.expenseType === 'Advance' || e.expenseType === 'Driver Advance') &&
+        !e.adjustedInInvoice
+    );
+  }, [expenses, weeklyVehicle]);
+
+  const totalSelectedAdvances = useMemo(() => {
+    return outstandingAdvances
+      .filter((e) => selectedAdvanceIds.includes(e.id))
+      .reduce((sum, e) => sum + e.amount, 0);
+  }, [outstandingAdvances, selectedAdvanceIds]);
+
+  // Clear selections when vehicle changes
+  useEffect(() => {
+    setSelectedAdvanceIds([]);
+  }, [weeklyVehicle]);
+
+  // Automatically generate unique invoice number when vehicle or date changes
+  useEffect(() => {
+    if (weeklyVehicle) {
+      const cleanDate = weeklyDate.replace(/-/g, '');
+      const vehSuffix = weeklyVehicle.replace(/[^A-Za-z0-9]/g, '').slice(-4).toUpperCase();
+      const baseInvoice = `E7-WK-${cleanDate}-${vehSuffix}`;
+      
+      let finalInvoice = baseInvoice;
+      let counter = 1;
+      while (payments.some(p => p.invoiceNumber === finalInvoice)) {
+        finalInvoice = `${baseInvoice}-${counter}`;
+        counter++;
+      }
+      setWeeklyInvoice(finalInvoice);
+    } else {
+      setWeeklyInvoice('');
+    }
+  }, [weeklyVehicle, weeklyDate, payments]);
 
   const handlePostWeeklyPayment = (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,10 +137,14 @@ export default function TransactionViews({
     const serviceCharge = Math.round(weeklyGross * 0.05);
     const tds = Math.round(weeklyGross * 0.01);
     const admin = Number(weeklyAdminCharge || 0);
-    const netPayable = weeklyGross - serviceCharge - tds - admin;
+    const netPayable = weeklyGross - serviceCharge - tds - admin - totalSelectedAdvances;
 
     const txDate = weeklyDate || '2026-07-08';
     const txMonth = weeklyMonth || txDate.substring(0, 7);
+
+    const dateRangeStr = (weeklyFromDate && weeklyToDate)
+      ? ` Period: ${formatDate(weeklyFromDate)} to ${formatDate(weeklyToDate)}.`
+      : '';
 
     // 1. Create the Company Billing Payment
     const newPayment: CompanyPayment = {
@@ -106,7 +155,9 @@ export default function TransactionViews({
       invoiceNumber: weeklyInvoice,
       paymentDate: txDate,
       amountReceived: weeklyGross,
-      remarks: `Weekly Gross Payment. Net: ${formatCurrency(netPayable)} (5% SC: ${formatCurrency(serviceCharge)}, 1% TDS: ${formatCurrency(tds)}, Admin: ${formatCurrency(admin)}). ${weeklyRemarks}`.trim(),
+      remarks: `Weekly Gross Payment.${dateRangeStr} Net: ${formatCurrency(netPayable)} (5% SC: ${formatCurrency(serviceCharge)}, 1% TDS: ${formatCurrency(tds)}, Admin: ${formatCurrency(admin)}${totalSelectedAdvances > 0 ? `, Advances Adjusted: ${formatCurrency(totalSelectedAdvances)}` : ''}). ${weeklyRemarks}`.trim(),
+      fromDate: weeklyFromDate || undefined,
+      toDate: weeklyToDate || undefined,
     };
 
     // 2. Create the Deductions as Expenses
@@ -148,8 +199,19 @@ export default function TransactionViews({
       });
     }
 
+    // Mark selected advances as adjusted in this weekly invoice
+    const updatedExpenses = expenses.map((e) => {
+      if (selectedAdvanceIds.includes(e.id)) {
+        return {
+          ...e,
+          adjustedInInvoice: weeklyInvoice,
+        };
+      }
+      return e;
+    });
+
     onUpdatePayments([newPayment, ...payments]);
-    onUpdateExpenses([...deductions, ...expenses]);
+    onUpdateExpenses([...deductions, ...updatedExpenses]);
 
     setWeeklySuccess(`Weekly payment for ${weeklyVehicle} processed successfully! Gross: ${formatCurrency(weeklyGross)}, Net: ${formatCurrency(netPayable)} logged.`);
     
@@ -158,6 +220,9 @@ export default function TransactionViews({
     setWeeklyAdminCharge(0);
     setWeeklyInvoice('');
     setWeeklyRemarks('');
+    setWeeklyFromDate('');
+    setWeeklyToDate('');
+    setSelectedAdvanceIds([]);
 
     setTimeout(() => {
       setWeeklySuccess(null);
@@ -166,14 +231,36 @@ export default function TransactionViews({
 
   // Form States
   const [payForm, setPayForm] = useState<Partial<CompanyPayment>>({
-    month: '2026-07',
-    paymentDate: '2026-07-08',
+    month: getCurrentMonthString(),
+    paymentDate: getTodayDateString(),
   });
   const [expForm, setExpForm] = useState<Partial<Expense>>({
-    date: '2026-07-08',
-    month: '2026-07',
+    date: getTodayDateString(),
+    month: getCurrentMonthString(),
+    expenseType: 'CNG',
   });
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Automatically generate unique invoice number for general company billing payment form
+  useEffect(() => {
+    if (payForm.vehicleNumber && !editingPayment) {
+      const txDate = payForm.paymentDate || getTodayDateString();
+      const cleanDate = txDate.replace(/-/g, '');
+      const vehSuffix = payForm.vehicleNumber.replace(/[^A-Za-z0-9]/g, '').slice(-4).toUpperCase();
+      const baseInvoice = `E7-INV-${cleanDate}-${vehSuffix}`;
+      
+      let finalInvoice = baseInvoice;
+      let counter = 1;
+      while (payments.some(p => p.invoiceNumber === finalInvoice)) {
+        finalInvoice = `${baseInvoice}-${counter}`;
+        counter++;
+      }
+      setPayForm(prev => ({
+        ...prev,
+        invoiceNumber: finalInvoice
+      }));
+    }
+  }, [payForm.vehicleNumber, payForm.paymentDate, payments, editingPayment]);
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -184,8 +271,8 @@ export default function TransactionViews({
   };
 
   const resetForms = () => {
-    setPayForm({ month: '2026-07', paymentDate: '2026-07-08' });
-    setExpForm({ date: '2026-07-08', month: '2026-07' });
+    setPayForm({ month: getCurrentMonthString(), paymentDate: getTodayDateString() });
+    setExpForm({ date: getTodayDateString(), month: getCurrentMonthString(), expenseType: 'CNG' });
     setEditingPayment(null);
     setEditingExpense(null);
     setIsAdding(false);
@@ -204,7 +291,7 @@ export default function TransactionViews({
 
     const matchedVehicle = vehicles.find((v) => v.registrationNumber === payForm.vehicleNumber);
 
-    const txDate = payForm.paymentDate || '2026-07-08';
+    const txDate = payForm.paymentDate || getTodayDateString();
     const txMonth = payForm.month || txDate.substring(0, 7);
 
     if (editingPayment) {
@@ -445,7 +532,17 @@ export default function TransactionViews({
               />
             </div>
 
-
+            {((activeSubView === 'Company Payments' && filteredPayments.length > 0) || 
+              (activeSubView === 'Expense Entry' && filteredExpenses.length > 0)) && (
+              <button
+                id="clear-tx-btn"
+                onClick={() => setShowClearConfirm(true)}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 flex items-center gap-1 transition-colors cursor-pointer"
+                title={`Clear all currently listed ${activeSubView === 'Company Payments' ? 'Payments' : 'Expenses'}`}
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Clear Logs
+              </button>
+            )}
 
             <button
               id="add-tx-btn"
@@ -540,7 +637,14 @@ export default function TransactionViews({
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Invoice Number *</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-xs font-medium text-slate-600">Invoice Number *</label>
+                  {payForm.vehicleNumber && (
+                    <span className="text-[9px] bg-emerald-50 text-emerald-700 font-extrabold px-1.5 py-0.5 rounded border border-emerald-100 uppercase tracking-wider animate-pulse">
+                      Auto Generated
+                    </span>
+                  )}
+                </div>
                 <input
                   id="pay-invoice-input"
                   type="text"
@@ -886,16 +990,25 @@ export default function TransactionViews({
                     className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white font-mono"
                   >
                     <option value="">-- Choose Vehicle --</option>
-                    {vehicles.map((v) => (
-                      <option key={v.id} value={v.registrationNumber}>
-                        {v.registrationNumber} ({v.driverName})
-                      </option>
-                    ))}
+                    {vehicles
+                      .filter((v) => v.paymentCycle === 'Weekly')
+                      .map((v) => (
+                        <option key={v.id} value={v.registrationNumber}>
+                          {v.registrationNumber} ({v.driverName})
+                        </option>
+                      ))}
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Invoice Number *</label>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-xs font-semibold text-slate-600">Invoice Number *</label>
+                    {weeklyVehicle && (
+                      <span className="text-[9px] bg-emerald-50 text-emerald-700 font-extrabold px-1.5 py-0.5 rounded border border-emerald-100 uppercase tracking-wider animate-pulse">
+                        Auto Generated
+                      </span>
+                    )}
+                  </div>
                   <input
                     id="weekly-invoice-input"
                     type="text"
@@ -904,6 +1017,29 @@ export default function TransactionViews({
                     value={weeklyInvoice}
                     onChange={(e) => setWeeklyInvoice(e.target.value)}
                     className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">From Date</label>
+                  <input
+                    id="weekly-from-date-input"
+                    type="date"
+                    value={weeklyFromDate}
+                    onChange={(e) => setWeeklyFromDate(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">To Date</label>
+                  <input
+                    id="weekly-to-date-input"
+                    type="date"
+                    value={weeklyToDate}
+                    onChange={(e) => setWeeklyToDate(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white"
                   />
                 </div>
               </div>
@@ -952,6 +1088,64 @@ export default function TransactionViews({
                   />
                 </div>
               </div>
+
+              {/* Outstanding Advances List (if any exist for the vehicle) */}
+              {weeklyVehicle && (
+                <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/50 text-left">
+                  <div className="flex justify-between items-center mb-2">
+                    <h5 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <DollarSign className="h-4 w-4 text-emerald-600" /> Outstanding Vehicle/Driver Advances
+                    </h5>
+                    <span className="text-[10px] bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded-full">
+                      Total Outstanding: {formatCurrency(outstandingAdvances.reduce((sum, e) => sum + e.amount, 0))}
+                    </span>
+                  </div>
+
+                  {outstandingAdvances.length === 0 ? (
+                    <p className="text-[11px] text-slate-500 italic">No outstanding advances found for this vehicle/driver.</p>
+                  ) : (
+                    <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                      <p className="text-[10px] text-slate-500 mb-1">Select advances to deduct/reflect in this weekly payout:</p>
+                      {outstandingAdvances.map((adv) => {
+                        const isChecked = selectedAdvanceIds.includes(adv.id);
+                        return (
+                          <label
+                            key={adv.id}
+                            className={`flex items-start gap-2.5 p-2 rounded-lg border text-xs cursor-pointer transition-all ${
+                              isChecked
+                                ? 'bg-indigo-50 border-indigo-200'
+                                : 'bg-white border-slate-150 hover:border-slate-300'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedAdvanceIds([...selectedAdvanceIds, adv.id]);
+                                } else {
+                                  setSelectedAdvanceIds(selectedAdvanceIds.filter((id) => id !== adv.id));
+                                }
+                              }}
+                              className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex justify-between items-baseline">
+                                <span className="font-extrabold text-slate-800">{formatCurrency(adv.amount)}</span>
+                                <span className="text-[10px] text-slate-450 font-mono">{formatDate(adv.date)}</span>
+                              </div>
+                              <p className="text-[10px] text-slate-550 truncate mt-0.5">
+                                <span className="bg-slate-100 px-1 py-0.2 rounded font-semibold text-slate-600 mr-1 text-[9px] uppercase">{adv.expenseType}</span>
+                                {adv.remarks || 'No remarks'}
+                              </p>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="text-left">
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Additional Remarks</label>
@@ -1010,6 +1204,12 @@ export default function TransactionViews({
                       <span className="text-slate-500">Processing Date:</span>
                       <span className="text-slate-800">{formatDate(weeklyDate)}</span>
                     </div>
+                    {weeklyFromDate && weeklyToDate && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Billing Period:</span>
+                        <span className="text-indigo-700 font-semibold">{formatDate(weeklyFromDate)} to {formatDate(weeklyToDate)}</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="border-t border-slate-150 pt-3 space-y-2 text-left text-xs">
@@ -1031,12 +1231,18 @@ export default function TransactionViews({
                         <span>Fixed Admin Fee:</span>
                         <span className="text-rose-600">-{formatCurrency(weeklyAdminCharge || 0)}</span>
                       </div>
+                      {totalSelectedAdvances > 0 && (
+                        <div className="flex justify-between font-semibold text-rose-700 bg-rose-50/50 p-1 rounded">
+                          <span>Adjusted Advances:</span>
+                          <span className="text-rose-700">-{formatCurrency(totalSelectedAdvances)}</span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex justify-between text-slate-500 text-2xs pt-1">
                       <span>Total Auto Deductions:</span>
                       <span className="text-rose-600 font-semibold">
-                        -{formatCurrency(Math.round((weeklyGross || 0) * 0.06) + (weeklyAdminCharge || 0))}
+                        -{formatCurrency(Math.round((weeklyGross || 0) * 0.06) + (weeklyAdminCharge || 0) + totalSelectedAdvances)}
                       </span>
                     </div>
                   </div>
@@ -1053,13 +1259,14 @@ export default function TransactionViews({
                             (weeklyGross || 0) -
                               Math.round((weeklyGross || 0) * 0.05) -
                               Math.round((weeklyGross || 0) * 0.01) -
-                              (weeklyAdminCharge || 0)
+                              (weeklyAdminCharge || 0) -
+                              totalSelectedAdvances
                           )
                         )}
                       </p>
                     </div>
                     <div className="text-right text-[10px] text-slate-400 max-w-[120px] font-medium leading-tight">
-                      Will log 1 payment and 3 deductions automatically.
+                      Will log 1 payment and 3 deductions{selectedAdvanceIds.length > 0 ? `, and adjust ${selectedAdvanceIds.length} advance(s)` : ''} automatically.
                     </div>
                   </div>
                 </div>
@@ -1100,7 +1307,15 @@ export default function TransactionViews({
                               onClick={() => {
                                 const invoiceNum = p.invoiceNumber;
                                 const cleanedPayments = payments.filter(pay => pay.id !== p.id);
-                                const cleanedExpenses = expenses.filter(exp => !(exp.id.startsWith('EXP-WK-') && exp.remarks.includes(invoiceNum)));
+                                const cleanedExpenses = expenses
+                                  .filter(exp => !(exp.id.startsWith('EXP-WK-') && exp.remarks.includes(invoiceNum)))
+                                  .map(exp => {
+                                    if (exp.adjustedInInvoice === invoiceNum) {
+                                      const { adjustedInInvoice, ...rest } = exp;
+                                      return rest;
+                                    }
+                                    return exp;
+                                  });
                                 onUpdatePayments(cleanedPayments);
                                 onUpdateExpenses(cleanedExpenses);
                               }}
@@ -1156,6 +1371,51 @@ export default function TransactionViews({
                 className="px-4 py-2 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition-all shadow-xs"
               >
                 Delete Record
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showClearConfirm && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-6 text-left">
+              <div className="flex items-center gap-3 text-rose-600 mb-4">
+                <AlertTriangle className="h-6 w-6 text-rose-600" />
+                <h3 className="text-lg font-bold text-slate-900">Clear Matching Transactions?</h3>
+              </div>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                Are you sure you want to delete all <span className="font-bold text-rose-600">{activeSubView === 'Company Payments' ? filteredPayments.length : filteredExpenses.length}</span> listed{' '}
+                {activeSubView === 'Company Payments' ? 'payment' : 'expense'} transactions matching the active filters?
+              </p>
+              <div className="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-lg font-medium">
+                ⚠️ Warning: This operation is permanent and cannot be undone. All deleted records will be removed from your database and linked spreadsheets.
+              </div>
+            </div>
+            <div className="bg-slate-50 px-6 py-4 flex justify-end gap-3 border-t border-slate-150">
+              <button
+                type="button"
+                onClick={() => setShowClearConfirm(false)}
+                className="px-4 py-2 text-xs font-semibold bg-white border border-slate-250 text-slate-700 hover:bg-slate-50 rounded-lg transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeSubView === 'Company Payments') {
+                    const toDeleteIds = new Set(filteredPayments.map((p) => p.id));
+                    onUpdatePayments(payments.filter((p) => !toDeleteIds.has(p.id)));
+                  } else {
+                    const toDeleteIds = new Set(filteredExpenses.map((e) => e.id));
+                    onUpdateExpenses(expenses.filter((e) => !toDeleteIds.has(e.id)));
+                  }
+                  setShowClearConfirm(false);
+                }}
+                className="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition-all shadow-xs cursor-pointer"
+              >
+                Clear Data
               </button>
             </div>
           </div>

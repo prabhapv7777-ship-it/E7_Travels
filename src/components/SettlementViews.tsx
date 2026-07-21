@@ -18,7 +18,7 @@ import {
   Percent,
 } from 'lucide-react';
 import { Vehicle, Owner, Driver, CompanyPayment, Expense } from '../types';
-import { formatDate, formatMonth, toInputDateFormat } from '../lib/dateUtils';
+import { formatDate, formatMonth, toInputDateFormat, getCurrentMonthString, getTodayDateString } from '../lib/dateUtils';
 
 const getCycleDisplay = (cycle: string) => {
   if (!cycle) return '-';
@@ -50,7 +50,7 @@ export default function SettlementViews({
   activeSubView,
   customLogo,
 }: SettlementViewsProps) {
-  const [selectedMonth, setSelectedMonth] = useState('2026-07');
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthString());
   const [selectedVehicle, setSelectedVehicle] = useState(vehicles[0]?.registrationNumber || '');
   const [selectedOwner, setSelectedOwner] = useState(owners[0]?.id || '');
   const [selectedDriver, setSelectedDriver] = useState(drivers[0]?.id || '');
@@ -238,6 +238,7 @@ export default function SettlementViews({
       ...expenses.map((e) => e.month),
       '2026-06',
       '2026-07',
+      getCurrentMonthString(),
     ])
   ).sort().reverse();
 
@@ -250,6 +251,7 @@ export default function SettlementViews({
       ...payments.map((p) => toInputDateFormat(p.paymentDate)),
       ...expenses.map((e) => toInputDateFormat(e.date)),
       '2026-07-08',
+      getTodayDateString(),
     ].filter(Boolean))
   ).sort().reverse();
 

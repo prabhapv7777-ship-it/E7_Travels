@@ -36,6 +36,7 @@ import {
 } from '../types';
 import { formatDate, toInputDateFormat } from '../lib/dateUtils';
 import PrintJoiningForm from './PrintJoiningForm';
+import PrintVehicleReport from './PrintVehicleReport';
 
 interface MasterViewsProps {
   vehicles: Vehicle[];
@@ -69,11 +70,11 @@ export default function MasterViews({
   onUpdateSites,
 }: MasterViewsProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState<{ id: string; name: string } | null>(null);
   const [printEnquiry, setPrintEnquiry] = useState<Enquiry | null | undefined>(undefined);
+  const [showPrintVehicleReport, setShowPrintVehicleReport] = useState(false);
   const [activeCommentTarget, setActiveCommentTarget] = useState<{
     id: string;
     name: string;
@@ -549,52 +550,24 @@ export default function MasterViews({
             />
           </div>
           {activeSubView === 'Vehicle Master' && (
-            <button
-              id="btn-print-blank-vehicle-master"
-              onClick={() => setPrintEnquiry(null)}
-              className="px-4 py-2 text-sm font-semibold bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-lg flex items-center gap-1.5 shadow-3xs cursor-pointer transition-colors"
-              title="Print blank vehicle joining form"
-            >
-              <Printer className="h-4 w-4 text-slate-500" /> Print Blank Form
-            </button>
-          )}
-          {activeSubView === 'Vehicle Master' && vehicles.length > 0 && (
-            <div className="relative flex items-center">
-              {!showClearConfirm ? (
-                <button
-                  id="btn-clear-all-vehicles"
-                  onClick={() => setShowClearConfirm(true)}
-                  className="px-4 py-2 text-sm font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg flex items-center gap-1.5 shadow-3xs cursor-pointer transition-colors"
-                  title="Remove all vehicles from register"
-                >
-                  <Trash2 className="h-4 w-4 text-rose-600" /> Clear All Vehicles
-                </button>
-              ) : (
-                <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 p-1 rounded-lg shadow-sm">
-                  <span className="text-2xs font-bold text-rose-800 px-2">Are you sure?</span>
-                  <button
-                    id="btn-confirm-clear-vehicles"
-                    onClick={() => {
-                      const ownerIdsToRemove = new Set(vehicles.map((v) => v.ownerId).filter(Boolean));
-                      const driverIdsToRemove = new Set(vehicles.map((v) => v.driverId).filter(Boolean));
-                      onUpdateOwners(owners.filter((o) => !ownerIdsToRemove.has(o.id)));
-                      onUpdateDrivers(drivers.filter((d) => !driverIdsToRemove.has(d.id)));
-                      onUpdateVehicles([]);
-                      setShowClearConfirm(false);
-                    }}
-                    className="px-2 py-1 text-2xs font-extrabold bg-rose-600 hover:bg-rose-700 text-white rounded-md transition-colors animate-pulse"
-                  >
-                    Yes, Delete All
-                  </button>
-                  <button
-                    onClick={() => setShowClearConfirm(false)}
-                    className="px-2 py-1 text-2xs font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
-            </div>
+            <>
+              <button
+                id="btn-print-blank-vehicle-master"
+                onClick={() => setPrintEnquiry(null)}
+                className="px-4 py-2 text-sm font-semibold bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-lg flex items-center gap-1.5 shadow-3xs cursor-pointer transition-colors"
+                title="Print blank vehicle joining form"
+              >
+                <Printer className="h-4 w-4 text-slate-500" /> Print Blank Form
+              </button>
+              <button
+                id="btn-print-vehicle-report-master"
+                onClick={() => setShowPrintVehicleReport(true)}
+                className="px-4 py-2 text-sm font-semibold bg-blue-50 hover:bg-slate-100 text-blue-700 border border-blue-200 rounded-lg flex items-center gap-1.5 shadow-3xs cursor-pointer transition-colors"
+                title="Print vehicle register report with active filters"
+              >
+                <Printer className="h-4 w-4 text-blue-600" /> Print Report
+              </button>
+            </>
           )}
           <button
             id="add-record-btn"
@@ -614,7 +587,7 @@ export default function MasterViews({
         <div className="px-6 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center gap-2">
           <span className="text-2xs font-extrabold text-slate-400 uppercase tracking-wider mr-2">Filter Fleet:</span>
           {(['all', 'running', 'idle', 'new'] as const).map((f) => {
-            const label = f === 'all' ? 'Total Vehicles' : f === 'running' ? 'Running Vehicles' : f === 'idle' ? 'Idle Vehicles' : 'New (This Month)';
+            const label = f === 'all' ? 'Total Vehicles' : f === 'running' ? 'Running Vehicles' : f === 'idle' ? 'Inactive Vehicles' : 'New (This Month)';
             const count = f === 'all' 
               ? vehicles.length 
               : f === 'running' 
@@ -750,8 +723,8 @@ export default function MasterViews({
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                 >
                   <option value="">-- Choose Owner --</option>
-                  {owners.map((o) => (
-                    <option key={o.id} value={o.id}>
+                  {owners.map((o, index) => (
+                    <option key={`${o.id}-${index}`} value={o.id}>
                       {o.name} ({o.id})
                     </option>
                   ))}
@@ -766,8 +739,8 @@ export default function MasterViews({
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                 >
                   <option value="">-- Choose Driver --</option>
-                  {drivers.map((d) => (
-                    <option key={d.id} value={d.id}>
+                  {drivers.map((d, index) => (
+                    <option key={`${d.id}-${index}`} value={d.id}>
                       {d.name} ({d.id})
                     </option>
                   ))}
@@ -1467,10 +1440,10 @@ export default function MasterViews({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">
-              {filteredVehicles.map((v) => {
+              {filteredVehicles.map((v, index) => {
                 const badge = getVehicleExpiryStatus(v);
                 return (
-                  <tr key={v.id} className="hover:bg-slate-50/50">
+                  <tr key={`${v.id}-${index}`} className="hover:bg-slate-50/50">
                     <td className="py-3 px-4 font-mono font-medium text-slate-500">{v.id}</td>
                     <td className="py-3 px-4 font-semibold text-slate-800">{v.registrationNumber}</td>
                     <td className="py-3 px-4 text-slate-700">
@@ -1501,7 +1474,7 @@ export default function MasterViews({
                       </span>
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <span className={`px-2.5 py-1 text-2xs font-semibold rounded-full border ${badge.color}`}>
+                      <span className={`inline-flex items-center justify-center px-3 py-1 text-2xs font-bold rounded-full border ${badge.color} leading-none align-middle`}>
                         {badge.label}
                       </span>
                     </td>
@@ -1589,11 +1562,11 @@ export default function MasterViews({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">
-              {filteredOwners.map((o) => {
+              {filteredOwners.map((o, index) => {
                 const linkedVehicles = vehicles.filter((v) => v.ownerId === o.id);
                 const carNo = linkedVehicles.length > 0 ? linkedVehicles.map(v => v.registrationNumber).join(', ') : 'Unassigned';
                 return (
-                  <tr key={o.id} className="hover:bg-slate-50/50">
+                  <tr key={`${o.id}-${index}`} className="hover:bg-slate-50/50">
                     <td className="py-3 px-4 font-mono font-medium text-slate-500">{o.id}</td>
                     <td className="py-3 px-4 font-semibold text-slate-800">{o.name}</td>
                     <td className="py-3 px-4 font-mono text-xs text-blue-600 font-semibold">{carNo}</td>
@@ -1676,11 +1649,11 @@ export default function MasterViews({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">
-              {filteredDrivers.map((d) => {
+              {filteredDrivers.map((d, index) => {
                 const linkedVehicles = vehicles.filter((v) => v.driverId === d.id);
                 const carNo = linkedVehicles.length > 0 ? linkedVehicles.map(v => v.registrationNumber).join(', ') : 'Unassigned';
                 return (
-                  <tr key={d.id} className="hover:bg-slate-50/50">
+                  <tr key={`${d.id}-${index}`} className="hover:bg-slate-50/50">
                     <td className="py-3 px-4 font-mono font-medium text-slate-500">{d.id}</td>
                     <td className="py-3 px-4 font-semibold text-slate-800">{d.name}</td>
                     <td className="py-3 px-4 font-mono text-xs text-blue-600 font-semibold">{carNo}</td>
@@ -1702,9 +1675,11 @@ export default function MasterViews({
                     <td className="py-3 px-4 text-slate-600 text-xs">{formatDate(d.joiningDate)}</td>
                     <td className="py-3 px-4 text-center">
                       <span
-                        className={`px-2 py-0.5 text-2xs font-semibold rounded-full ${
-                          d.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'
-                        }`}
+                        className={`inline-flex items-center justify-center px-3 py-1 text-2xs font-bold rounded-full border ${
+                          d.status === 'Active'
+                            ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                            : 'bg-slate-50 border-slate-200 text-slate-600'
+                        } leading-none align-middle`}
                       >
                         {d.status}
                       </span>
@@ -2052,6 +2027,14 @@ export default function MasterViews({
             </form>
           </div>
         </div>
+      )}
+
+      {showPrintVehicleReport && (
+        <PrintVehicleReport
+          vehicles={vehicles}
+          onClose={() => setShowPrintVehicleReport(false)}
+          initialFilter={vehicleFilter}
+        />
       )}
     </div>
   );

@@ -124,7 +124,7 @@ export default function Dashboard({ vehicles, expenses, payments, onNavigate }: 
   // D. Vehicle Status Chart
   const vehicleStatusData = [
     { name: 'Running', value: runningVehicles },
-    { name: 'Idle', value: idleVehicles },
+    { name: 'Inactive', value: idleVehicles },
   ];
 
   const COLORS = ['#1d4ed8', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
@@ -141,7 +141,7 @@ export default function Dashboard({ vehicles, expenses, payments, onNavigate }: 
   const kpis = [
     { id: 'total-vehicles', title: 'Total Vehicles', value: totalVehicles, icon: Car, bg: 'bg-blue-50 text-blue-600 border-blue-100', nav: 'Vehicle Master', filter: 'all' as const },
     { id: 'running-vehicles', title: 'Running Vehicles', value: runningVehicles, icon: CheckCircle, bg: 'bg-green-50 text-green-600 border-green-100', nav: 'Vehicle Master', filter: 'running' as const },
-    { id: 'idle-vehicles', title: 'Idle Vehicles', value: idleVehicles, icon: AlertTriangle, bg: 'bg-amber-50 text-amber-600 border-amber-100', nav: 'Vehicle Master', filter: 'idle' as const },
+    { id: 'idle-vehicles', title: 'Inactive Vehicles', value: idleVehicles, icon: AlertTriangle, bg: 'bg-amber-50 text-amber-600 border-amber-100', nav: 'Vehicle Master', filter: 'idle' as const },
     { id: 'new-vehicles', title: 'New (This Month)', value: newVehiclesThisMonth, icon: Sparkles, bg: 'bg-purple-50 text-purple-600 border-purple-100', nav: 'Vehicle Master', filter: 'new' as const },
     { id: 'total-billing', title: 'Total Billing', value: formatCurrency(totalBilling), icon: DollarSign, bg: 'bg-blue-50 text-blue-700 border-blue-200', nav: 'Company Payments' },
     { id: 'total-expenses', title: 'Total Expenses', value: formatCurrency(totalExpenses), icon: TrendingUp, bg: 'bg-rose-50 text-rose-600 border-rose-200', nav: 'Expense Entry' },
@@ -269,7 +269,7 @@ export default function Dashboard({ vehicles, expenses, payments, onNavigate }: 
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-3 h-3 rounded-full bg-slate-400"></span>
-                <span className="text-xs font-medium text-slate-600">Idle ({idleVehicles})</span>
+                <span className="text-xs font-medium text-slate-600">Inactive ({idleVehicles})</span>
               </div>
             </div>
           </div>
