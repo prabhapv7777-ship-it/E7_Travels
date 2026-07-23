@@ -18,6 +18,7 @@ import {
   loadStateFromFirestore,
   saveAllStateToFirestore,
   mergeArraysById,
+  isQuotaError,
 } from './lib/firestoreService';
 import {
   createFleetSpreadsheet,
@@ -61,6 +62,7 @@ import {
   Award,
   PhoneCall,
   AlertCircle,
+  AlertTriangle,
   ExternalLink,
   X,
   Layers,
@@ -69,6 +71,7 @@ import {
   DownloadCloud,
   CheckCircle2,
   Files,
+  Tags,
 } from 'lucide-react';
 
 // Sub Components
@@ -85,6 +88,7 @@ import InductionViews from './components/InductionViews';
 import AdminLogin from './components/AdminLogin';
 import RulesView from './components/RulesView';
 import DocumentViews from './components/DocumentViews';
+import SlabRateManagement from './components/SlabRateManagement';
 
 export default function App() {
   // Authentication & Sync State
@@ -115,8 +119,9 @@ export default function App() {
   };
   const [authError, setAuthError] = useState<{ code: string; message: string } | null>(null);
   const [isFirestoreLoaded, setIsFirestoreLoaded] = useState(false);
+  const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
   const [showCloudSyncPanel, setShowCloudSyncPanel] = useState(false);
-  const [cloudStatusMsg, setCloudStatusMsg] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
+  const [cloudStatusMsg, setCloudStatusMsg] = useState<'idle' | 'syncing' | 'success' | 'error' | 'quota_exceeded'>('idle');
   const [cloudResultModal, setCloudResultModal] = useState<{
     status: 'success' | 'error' | 'warning';
     title: string;
@@ -309,14 +314,30 @@ export default function App() {
               saveStateToFirestore('enquiries', enquiries).catch((err) => console.error('Auto-sync enquiries failed:', err));
             }
 
-            setIsFirestoreLoaded(true);
-            setCloudStatusMsg('success');
-            setHasSyncedForSession(true);
-            console.log('Successfully loaded and connected to Firestore cloud database.');
+            if (cloud._isQuotaExceeded) {
+              setIsQuotaExceeded(true);
+              setCloudStatusMsg('quota_exceeded');
+              setIsFirestoreLoaded(false); // Do NOT attach onSnapshot listeners when quota is exceeded
+              setHasSyncedForSession(true);
+              console.warn('Firestore daily read quota exceeded. Operating in Local Offline Mode with browser persistence.');
+            } else {
+              setIsFirestoreLoaded(true);
+              setCloudStatusMsg('success');
+              setHasSyncedForSession(true);
+              console.log('Successfully loaded and connected to Firestore cloud database.');
+            }
           } catch (err) {
-            console.error('Error syncing with Firestore cloud on active session:', err);
-            setCloudStatusMsg('error');
-            setIsFirestoreLoaded(true); // Fallback to local sandbox to allow standard app operations
+            if (isQuotaError(err)) {
+              setIsQuotaExceeded(true);
+              setCloudStatusMsg('quota_exceeded');
+              setIsFirestoreLoaded(false);
+              setHasSyncedForSession(true);
+              console.warn('Firestore daily read quota exceeded on session load. Switched to Local Offline Mode.');
+            } else {
+              console.error('Error syncing with Firestore cloud on active session:', err);
+              setCloudStatusMsg('error');
+              setIsFirestoreLoaded(true); // Fallback to local sandbox to allow standard app operations
+            }
           }
         }
       } else {
@@ -332,7 +353,7 @@ export default function App() {
 
   // Real-time Firestore sync listeners to propagate changes instantly across tabs/devices
   useEffect(() => {
-    if (!isFirestoreLoaded || !user) return;
+    if (!isFirestoreLoaded || !user || isQuotaExceeded) return;
 
     const keys = [
       'vehicles',
@@ -377,111 +398,118 @@ export default function App() {
           });
         }
       }, (error) => {
-        console.error(`Real-time subscription error for key ${key}:`, error);
+        if (isQuotaError(error)) {
+          console.warn(`Real-time listener suspended for key "${key}" due to Firestore quota limits.`);
+          setIsQuotaExceeded(true);
+          setCloudStatusMsg('quota_exceeded');
+          setIsFirestoreLoaded(false);
+        } else {
+          console.error(`Real-time subscription error for key ${key}:`, error);
+        }
       });
     });
 
     return () => {
       unsubscribes.forEach((unsub) => unsub());
     };
-  }, [isFirestoreLoaded, user]);
+  }, [isFirestoreLoaded, user, isQuotaExceeded]);
 
   // Automatically save to localStorage and Firestore cloud whenever state changes
   useEffect(() => {
     const str = JSON.stringify(vehicles);
     localStorage.setItem('e7_travels_vehicles', str);
-    if (isFirestoreLoaded) {
+    if (isFirestoreLoaded && !isQuotaExceeded) {
       if (lastReceivedFromServer.current['vehicles'] !== str) {
         saveStateToFirestore('vehicles', vehicles).catch((err) => {
           console.warn('Auto-save vehicles failed (silent):', err);
         });
       }
     }
-  }, [vehicles, isFirestoreLoaded]);
+  }, [vehicles, isFirestoreLoaded, isQuotaExceeded]);
 
   useEffect(() => {
     const str = JSON.stringify(owners);
     localStorage.setItem('e7_travels_owners', str);
-    if (isFirestoreLoaded) {
+    if (isFirestoreLoaded && !isQuotaExceeded) {
       if (lastReceivedFromServer.current['owners'] !== str) {
         saveStateToFirestore('owners', owners).catch((err) => {
           console.warn('Auto-save owners failed (silent):', err);
         });
       }
     }
-  }, [owners, isFirestoreLoaded]);
+  }, [owners, isFirestoreLoaded, isQuotaExceeded]);
 
   useEffect(() => {
     const str = JSON.stringify(drivers);
     localStorage.setItem('e7_travels_drivers', str);
-    if (isFirestoreLoaded) {
+    if (isFirestoreLoaded && !isQuotaExceeded) {
       if (lastReceivedFromServer.current['drivers'] !== str) {
         saveStateToFirestore('drivers', drivers).catch((err) => {
           console.warn('Auto-save drivers failed (silent):', err);
         });
       }
     }
-  }, [drivers, isFirestoreLoaded]);
+  }, [drivers, isFirestoreLoaded, isQuotaExceeded]);
 
   useEffect(() => {
     const str = JSON.stringify(companies);
     localStorage.setItem('e7_travels_companies', str);
-    if (isFirestoreLoaded) {
+    if (isFirestoreLoaded && !isQuotaExceeded) {
       if (lastReceivedFromServer.current['companies'] !== str) {
         saveStateToFirestore('companies', companies).catch((err) => {
           console.warn('Auto-save companies failed (silent):', err);
         });
       }
     }
-  }, [companies, isFirestoreLoaded]);
+  }, [companies, isFirestoreLoaded, isQuotaExceeded]);
 
   useEffect(() => {
     const str = JSON.stringify(sites);
     localStorage.setItem('e7_travels_sites', str);
-    if (isFirestoreLoaded) {
+    if (isFirestoreLoaded && !isQuotaExceeded) {
       if (lastReceivedFromServer.current['sites'] !== str) {
         saveStateToFirestore('sites', sites).catch((err) => {
           console.warn('Auto-save sites failed (silent):', err);
         });
       }
     }
-  }, [sites, isFirestoreLoaded]);
+  }, [sites, isFirestoreLoaded, isQuotaExceeded]);
 
   useEffect(() => {
     const str = JSON.stringify(payments);
     localStorage.setItem('e7_travels_payments', str);
-    if (isFirestoreLoaded) {
+    if (isFirestoreLoaded && !isQuotaExceeded) {
       if (lastReceivedFromServer.current['payments'] !== str) {
         saveStateToFirestore('payments', payments).catch((err) => {
           console.warn('Auto-save payments failed (silent):', err);
         });
       }
     }
-  }, [payments, isFirestoreLoaded]);
+  }, [payments, isFirestoreLoaded, isQuotaExceeded]);
 
   useEffect(() => {
     const str = JSON.stringify(expenses);
     localStorage.setItem('e7_travels_expenses', str);
-    if (isFirestoreLoaded) {
+    if (isFirestoreLoaded && !isQuotaExceeded) {
       if (lastReceivedFromServer.current['expenses'] !== str) {
         saveStateToFirestore('expenses', expenses).catch((err) => {
           console.warn('Auto-save expenses failed (silent):', err);
         });
       }
     }
-  }, [expenses, isFirestoreLoaded]);
+  }, [expenses, isFirestoreLoaded, isQuotaExceeded]);
 
   useEffect(() => {
     const str = JSON.stringify(enquiries);
     localStorage.setItem('e7_travels_enquiries', str);
-    if (isFirestoreLoaded) {
+    if (isFirestoreLoaded && !isQuotaExceeded) {
       if (lastReceivedFromServer.current['enquiries'] !== str) {
         saveStateToFirestore('enquiries', enquiries).catch((err) => {
           console.warn('Auto-save enquiries failed (silent):', err);
         });
       }
     }
-  }, [enquiries, isFirestoreLoaded]);
+  }, [enquiries, isFirestoreLoaded, isQuotaExceeded]);
 
   // Floating Toast notification state & auto-dismissal
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -648,7 +676,7 @@ export default function App() {
   });
 
   // Layout & Navigation State
-  const [activeTab, setActiveTab] = useState<'Dashboard' | 'Enquiries' | 'Induction' | 'Registers' | 'Transactions' | 'Ledgers' | 'Settlement' | 'Reports' | 'VBA Export' | 'Settings' | 'Rules' | 'Documents'>('Dashboard');
+  const [activeTab, setActiveTab] = useState<'Dashboard' | 'Enquiries' | 'Induction' | 'Registers' | 'Transactions' | 'Ledgers' | 'Settlement' | 'Reports' | 'Tariff' | 'VBA Export' | 'Settings' | 'Rules' | 'Documents'>('Dashboard');
   const [activeSubTab, setActiveSubTab] = useState<string>('Vehicle Master');
   const [vehicleFilter, setVehicleFilter] = useState<'all' | 'running' | 'idle' | 'new'>('all');
 
@@ -675,6 +703,7 @@ export default function App() {
       case 'Driver Master':
       case 'Company Master':
       case 'Site Master':
+      case 'Vendor Register':
         setActiveTab('Registers');
         setActiveSubTab(route);
         break;
@@ -707,6 +736,10 @@ export default function App() {
         break;
       case 'Rules':
         setActiveTab('Rules');
+        break;
+      case 'Tariff':
+      case 'Slab Rate Management':
+        setActiveTab('Tariff');
         break;
       case 'Tax Invoice':
       case 'Letter Head':
@@ -953,51 +986,50 @@ export default function App() {
     let updatedSites = [...sites];
     let hasChanges = false;
 
-    // Check for renamed company name or vendor name
-    if (companies.length === newCompanies.length) {
-      for (let i = 0; i < companies.length; i++) {
-        const oldC = companies[i];
-        const newC = newCompanies[i];
-        if (oldC.name !== newC.name) {
-          const oldName = oldC.name;
-          const newName = newC.name;
+    // Compare old companies vs new companies by companySite
+    companies.forEach((oldC) => {
+      const match = newCompanies.find(
+        (nc) => nc.companySite && oldC.companySite && nc.companySite.trim().toLowerCase() === oldC.companySite.trim().toLowerCase()
+      );
+      if (match && match.name && oldC.name !== match.name) {
+        const oldName = oldC.name;
+        const newName = match.name;
 
-          // 1. Update Vehicles
-          updatedVehicles = updatedVehicles.map(v => {
-            let changed = false;
-            let nextCompany = v.company;
-            let nextCompany2 = v.company2;
-            if (v.company === oldName) {
-              nextCompany = newName;
-              changed = true;
-            }
-            if (v.company2 === oldName) {
-              nextCompany2 = newName;
-              changed = true;
-            }
-            return changed ? { ...v, company: nextCompany, company2: nextCompany2 } : v;
-          });
+        // 1. Update Vehicles
+        updatedVehicles = updatedVehicles.map((v) => {
+          let changed = false;
+          let nextCompany = v.company;
+          let nextCompany2 = v.company2;
+          if (v.company === oldName) {
+            nextCompany = newName;
+            changed = true;
+          }
+          if (v.company2 === oldName) {
+            nextCompany2 = newName;
+            changed = true;
+          }
+          return changed ? { ...v, company: nextCompany, company2: nextCompany2 } : v;
+        });
 
-          // 2. Update Sites
-          updatedSites = updatedSites.map(s => {
-            if (s.companyName === oldName) {
-              return { ...s, companyName: newName };
-            }
-            return s;
-          });
+        // 2. Update Sites
+        updatedSites = updatedSites.map((s) => {
+          if (s.companyName === oldName) {
+            return { ...s, companyName: newName };
+          }
+          return s;
+        });
 
-          // 3. Update Payments
-          updatedPayments = updatedPayments.map(p => {
-            if (p.company === oldName) {
-              return { ...p, company: newName };
-            }
-            return p;
-          });
+        // 3. Update Payments
+        updatedPayments = updatedPayments.map((p) => {
+          if (p.company === oldName) {
+            return { ...p, company: newName };
+          }
+          return p;
+        });
 
-          hasChanges = true;
-        }
+        hasChanges = true;
       }
-    }
+    });
 
     setCompanies(newCompanies);
     if (hasChanges) {
@@ -1169,6 +1201,21 @@ export default function App() {
             </button>
           </div>
 
+          {/* Section: TARIFF */}
+          <div className="space-y-1">
+            <span className="text-4xs font-bold text-blue-300 uppercase tracking-widest pl-3 block mb-1">TARIFF</span>
+            
+            <button
+              id="menu-btn-tariff"
+              onClick={() => handleNavigate('Slab Rate Management')}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
+                activeTab === 'Tariff' ? 'bg-blue-800 text-white' : 'text-blue-100 hover:bg-blue-800/50'
+              }`}
+            >
+              <Tags className="h-4 w-4 shrink-0" /> Slab Rate Management
+            </button>
+          </div>
+
           {/* Section: DOCUMENTS */}
           <div className="space-y-1">
             <span className="text-4xs font-bold text-blue-300 uppercase tracking-widest pl-3 block mb-1">DOCUMENT</span>
@@ -1266,6 +1313,26 @@ export default function App() {
       {/* Main Workspace */}
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
         
+        {/* Firestore Quota Exceeded Banner */}
+        {isQuotaExceeded && (
+          <div className="bg-amber-500 text-slate-950 px-4 py-2 flex flex-col sm:flex-row items-center justify-between text-xs font-semibold gap-2 border-b border-amber-600 shadow-xs print:hidden z-50">
+            <div className="flex items-center gap-2 text-center sm:text-left">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-slate-950" />
+              <span>
+                <strong>Firestore Free Tier Quota Exceeded:</strong> Cloud database sync is temporarily paused for today. App is safely running in <strong>Local Offline Mode</strong> with browser storage persistence.
+              </span>
+            </div>
+            <a
+              href="https://console.firebase.google.com/project/cedar-vial-g3bk6/firestore/databases/ai-studio-e7travelsfleeter-7831b2b1-8c2e-451d-8c58-df75c7d4aafc/data?openUpgradeDialog=true"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-slate-950 text-white hover:bg-slate-800 px-3 py-1 rounded text-2xs font-bold uppercase tracking-wider whitespace-nowrap shrink-0 transition-colors shadow-xs"
+            >
+              Manage / Upgrade Firestore Plan →
+            </a>
+          </div>
+        )}
+
         {/* Header Bar */}
         <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-8 sticky top-0 z-40 shadow-2xs print:hidden shrink-0">
           <div className="flex items-center gap-3">
@@ -1282,12 +1349,18 @@ export default function App() {
                 type="button"
                 id="cloud-db-sync-trigger"
                 onClick={() => setShowCloudSyncPanel(!showCloudSyncPanel)}
-                className="flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg p-1.5 px-3 transition-all cursor-pointer shadow-3xs"
+                className={`flex items-center gap-2 border rounded-lg p-1.5 px-3 transition-all cursor-pointer shadow-3xs ${
+                  isQuotaExceeded
+                    ? 'bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-900'
+                    : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-900'
+                }`}
                 title="Manage Cloud Database Synchronization"
               >
                 <span className="relative flex h-1.5 w-1.5 shrink-0">
                   {cloudStatusMsg === 'syncing' ? (
                     <span className="animate-spin inline-flex h-full w-full rounded-full border border-emerald-500 border-t-transparent"></span>
+                  ) : isQuotaExceeded ? (
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
                   ) : (
                     <>
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -1297,12 +1370,14 @@ export default function App() {
                 </span>
                 <div className="text-left select-none flex items-center gap-1.5">
                   <div>
-                    <p className="text-4xs font-bold text-emerald-800 leading-none uppercase tracking-wider">Cloud Database</p>
-                    <p className="text-[8px] text-emerald-600 leading-none mt-0.5 font-extrabold text-emerald-700">
-                      {cloudStatusMsg === 'syncing' ? 'SYNCING...' : 'PERSISTED'}
+                    <p className={`text-4xs font-bold leading-none uppercase tracking-wider ${isQuotaExceeded ? 'text-amber-800' : 'text-emerald-800'}`}>
+                      {isQuotaExceeded ? 'Local Offline Mode' : 'Cloud Database'}
+                    </p>
+                    <p className={`text-[8px] leading-none mt-0.5 font-extrabold ${isQuotaExceeded ? 'text-amber-700' : 'text-emerald-700'}`}>
+                      {cloudStatusMsg === 'syncing' ? 'SYNCING...' : isQuotaExceeded ? 'QUOTA LIMIT (LOCAL)' : 'PERSISTED'}
                     </p>
                   </div>
-                  <Database className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                  <Database className={`h-3.5 w-3.5 shrink-0 ${isQuotaExceeded ? 'text-amber-600' : 'text-emerald-600'}`} />
                 </div>
               </button>
 
@@ -1537,16 +1612,16 @@ export default function App() {
           {['Registers', 'Transactions', 'Ledgers', 'Settlement', 'Documents'].includes(activeTab) && (
             <div className="flex bg-slate-200 p-1 rounded-xl max-w-max border border-slate-300/40 print:hidden shadow-3xs mb-4">
               {activeTab === 'Registers' &&
-                (['Vehicle Master', 'Owner Master', 'Driver Master', 'Company Master', 'Site Master'] as const).map((sub) => (
+                (['Vehicle Master', 'Owner Master', 'Driver Master', 'Company Master', 'Vendor Register'] as const).map((sub) => (
                   <button
-                    id={`sub-tab-btn-${sub}`}
+                    id={`sub-tab-btn-${sub.toLowerCase().replace(/\s+/g, '-')}`}
                     key={sub}
                     onClick={() => setActiveSubTab(sub)}
                     className={`px-4 py-1.5 text-2xs font-bold rounded-lg transition-all ${
                       activeSubTab === sub ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-800'
                     }`}
                   >
-                    {sub.split(' ')[0]} Master
+                    {sub === 'Vendor Register' ? 'Vendor Register' : `${sub.split(' ')[0]} Master`}
                   </button>
                 ))}
 
@@ -1715,11 +1790,32 @@ export default function App() {
             <RulesView />
           )}
 
+          {activeTab === 'Tariff' && (
+            <SlabRateManagement />
+          )}
+
           {activeTab === 'Documents' && (
             <DocumentViews
               vehicles={vehicles}
               companies={companies}
               activeSubView={activeSubTab as any}
+              customLogo={customLogo}
+              onUpdateLogo={(newLogo) => {
+                setCustomLogo(newLogo);
+                if (newLogo) {
+                  try {
+                    localStorage.setItem('e7_custom_logo', newLogo);
+                  } catch (err) {
+                    console.error('Failed to save custom logo to localStorage:', err);
+                  }
+                } else {
+                  try {
+                    localStorage.removeItem('e7_custom_logo');
+                  } catch (err) {
+                    console.error('Failed to remove custom logo from localStorage:', err);
+                  }
+                }
+              }}
             />
           )}
 

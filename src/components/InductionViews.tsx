@@ -18,10 +18,8 @@ import {
   Building,
   Check,
   AlertCircle,
-  Printer,
   RotateCcw,
 } from 'lucide-react';
-import PrintJoiningForm from './PrintJoiningForm';
 
 interface InductionViewsProps {
   enquiries: Enquiry[];
@@ -50,6 +48,63 @@ export default function InductionViews({
   onUpdateDrivers,
   onNavigate,
 }: InductionViewsProps) {
+  // Helper to extract clean Owner Name and Phone Number for Induction view
+  const getOwnerDisplayDetails = (enq: Enquiry) => {
+    let name = enq.ownerName || '';
+    let phone = enq.ownerMobile || '';
+
+    if (!name && enq.ownerId) {
+      const o = owners.find((item) => item.id === enq.ownerId);
+      if (o) {
+        name = o.name;
+        if (!phone) phone = o.phone;
+      }
+    }
+
+    if (!name && enq.ownerNamePhone) {
+      const raw = enq.ownerNamePhone.trim();
+      const parts = raw.split(/[-–—/]/);
+      if (parts.length >= 2) {
+        const part1 = parts[0].trim();
+        const part2 = parts[1].trim();
+
+        if (/^\+?\d[\d\s-]{6,}$/.test(part1) && !/^\+?\d[\d\s-]{6,}$/.test(part2)) {
+          phone = part1;
+          name = part2;
+        } else {
+          name = part1;
+          phone = part2;
+        }
+      } else {
+        if (/^\+?\d[\d\s-]{6,}$/.test(raw)) {
+          phone = raw;
+          const matchedByPhone = owners.find(
+            (o) => o.phone.replace(/[^0-9]/g, '') === raw.replace(/[^0-9]/g, '')
+          );
+          if (matchedByPhone) {
+            name = matchedByPhone.name;
+          } else {
+            name = 'Owner';
+          }
+        } else {
+          name = raw;
+        }
+      }
+    }
+
+    if (name && !phone) {
+      const matchedByName = owners.find((o) => o.name.toLowerCase() === name.toLowerCase());
+      if (matchedByName) {
+        phone = matchedByName.phone;
+      }
+    }
+
+    return {
+      displayName: name || enq.ownerNamePhone || 'Unspecified Owner',
+      displayPhone: phone || '',
+    };
+  };
+
   const [searchQuery, setSearchQuery] = useState('');
   const [editingEnq, setEditingEnq] = useState<Enquiry | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -59,9 +114,6 @@ export default function InductionViews({
   // Comments State
   const [activeCommentTarget, setActiveCommentTarget] = useState<Enquiry | null>(null);
   const [newCommentText, setNewCommentText] = useState('');
-
-  // Selected Enquiry for print joining form
-  const [selectedEnquiryForFormPrint, setSelectedEnquiryForFormPrint] = useState<Enquiry | null>(null);
 
   // Promotion/Master Register State
   const [promotingEnquiry, setPromotingEnquiry] = useState<Enquiry | null>(null);
@@ -534,14 +586,6 @@ export default function InductionViews({
 
   return (
     <div className="space-y-6">
-      {/* Print Joining Form Render */}
-      {selectedEnquiryForFormPrint && (
-        <PrintJoiningForm
-          enquiry={selectedEnquiryForFormPrint}
-          onClose={() => setSelectedEnquiryForFormPrint(null)}
-        />
-      )}
-
       {/* Header and Title */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-xl border border-slate-200 shadow-3xs">
         <div>
@@ -600,8 +644,8 @@ export default function InductionViews({
                   {/* Top Section - Structured Horizontal Grid */}
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 bg-slate-50/40 border-b border-slate-150">
                     
-                    {/* Column 1: Vehicle Basic Info (Col Span 3) */}
-                    <div className="lg:col-span-3 space-y-3">
+                    {/* Column 1: Vehicle Basic Info (Col Span 4) */}
+                    <div className="lg:col-span-4 space-y-3">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-3xs font-black px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 border border-indigo-200">
                           {enq.id}
@@ -618,19 +662,26 @@ export default function InductionViews({
                           {enq.vehicleType} &bull; {enq.vehicleModelYear || 'Unknown Model'}
                         </p>
                       </div>
-                      {enq.remarks && (
-                        <div className="bg-white border border-slate-150 p-2 rounded-lg text-4xs leading-relaxed italic text-slate-500 max-w-full overflow-hidden">
-                          <span className="font-bold not-italic text-slate-400 block mb-0.5 uppercase tracking-wider text-[8px]">Enquiry remarks:</span>
-                          "{enq.remarks}"
-                        </div>
-                      )}
                     </div>
-
-                    {/* Column 2: Crew/Driver & Owner Info (Col Span 3) */}
-                    <div className="lg:col-span-3 space-y-3 border-t lg:border-t-0 lg:border-l border-slate-200/60 pt-4 lg:pt-0 lg:pl-6">
+                    {/* Column 2: Crew/Driver & Owner Info (Col Span 4) */}
+                    <div className="lg:col-span-4 space-y-3 border-t lg:border-t-0 lg:border-l border-slate-200/60 pt-4 lg:pt-0 lg:pl-6">
                       <div>
                         <span className="font-extrabold text-slate-400 uppercase tracking-wider block text-[9px]">Owner attaching</span>
-                        <span className="font-bold text-slate-700 text-xs truncate block">{enq.ownerNamePhone}</span>
+                        {(() => {
+                          const { displayName, displayPhone } = getOwnerDisplayDetails(enq);
+                          return (
+                            <div className="mt-0.5">
+                              <span className="font-black text-slate-800 text-xs truncate block tracking-tight">
+                                {displayName}
+                              </span>
+                              {displayPhone && (
+                                <span className="text-slate-500 font-mono text-[10px] block font-semibold mt-0.5">
+                                  {displayPhone}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                       <div>
                         <span className="font-extrabold text-slate-400 uppercase tracking-wider block text-[9px]">Crew Driver</span>
@@ -641,54 +692,15 @@ export default function InductionViews({
                       </div>
                     </div>
 
-                    {/* Column 3: Boarding Documents Checklist & Progress (Col Span 3) */}
-                    <div className="lg:col-span-3 space-y-3 border-t lg:border-t-0 lg:border-l border-slate-200/60 pt-4 lg:pt-0 lg:pl-6">
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-3xs font-extrabold uppercase">
-                          <span className="text-slate-500">Boarding Documents</span>
-                          <span className="text-indigo-600 font-bold">{progress.completed}/{progress.total} Completed</span>
-                        </div>
-                        <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-                          <div
-                            className="bg-indigo-600 h-full rounded-full transition-all duration-300"
-                            style={{ width: `${progress.percentage}%` }}
-                          ></div>
-                        </div>
-                      </div>
-
-                      {/* Compact Checklist Details */}
-                      <div className="grid grid-cols-2 gap-x-2 gap-y-1 bg-white p-2.5 rounded-lg border border-slate-150 text-[10px] font-bold">
-                        {progress.checks.map((chk, i) => (
-                          <div key={i} className="flex items-center gap-1.5 overflow-hidden">
-                            {chk.ok ? (
-                              <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                            ) : (
-                              <AlertCircle className="h-3.5 w-3.5 text-rose-400 shrink-0" />
-                            )}
-                            <span className={`truncate ${chk.ok ? 'text-slate-700' : 'text-slate-400'}`}>
-                              {chk.label}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Column 4: Quick Actions & Status Links (Col Span 3) */}
-                    <div className="lg:col-span-3 flex flex-col justify-between space-y-4 border-t lg:border-t-0 lg:border-l border-slate-200/60 pt-4 lg:pt-0 lg:pl-6">
+                    {/* Column 3: Quick Actions & Status Links (Col Span 4) */}
+                    <div className="lg:col-span-4 flex flex-col justify-between space-y-4 border-t lg:border-t-0 lg:border-l border-slate-200/60 pt-4 lg:pt-0 lg:pl-6">
                       <div className="flex flex-col sm:flex-row lg:flex-col gap-2">
                         <button
                           onClick={() => setActiveCommentTarget(enq)}
-                          className="flex-1 flex items-center justify-center lg:justify-start gap-1.5 text-indigo-600 hover:text-indigo-700 text-3xs font-extrabold uppercase tracking-wide cursor-pointer p-2 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 shadow-3xs transition-all"
+                          className="w-full flex items-center justify-center lg:justify-start gap-1.5 text-indigo-600 hover:text-indigo-700 text-3xs font-extrabold uppercase tracking-wide cursor-pointer p-2 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 shadow-3xs transition-all"
                         >
                           <MessageSquare className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
                           <span>Induction Notes ({enq.comments?.length || 0})</span>
-                        </button>
-                        <button
-                          onClick={() => setSelectedEnquiryForFormPrint(enq)}
-                          className="flex-1 flex items-center justify-center lg:justify-start gap-1.5 text-slate-600 hover:text-indigo-600 text-3xs font-extrabold uppercase tracking-wide cursor-pointer p-2 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 shadow-3xs transition-all"
-                        >
-                          <Printer className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                          <span>Print Join Sheet</span>
                         </button>
                       </div>
 
@@ -1165,14 +1177,34 @@ export default function InductionViews({
                     />
                   </div>
                   <div>
-                    <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Owner Name & Phone *</label>
+                    <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Owner Name *</label>
                     <input
                       type="text"
                       required
-                      placeholder="e.g. Ramesh (9876543210)"
-                      value={editingEnq.ownerNamePhone || ''}
-                      onChange={(e) => setEditingEnq({ ...editingEnq, ownerNamePhone: e.target.value })}
-                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white text-slate-800 focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 focus:outline-none"
+                      placeholder="e.g. Ramesh"
+                      value={editingEnq.ownerName || (editingEnq.ownerNamePhone ? editingEnq.ownerNamePhone.split(/[-–—/]/)[0]?.trim() : '')}
+                      onChange={(e) => {
+                        const newName = e.target.value;
+                        const phone = editingEnq.ownerMobile || (editingEnq.ownerNamePhone && editingEnq.ownerNamePhone.split(/[-–—/]/)[1] ? editingEnq.ownerNamePhone.split(/[-–—/]/)[1].trim() : '');
+                        const combined = phone ? `${newName} - ${phone}` : newName;
+                        setEditingEnq({ ...editingEnq, ownerName: newName, ownerNamePhone: combined });
+                      }}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white text-slate-800 focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 focus:outline-none font-semibold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Owner Phone / Mobile</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 9876543210"
+                      value={editingEnq.ownerMobile || (editingEnq.ownerNamePhone && editingEnq.ownerNamePhone.split(/[-–—/]/)[1] ? editingEnq.ownerNamePhone.split(/[-–—/]/)[1].trim() : '')}
+                      onChange={(e) => {
+                        const newPhone = e.target.value;
+                        const name = editingEnq.ownerName || (editingEnq.ownerNamePhone ? editingEnq.ownerNamePhone.split(/[-–—/]/)[0]?.trim() : '');
+                        const combined = newPhone ? `${name} - ${newPhone}` : name;
+                        setEditingEnq({ ...editingEnq, ownerMobile: newPhone, ownerNamePhone: combined });
+                      }}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white text-slate-800 focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 focus:outline-none font-mono"
                     />
                   </div>
                   <div>
@@ -1182,16 +1214,6 @@ export default function InductionViews({
                       placeholder="e.g. TCS"
                       value={editingEnq.alreadyRunningCompany || ''}
                       onChange={(e) => setEditingEnq({ ...editingEnq, alreadyRunningCompany: e.target.value })}
-                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white text-slate-800 focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 focus:outline-none"
-                    />
-                  </div>
-                  <div className="lg:col-span-3">
-                    <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Enquiry Remarks</label>
-                    <textarea
-                      placeholder="Enter remarks/notes about this vehicle or crew..."
-                      value={editingEnq.remarks || ''}
-                      onChange={(e) => setEditingEnq({ ...editingEnq, remarks: e.target.value })}
-                      rows={2}
                       className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white text-slate-800 focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 focus:outline-none"
                     />
                   </div>

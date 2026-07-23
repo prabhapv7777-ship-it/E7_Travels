@@ -25,6 +25,8 @@ interface DocumentViewsProps {
   vehicles: Vehicle[];
   companies: Company[];
   activeSubView: 'Tax Invoice' | 'Letter Head';
+  customLogo?: string | null;
+  onUpdateLogo?: (logo: string | null) => void;
 }
 
 // Indian Rupees Number to Words converter (supports Lakhs and Crores perfectly)
@@ -77,6 +79,49 @@ function numberToWords(num: number): string {
   return result.charAt(0).toUpperCase() + result.slice(1);
 }
 
+// Resizes a raster image down to a maximum bounding box to protect localStorage quota.
+const resizeImage = (base64Str: string, maxWidth: number, maxHeight: number, callback: (resizedBase64: string) => void) => {
+  if (base64Str.startsWith('data:image/svg+xml')) {
+    callback(base64Str);
+    return;
+  }
+  const img = new Image();
+  img.src = base64Str;
+  img.onload = () => {
+    let width = img.width;
+    let height = img.height;
+    if (width <= maxWidth && height <= maxHeight) {
+      callback(base64Str);
+      return;
+    }
+    if (width > height) {
+      height = Math.round((height * maxWidth) / width);
+      width = maxWidth;
+    } else {
+      width = Math.round((width * maxHeight) / height);
+      height = maxHeight;
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      callback(base64Str);
+      return;
+    }
+    ctx.drawImage(img, 0, 0, width, height);
+    try {
+      callback(canvas.toDataURL('image/png'));
+    } catch (err) {
+      console.error('Failed to get data URL from canvas', err);
+      callback(base64Str);
+    }
+  };
+  img.onerror = () => {
+    callback(base64Str);
+  };
+};
+
 interface SavedRecipient {
   id: string;
   name: string;
@@ -86,10 +131,49 @@ interface SavedRecipient {
   email: string;
 }
 
-export default function DocumentViews({ vehicles, companies, activeSubView }: DocumentViewsProps) {
+export default function DocumentViews({ vehicles, companies, activeSubView, customLogo, onUpdateLogo }: DocumentViewsProps) {
   // Global States
   const [selectedVehicle, setSelectedVehicle] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
+  const [logoSize, setLogoSize] = useState<'sm' | 'md' | 'lg' | 'xl'>('md');
+  const [isLogoBgTransparent, setIsLogoBgTransparent] = useState(true);
+
+  // Background transparency processor for custom logo
+  const handleRemoveBg = () => {
+    if (!customLogo) return;
+    if (customLogo.startsWith('data:image/svg+xml')) return;
+
+    setIsLogoBgTransparent(true);
+    const img = new Image();
+    img.src = customLogo;
+    img.onload = () => {
+      try {
+        if (!img.width || !img.height) return;
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0);
+        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imgData.data;
+        const threshold = 240; // Default threshold to clear near-white backgrounds
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          if (r >= threshold && g >= threshold && b >= threshold) {
+            data[i + 3] = 0; // Alpha 0
+          }
+        }
+        ctx.putImageData(imgData, 0, 0);
+        const transparentBase64 = canvas.toDataURL('image/png');
+        onUpdateLogo?.(transparentBase64);
+      } catch (err) {
+        console.error('Error removing background:', err);
+      }
+    };
+  };
 
   // ================= SAVED RECIPIENTS STATE =================
   const [savedRecipients, setSavedRecipients] = useState<SavedRecipient[]>(() => {
@@ -293,20 +377,6 @@ export default function DocumentViews({ vehicles, companies, activeSubView }: Do
     setLetterRef(newRef);
 
     switch (presetName) {
-      case 'joining':
-        setLetterSubject('Intimation regarding joining of commercial vehicle to operational fleet');
-        setLetterTo('The Manager / Transport Head,\nCorporate Logistics Chennai Division,\nChennai, Tamil Nadu');
-        setLetterBody(`This is to formally notify you that we have deployed a new commercial transport vehicle to support your company's logistics operations starting from today.
-
-Below are the key vehicle parameters & driver credentials assigned to your service:
-• Vehicle Plate No: ${selectedVehicle || '[Select Vehicle Above]'}
-• Fuel Type: CNG / Eco-Clean
-• Certified Driver Name: ${selectedVehicle ? vehicles.find(v => v.registrationNumber === selectedVehicle)?.driverName || 'Verified Crew member' : '[Select Vehicle Above]'}
-• Primary Site Hub: Chennai Hub Services
-
-Our staff is fully trained in safety compliance, speed limitations, and clean passenger/material handling protocols. We assure you of the highest standards of operational efficiency and support. Please issue necessary site gate entry passes for the mentioned vehicle.`);
-        break;
-
       case 'driver_auth':
         setLetterSubject('Letter of Driver Authorization and Fleet Operator Compliance');
         setLetterTo('To Whomsoever It May Concern,\nSecurity & Ingress Control Terminal,\nChennai Hub Premises');
@@ -385,6 +455,131 @@ The layout is optimized for high-quality corporate layout print preview. When pr
           <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider pb-2 border-b border-slate-100 flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-amber-500" /> Live Document Editor
           </h3>
+
+          {/* Logo Customizer and Size Selector */}
+          <div className="p-3.5 bg-slate-50 border border-slate-150 rounded-xl space-y-3.5">
+            <div className="flex items-center justify-between">
+              <span className="text-3xs font-extrabold text-slate-500 uppercase tracking-wider block">Company Logo (PNG Format)</span>
+              {customLogo && (
+                <button
+                  type="button"
+                  onClick={() => onUpdateLogo?.(null)}
+                  className="text-3xs font-bold text-rose-600 hover:text-rose-800 uppercase tracking-wide cursor-pointer"
+                >
+                  Clear Logo
+                </button>
+              )}
+            </div>
+
+            {/* Logo Upload Box */}
+            <div className="flex items-center gap-3">
+              <div className={`border border-dashed border-slate-200 rounded-lg flex items-center justify-center shrink-0 shadow-3xs overflow-hidden ${
+                isLogoBgTransparent ? 'bg-slate-100' : 'bg-white'
+              } ${
+                logoSize === 'sm' ? 'h-10 w-10' :
+                logoSize === 'md' ? 'h-12 w-12' :
+                logoSize === 'lg' ? 'h-14 w-14' :
+                'h-16 w-16'
+              }`}>
+                {customLogo ? (
+                  <img src={customLogo} alt="Logo" className="max-h-full max-w-full object-contain p-1" referrerPolicy="no-referrer" />
+                ) : (
+                  <span className="text-4xs text-slate-300 font-bold uppercase">No Logo</span>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <input
+                  type="file"
+                  accept="image/png"
+                  id="document-logo-file"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (evt) => {
+                      const base64 = evt.target?.result as string;
+                      resizeImage(base64, 400, 400, (resizedBase64) => {
+                        onUpdateLogo?.(resizedBase64);
+                      });
+                    };
+                    reader.readAsDataURL(file);
+                  }}
+                />
+                <label
+                  htmlFor="document-logo-file"
+                  className="inline-flex items-center justify-center px-2.5 py-1.5 border border-slate-200 text-3xs font-extrabold uppercase rounded-md bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-300 shadow-3xs cursor-pointer tracking-wider"
+                >
+                  Upload PNG Logo
+                </label>
+                <p className="text-[9px] text-slate-400 mt-1 leading-normal">Recommended PNG with transparent background</p>
+              </div>
+            </div>
+
+            {/* Logo Size Selector */}
+            <div className="space-y-1">
+              <span className="text-4xs font-extrabold text-slate-400 uppercase tracking-wider block">Logo Display Size</span>
+              <div className="flex gap-1 bg-white p-1 border border-slate-150 rounded-lg">
+                {(['sm', 'md', 'lg', 'xl'] as const).map((sz) => {
+                  const labels = { sm: 'S', md: 'M', lg: 'L', xl: 'XL' };
+                  const isSelected = logoSize === sz;
+                  return (
+                    <button
+                      key={sz}
+                      type="button"
+                      onClick={() => setLogoSize(sz)}
+                      className={`flex-1 text-[10px] font-bold py-1 px-1.5 rounded-md transition-all cursor-pointer text-center ${
+                        isSelected 
+                          ? 'bg-[#114b3e] text-white shadow-3xs' 
+                          : 'text-slate-600 hover:bg-slate-50'
+                      }`}
+                      title={`${sz.toUpperCase()} Size`}
+                    >
+                      {labels[sz]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Logo Box Background Selector */}
+            <div className="space-y-1">
+              <span className="text-4xs font-extrabold text-slate-400 uppercase tracking-wider block">Logo Box Background</span>
+              <div className="flex gap-1 bg-white p-1 border border-slate-150 rounded-lg">
+                {[
+                  { value: true, label: 'Transparent' },
+                  { value: false, label: 'White Box' },
+                ].map((opt) => {
+                  const isSelected = isLogoBgTransparent === opt.value;
+                  return (
+                    <button
+                      key={String(opt.value)}
+                      type="button"
+                      onClick={() => setIsLogoBgTransparent(opt.value)}
+                      className={`flex-1 text-[10px] font-bold py-1 px-1.5 rounded-md transition-all cursor-pointer text-center ${
+                        isSelected 
+                          ? 'bg-[#114b3e] text-white shadow-3xs' 
+                          : 'text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Background Transparency Button */}
+            {customLogo && !customLogo.startsWith('data:image/svg+xml') && (
+              <button
+                type="button"
+                onClick={handleRemoveBg}
+                className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 text-3xs font-extrabold uppercase rounded-lg hover:bg-emerald-100 cursor-pointer shadow-3xs transition-all mt-2"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-emerald-600 shrink-0" /> Make Background Transparent
+              </button>
+            )}
+          </div>
 
           {/* Quick Association Selectors */}
           <div className="space-y-3">
@@ -788,7 +983,6 @@ The layout is optimized for high-quality corporate layout print preview. When pr
                   className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg font-semibold bg-emerald-50 text-emerald-800 border-emerald-200 cursor-pointer"
                 >
                   <option value="blank">📝 Custom / Blank Letterhead</option>
-                  <option value="joining">🚗 Vehicle Fleet Joining Intimation</option>
                   <option value="driver_auth">🪪 Driver Crew Gatepass Authorization</option>
                   <option value="noc">📜 Official No Objection Certificate (NOC)</option>
                 </select>
@@ -889,10 +1083,28 @@ The layout is optimized for high-quality corporate layout print preview. When pr
                   {/* Left Block with stylized E7 Logo */}
                   <div className="w-[58%] bg-[#114b3e] text-white flex items-center px-4 relative justify-between overflow-hidden" style={{ clipPath: 'polygon(0 0, 100% 0, 93% 100%, 0 100%)' }}>
                     <div className="flex items-center gap-3">
-                      {/* E7 visual outline matching logo box in image */}
-                      <div className="flex flex-col items-center justify-center border-2 border-[#a3e635] px-2 py-0.5 relative shrink-0 leading-none" style={{ borderWidth: '3px' }}>
-                        <span className="text-[32px] font-black tracking-tighter text-[#a3e635] italic">E7</span>
-                      </div>
+                      {/* E7 visual outline matching logo box in image or uploaded custom logo */}
+                      {customLogo ? (
+                        <div className={`${
+                          isLogoBgTransparent ? 'bg-transparent' : 'bg-white p-1 shadow-3xs'
+                        } rounded-md flex items-center justify-center shrink-0 overflow-hidden ${
+                          logoSize === 'sm' ? 'h-[36px] w-[36px]' :
+                          logoSize === 'md' ? 'h-[52px] w-[52px]' :
+                          logoSize === 'lg' ? 'h-[64px] w-[64px]' :
+                          'h-[72px] w-[72px]'
+                        }`}>
+                          <img 
+                            src={customLogo} 
+                            alt="Custom Logo" 
+                            className="h-full w-full object-contain" 
+                            referrerPolicy="no-referrer" 
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center border-2 border-[#a3e635] px-2 py-0.5 relative shrink-0 leading-none" style={{ borderWidth: '3px' }}>
+                          <span className="text-[32px] font-black tracking-tighter text-[#a3e635] italic">E7</span>
+                        </div>
+                      )}
                       <div className="text-left leading-none">
                         <h1 className="text-[20px] font-extrabold tracking-tight" style={{ fontFamily: 'sans-serif' }}>E7 TOURS & TRAVELS</h1>
                       </div>
@@ -1178,11 +1390,17 @@ The layout is optimized for high-quality corporate layout print preview. When pr
       {/* EMBEDDED PRINT CSS FOR PROFESSIONAL SCALING */}
       <style>{`
         @media print {
+          @page {
+            size: A4 portrait;
+            margin: 0.6cm !important;
+          }
           body {
             background: white !important;
             color: black !important;
+            margin: 0 !important;
+            padding: 0 !important;
           }
-          aside, header, .print\\:hidden, button, select, input, textarea {
+          aside, header, nav, .print\\:hidden, button, select, input, textarea, .xl\\:col-span-4 {
             display: none !important;
           }
           main {
@@ -1192,16 +1410,15 @@ The layout is optimized for high-quality corporate layout print preview. When pr
             border: none !important;
           }
           #printable-a4-area {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 210mm;
-            min-height: 297mm;
-            padding: 20mm !important;
+            position: static !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            min-height: auto !important;
+            padding: 0 !important;
             box-shadow: none !important;
             border: none !important;
             margin: 0 !important;
-            page-break-after: avoid;
+            box-sizing: border-box !important;
           }
         }
       `}</style>

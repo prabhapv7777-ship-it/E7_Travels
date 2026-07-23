@@ -227,3 +227,50 @@ export interface Enquiry {
 }
 
 export const ENQUIRY_STATUSES = ['New', 'Interested', 'Site Offered', 'Induction', 'Closed'] as const;
+
+export type RateSource = 'Vendor Rate' | 'Direct Rate' | 'Dual Rate (Vendor & Direct)';
+export type RateCategory = 'Kilometer Slab' | 'Package' | 'Flat Rate';
+
+export interface KmSlabRow {
+  id: string;
+  fromKm: number;
+  toKm: number | string;
+  vendorAmount: number; // Company Rate (Charged to client) (₹)
+  directAmount: number; // Driver Rate (Payout to driver) (₹)
+  amount?: number;      // Legacy compatibility
+}
+
+export interface PackageDetails {
+  packageName: string;
+  includedKm: number;
+  vendorPackageAmount: number; // Company Package Rate (Client billing) (₹)
+  directPackageAmount: number; // Driver Package Rate (Driver payout) (₹)
+  packageAmount?: number;      // Legacy compatibility
+  vendorExtraKmRate?: number;  // Company Extra KM Rate (₹)
+  directExtraKmRate?: number;  // Driver Extra KM Rate (₹)
+  extraKmRate?: number;        // Legacy compatibility
+  description?: string;
+}
+
+export interface FlatRateDetails {
+  tripName: string;
+  vendorFlatAmount: number; // Company Flat Rate (Client billing) (₹)
+  directFlatAmount: number; // Driver Flat Rate (Driver payout) (₹)
+  flatAmount?: number;      // Legacy compatibility
+  description?: string;
+}
+
+export interface SlabRate {
+  id: string;
+  slabName: string;
+  rateSource: RateSource;
+  vehicleType: string; // 'Sedan' | 'SUV' | 'EV' | 'Tempo Traveller'
+  rateCategory: RateCategory;
+  kmSlabs?: KmSlabRow[];
+  packageDetails?: PackageDetails;
+  flatRateDetails?: FlatRateDetails;
+  status: 'Active' | 'Inactive';
+  createdDate: string; // YYYY-MM-DD
+  updatedDate?: string;
+  description?: string;
+}

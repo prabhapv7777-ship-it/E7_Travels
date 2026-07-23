@@ -18,13 +18,33 @@ export interface FleetState {
   enquiries: Enquiry[];
 }
 
+export interface FleetStateResult {
+  state: Partial<FleetState>;
+  isQuotaExceeded: boolean;
+  error?: string;
+}
+
 const FLEET_COLLECTION = 'fleet';
+
+export const isQuotaError = (error: unknown): boolean => {
+  if (!error) return false;
+  const msg = error instanceof Error ? error.message : String(error);
+  return (
+    msg.toLowerCase().includes('quota') ||
+    msg.toLowerCase().includes('resource_exhausted') ||
+    msg.toLowerCase().includes('limit exceeded')
+  );
+};
 
 export const saveStateToFirestore = async (key: keyof FleetState, data: any) => {
   try {
     const docRef = doc(db, FLEET_COLLECTION, key);
     await setDoc(docRef, { data }, { merge: false });
   } catch (error) {
+    if (isQuotaError(error)) {
+      console.warn(`Firestore quota limit exceeded while auto-saving "${key}". Local storage fallback active.`);
+      return; // Do not throw so caller doesn't log unhandled promise rejections
+    }
     console.error(`Error saving ${key} to Firestore:`, error);
     throw error;
   }
@@ -43,7 +63,11 @@ export const saveAllStateToFirestore = async (state: FleetState) => {
   ];
   for (const key of keys) {
     if (state[key]) {
-      await saveStateToFirestore(key, state[key]);
+      try {
+        await saveStateToFirestore(key, state[key]);
+      } catch (err) {
+        if (isQuotaError(err)) break;
+      }
     }
   }
 };
@@ -118,7 +142,7 @@ export function mergeArraysById<T extends Record<string, any>>(
   return Array.from(mergedMap.values());
 }
 
-export const loadStateFromFirestore = async (): Promise<Partial<FleetState>> => {
+export const loadStateFromFirestore = async (): Promise<Partial<FleetState> & { _isQuotaExceeded?: boolean }> => {
   const keys: (keyof FleetState)[] = [
     'vehicles',
     'owners',
@@ -130,7 +154,8 @@ export const loadStateFromFirestore = async (): Promise<Partial<FleetState>> => 
     'enquiries',
   ];
   
-  const state: Partial<FleetState> = {};
+  const state: Partial<FleetState> & { _isQuotaExceeded?: boolean } = {};
+  let quotaExceededDetected = false;
   
   for (const key of keys) {
     try {
@@ -140,9 +165,20 @@ export const loadStateFromFirestore = async (): Promise<Partial<FleetState>> => 
         state[key] = snapshot.data().data;
       }
     } catch (error) {
-      console.error(`Error loading state for key "${key}" from Firestore:`, error);
-      throw error;
+      if (isQuotaError(error)) {
+        quotaExceededDetected = true;
+        console.warn(`Firestore quota limit reached for key "${key}". Falling back to local offline storage.`);
+        // Don't throw for quota error - allow partial/local state load
+        break;
+      } else {
+        console.error(`Error loading state for key "${key}" from Firestore:`, error);
+        throw error;
+      }
     }
+  }
+
+  if (quotaExceededDetected) {
+    state._isQuotaExceeded = true;
   }
   
   return state;

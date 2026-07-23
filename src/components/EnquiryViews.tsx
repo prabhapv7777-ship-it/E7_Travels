@@ -7,6 +7,7 @@ import {
   Edit,
   Trash2,
   Building,
+  Building2,
   CheckCircle,
   Calendar,
   XCircle,
@@ -25,6 +26,12 @@ import {
   MessageSquare,
   Printer,
   ExternalLink,
+  BookmarkCheck,
+  Eye,
+  Share2,
+  Copy,
+  Check,
+  Send,
 } from 'lucide-react';
 import PrintJoiningForm from './PrintJoiningForm';
 import PrintEnquiryReport from './PrintEnquiryReport';
@@ -56,8 +63,146 @@ export default function EnquiryViews({
   onUpdateDrivers,
   onNavigate,
 }: EnquiryViewsProps) {
+  // Helper to parse Site Preference into Company Name, Site Name, and Vendor Badge
+  const getSitePrefCompanyDisplay = (pref: string | undefined) => {
+    if (!pref || pref === 'Open Preference' || pref.trim() === '') {
+      return { companyName: null, siteName: 'Open Preference', vendor: null };
+    }
+
+    const cleanPref = pref.trim();
+
+    // 1. Check if pref matches a Company in companies array
+    const matchedCompany = companies.find(
+      (c) =>
+        c.name.toLowerCase() === cleanPref.toLowerCase() ||
+        (c.companySite && c.companySite.toLowerCase() === cleanPref.toLowerCase())
+    );
+
+    // 2. Check if pref matches a Site in sites array
+    const matchedSite = sites.find(
+      (s) => s.name.toLowerCase() === cleanPref.toLowerCase() || s.id.toLowerCase() === cleanPref.toLowerCase()
+    );
+
+    let companyName = matchedCompany?.name || matchedSite?.companyName || '';
+    let siteName = matchedCompany?.companySite || matchedSite?.name || cleanPref;
+    let vendor = matchedCompany?.vendorName || '';
+
+    // If no specific company was mapped but pref exists, treat pref as the Company/Site name
+    if (!companyName && cleanPref) {
+      companyName = cleanPref;
+    }
+
+    return { companyName, siteName, vendor };
+  };
+
+  // Helper to render Site Preference select options including all Corporate Companies and Sites
+  const renderSitePrefOptions = (currentVal: string) => {
+    const optionsMap = new Map<string, string>(); // value -> display label
+
+    // Add companies first
+    companies.forEach((c) => {
+      const siteVal = c.companySite || c.name;
+      const label = c.companySite && c.companySite !== c.name
+        ? `${c.name} - ${c.companySite}${c.vendorName ? ` [${c.vendorName}]` : ''}`
+        : `${c.name}${c.vendorName ? ` [${c.vendorName}]` : ''}`;
+      if (siteVal) optionsMap.set(siteVal, label);
+      if (c.name && !optionsMap.has(c.name)) optionsMap.set(c.name, c.name);
+    });
+
+    // Add sites
+    sites.forEach((s) => {
+      const label = s.companyName ? `${s.companyName} - ${s.name}` : s.name;
+      if (s.name && !optionsMap.has(s.name)) {
+        optionsMap.set(s.name, label);
+      }
+    });
+
+    // Add standard known corporate clients if not already added
+    const defaultCorporates = [
+      'AMAZON', 'ASTRAZENICA', 'BARCLAYS', 'COGNIZANT', 'CTS', 'MEDEXPERT',
+      'OPTUM', 'STATE STREET', 'TCS', 'WALMART', 'WORKDAY'
+    ];
+    defaultCorporates.forEach((corp) => {
+      if (!optionsMap.has(corp)) {
+        optionsMap.set(corp, corp);
+      }
+    });
+
+    if (currentVal && currentVal !== 'Open Preference' && !optionsMap.has(currentVal)) {
+      optionsMap.set(currentVal, currentVal);
+    }
+
+    return (
+      <>
+        <option value="Open Preference">Open Preference / Any Site</option>
+        <optgroup label="🏢 Corporate Companies & Operating Sites">
+          {Array.from(optionsMap.entries()).map(([val, label]) => (
+            <option key={val} value={val}>
+              {label}
+            </option>
+          ))}
+        </optgroup>
+      </>
+    );
+  };
+
+  // Helper to extract Owner Name only
+  const getOwnerNameOnly = (enq: Enquiry) => {
+    if (enq.ownerName) return enq.ownerName;
+    if (enq.ownerNamePhone) {
+      const raw = enq.ownerNamePhone.trim();
+      const parts = raw.split(/[-–—/]/);
+      if (parts.length >= 2) {
+        const part1 = parts[0].trim();
+        const part2 = parts[1].trim();
+        if (/^\+?\d[\d\s-]{6,}$/.test(part1) && !/^\+?\d[\d\s-]{6,}$/.test(part2)) {
+          return part2;
+        }
+        return part1;
+      }
+      if (!/^\+?\d[\d\s-]{6,}$/.test(raw)) {
+        return raw;
+      }
+    }
+    return 'Unspecified';
+  };
+
+  // Helper to extract Owner Phone only
+  const getOwnerPhone = (enq: Enquiry) => {
+    if (enq.ownerMobile) return enq.ownerMobile;
+    if (enq.ownerNamePhone) {
+      const raw = enq.ownerNamePhone.trim();
+      const parts = raw.split(/[-–—/]/);
+      if (parts.length >= 2) {
+        const part1 = parts[0].trim();
+        const part2 = parts[1].trim();
+        if (/^\+?\d[\d\s-]{6,}$/.test(part1)) return part1;
+        if (/^\+?\d[\d\s-]{6,}$/.test(part2)) return part2;
+      }
+      if (/^\+?\d[\d\s-]{6,}$/.test(raw)) {
+        return raw;
+      }
+    }
+    return '';
+  };
+
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'New' | 'Interested' | 'Site Offered' | 'Induction' | 'Closed'>('all');
+  const [referenceOnlyFilter, setReferenceOnlyFilter] = useState(false);
+
+  // Column Toggle Visibility States
+  const [columnVisibility, setColumnVisibility] = useState({
+    id: true,
+    vehicleDetails: true,
+    ownerDetails: true,
+    referenceTag: true,
+    driverDetails: true,
+    runningCompany: true,
+    sitePref1: true,
+    sitePref2: true,
+    status: true,
+  });
+  const [showColumnToggleMenu, setShowColumnToggleMenu] = useState(false);
   const [sortBy, setSortBy] = useState<'enquiryDate' | 'id' | 'vehicleNumber' | 'driverName' | 'status'>('id');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [isAdding, setIsAdding] = useState(false);
@@ -97,6 +242,61 @@ export default function EnquiryViews({
   const [promoteError, setPromoteError] = useState<string | null>(null);
   const [promoteSuccess, setPromoteSuccess] = useState<string | null>(null);
   const [infoNotification, setInfoNotification] = useState<string | null>(null);
+
+  // Share / Message Format State
+  const [sharingEnquiryMessage, setSharingEnquiryMessage] = useState<Enquiry | null>(null);
+  const [isCopied, setIsCopied] = useState(false);
+
+  // Helper to generate formatted message string as requested:
+  // "COMPANY SITE, CAR NUMBER, TYPE, DRIVER NAME, DRIVER NUMBER, AGE, BATCH EXPERIENCE, AREA"
+  const generateEnquiryMessageFormat = (enq: Partial<Enquiry>): string => {
+    const { companyName, siteName } = getSitePrefCompanyDisplay(enq.sitePreference1);
+    let companySiteStr = '';
+    if (companyName && siteName && companyName !== siteName) {
+      companySiteStr = `${companyName} (${siteName})`;
+    } else if (companyName || siteName) {
+      companySiteStr = companyName || siteName;
+    } else {
+      companySiteStr = enq.sitePreference1 || 'Open Preference';
+    }
+    if (enq.alreadyRunningCompany && enq.alreadyRunningCompany.trim() !== '') {
+      companySiteStr += ` [Running: ${enq.alreadyRunningCompany}]`;
+    }
+
+    const carNumberStr = enq.vehicleNumber || '-';
+    
+    const typeParts = [enq.vehicleType, enq.fuelType].filter(Boolean);
+    const typeStr = typeParts.length > 0 ? typeParts.join(' - ') : '-';
+
+    const driverNameStr = enq.driverName || '-';
+    const driverNumberStr = enq.driverPhone || '-';
+    const ageStr = enq.driverAge ? `${enq.driverAge}` : '-';
+    const batchExpStr = enq.driverBatchExp || '-';
+    const areaStr = enq.driverArea || '-';
+
+    return `COMPANY SITE: ${companySiteStr}
+CAR NUMBER: ${carNumberStr}
+TYPE: ${typeStr}
+DRIVER NAME: ${driverNameStr}
+DRIVER NUMBER: ${driverNumberStr}
+AGE: ${ageStr}
+BATCH EXPERIENCE: ${batchExpStr}
+AREA: ${areaStr}`;
+  };
+
+  const handleCopyEnquiryMessage = (enq: Enquiry) => {
+    const msgText = generateEnquiryMessageFormat(enq);
+    navigator.clipboard.writeText(msgText);
+    setIsCopied(true);
+    setSharingEnquiryMessage(enq);
+    setInfoNotification(`Enquiry details message copied to clipboard!`);
+    setTimeout(() => {
+      setIsCopied(false);
+    }, 3000);
+    setTimeout(() => {
+      setInfoNotification((curr) => (curr?.includes('copied') ? null : curr));
+    }, 5000);
+  };
 
   const [activeCommentTarget, setActiveCommentTarget] = useState<{
     id: string;
@@ -215,7 +415,7 @@ export default function EnquiryViews({
   }, [editingId]);
 
   useEffect(() => {
-    if (isAdding || editingId || promotingEnquiry || isPrintingReport || selectedEnquiryForFormPrint) {
+    if (isAdding || editingId || promotingEnquiry || isPrintingReport || selectedEnquiryForFormPrint || sharingEnquiryMessage) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
@@ -223,7 +423,7 @@ export default function EnquiryViews({
     return () => {
       document.body.style.overflow = '';
     };
-  }, [isAdding, editingId, promotingEnquiry, isPrintingReport, selectedEnquiryForFormPrint]);
+  }, [isAdding, editingId, promotingEnquiry, isPrintingReport, selectedEnquiryForFormPrint, sharingEnquiryMessage]);
 
   // Form State
   const [formState, setFormState] = useState<Partial<Enquiry>>({
@@ -336,6 +536,47 @@ export default function EnquiryViews({
     setFormError(null);
   };
 
+  const hasSitePref = (e: {
+    sitePreference1?: string;
+    sitePreference2?: string;
+    sitePreference3?: string;
+    sitePreference4?: string;
+    inductionSite?: string;
+    site?: string;
+  }) => {
+    const prefs = [
+      e.sitePreference1,
+      e.sitePreference2,
+      e.sitePreference3,
+      e.sitePreference4,
+      e.inductionSite,
+      e.site,
+    ];
+    return prefs.some((p) => {
+      if (!p) return false;
+      const s = p.trim().toLowerCase();
+      return (
+        s !== '' &&
+        s !== 'open preference' &&
+        s !== 'open preference / any site' &&
+        s !== 'none' &&
+        s !== '-' &&
+        s !== 'select site' &&
+        s !== 'none / tour operator'
+      );
+    });
+  };
+
+  const getEffectiveStatus = (e: Enquiry) => {
+    if (e.status === 'Induction' || e.status === 'Closed') {
+      return e.status;
+    }
+    if (e.status === 'Site Offered' || hasSitePref(e)) {
+      return 'Site Offered';
+    }
+    return e.status || 'New';
+  };
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -352,10 +593,15 @@ export default function EnquiryViews({
       return;
     }
 
+    let nextStatus = formState.status || 'New';
+    if (hasSitePref(formState) && (nextStatus === 'New' || nextStatus === 'Interested')) {
+      nextStatus = 'Site Offered';
+    }
+
     if (editingId) {
       // Update existing
       const updated = enquiries.map((item) =>
-        item.id === editingId ? { ...(formState as Enquiry) } : item
+        item.id === editingId ? { ...(formState as Enquiry), status: nextStatus } : item
       );
       onUpdateEnquiries(updated);
     } else {
@@ -368,7 +614,7 @@ export default function EnquiryViews({
         ...(formState as Enquiry),
         id: newId,
         enquiryDate: formState.enquiryDate || new Date().toISOString().substring(0, 10),
-        status: formState.status || 'New',
+        status: nextStatus,
       };
       onUpdateEnquiries([newEnq, ...enquiries]);
     }
@@ -675,16 +921,25 @@ export default function EnquiryViews({
       (item.vehicleModelYear || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (item.vehicleColor || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (item.ownerNamePhone || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.ownerName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.ownerMobile || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (item.reference || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (item.driverName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (item.driverPhone || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (item.driverArea || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (item.alreadyRunningCompany || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.fuelType || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (item.sitePreference1 || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (item.sitePreference2 || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.sitePreference3 || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.sitePreference4 || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (item.remarks || '').toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
+    const effStatus = getEffectiveStatus(item);
+    const matchesStatus = statusFilter === 'all' || effStatus === statusFilter;
+
+    const hasReference = !!(item.reference && item.reference.trim() !== '' && item.reference.trim() !== '-');
+    if (referenceOnlyFilter && !hasReference) return false;
 
     return matchesSearch && matchesStatus;
   });
@@ -704,11 +959,12 @@ export default function EnquiryViews({
 
   // KPI Calculations
   const totalCount = visibleEnquiries.length;
-  const newCount = visibleEnquiries.filter((e) => e.status === 'New').length;
-  const interestedCount = visibleEnquiries.filter((e) => e.status === 'Interested').length;
-  const siteOfferedCount = visibleEnquiries.filter((e) => e.status === 'Site Offered').length;
-  const inductionCount = visibleEnquiries.filter((e) => e.status === 'Induction').length;
-  const closedCount = visibleEnquiries.filter((e) => e.status === 'Closed').length;
+  const newCount = visibleEnquiries.filter((e) => getEffectiveStatus(e) === 'New').length;
+  const interestedCount = visibleEnquiries.filter((e) => getEffectiveStatus(e) === 'Interested').length;
+  const siteOfferedCount = visibleEnquiries.filter((e) => getEffectiveStatus(e) === 'Site Offered').length;
+  const inductionCount = visibleEnquiries.filter((e) => getEffectiveStatus(e) === 'Induction').length;
+  const closedCount = visibleEnquiries.filter((e) => getEffectiveStatus(e) === 'Closed').length;
+  const referencedCount = visibleEnquiries.filter((e) => e.reference && e.reference.trim() !== '' && e.reference.trim() !== '-').length;
 
   return (
     <div className="space-y-6">
@@ -763,17 +1019,17 @@ export default function EnquiryViews({
       )}
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         <button
           id="kpi-card-total-calls"
           onClick={() => setStatusFilter('all')}
-          className={`p-4 bg-white rounded-xl border flex items-center justify-between shadow-3xs transition-all cursor-pointer text-left focus:outline-none hover:shadow-xs hover:border-indigo-400 ${
-            statusFilter === 'all' ? 'ring-2 ring-indigo-500 border-indigo-500 bg-indigo-50/20' : 'border-slate-200'
+          className={`p-3.5 bg-white rounded-xl border flex items-center justify-between shadow-3xs transition-all cursor-pointer text-left focus:outline-none hover:shadow-xs hover:border-indigo-400 ${
+            statusFilter === 'all' && !referenceOnlyFilter ? 'ring-2 ring-indigo-500 border-indigo-500 bg-indigo-50/20' : 'border-slate-200'
           }`}
         >
           <div>
             <p className="text-3xs font-extrabold text-slate-400 uppercase tracking-wider">Total Calls</p>
-            <p className="text-lg font-bold text-slate-800 mt-1">{totalCount}</p>
+            <p className="text-lg font-bold text-slate-800 mt-0.5">{totalCount}</p>
           </div>
           <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
             <PhoneCall className="h-4 w-4" />
@@ -783,13 +1039,13 @@ export default function EnquiryViews({
         <button
           id="kpi-card-new-leads"
           onClick={() => setStatusFilter('New')}
-          className={`p-4 bg-white rounded-xl border flex items-center justify-between shadow-3xs transition-all cursor-pointer text-left focus:outline-none hover:shadow-xs hover:border-amber-400 ${
-            statusFilter === 'New' ? 'ring-2 ring-amber-500 border-amber-500 bg-amber-50/20' : 'border-slate-200'
+          className={`p-3.5 bg-white rounded-xl border flex items-center justify-between shadow-3xs transition-all cursor-pointer text-left focus:outline-none hover:shadow-xs hover:border-amber-400 ${
+            statusFilter === 'New' && !referenceOnlyFilter ? 'ring-2 ring-amber-500 border-amber-500 bg-amber-50/20' : 'border-slate-200'
           }`}
         >
           <div>
             <p className="text-3xs font-extrabold text-slate-400 uppercase tracking-wider">New Leads</p>
-            <p className="text-lg font-bold text-amber-600 mt-1">{newCount}</p>
+            <p className="text-lg font-bold text-amber-600 mt-0.5">{newCount}</p>
           </div>
           <div className="p-2 bg-amber-50 text-amber-600 rounded-lg">
             <Tag className="h-4 w-4" />
@@ -799,13 +1055,13 @@ export default function EnquiryViews({
         <button
           id="kpi-card-interested"
           onClick={() => setStatusFilter('Interested')}
-          className={`p-4 bg-white rounded-xl border flex items-center justify-between shadow-3xs transition-all cursor-pointer text-left focus:outline-none hover:shadow-xs hover:border-blue-400 ${
-            statusFilter === 'Interested' ? 'ring-2 ring-blue-500 border-blue-500 bg-blue-50/20' : 'border-slate-200'
+          className={`p-3.5 bg-white rounded-xl border flex items-center justify-between shadow-3xs transition-all cursor-pointer text-left focus:outline-none hover:shadow-xs hover:border-blue-400 ${
+            statusFilter === 'Interested' && !referenceOnlyFilter ? 'ring-2 ring-blue-500 border-blue-500 bg-blue-50/20' : 'border-slate-200'
           }`}
         >
           <div>
             <p className="text-3xs font-extrabold text-slate-400 uppercase tracking-wider">Interested</p>
-            <p className="text-lg font-bold text-blue-600 mt-1">{interestedCount}</p>
+            <p className="text-lg font-bold text-blue-600 mt-0.5">{interestedCount}</p>
           </div>
           <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
             <User className="h-4 w-4" />
@@ -815,13 +1071,13 @@ export default function EnquiryViews({
         <button
           id="kpi-card-site-offered"
           onClick={() => setStatusFilter('Site Offered')}
-          className={`p-4 bg-white rounded-xl border flex items-center justify-between shadow-3xs transition-all cursor-pointer text-left focus:outline-none hover:shadow-xs hover:border-emerald-400 ${
-            statusFilter === 'Site Offered' ? 'ring-2 ring-emerald-500 border-emerald-500 bg-emerald-50/20' : 'border-slate-200'
+          className={`p-3.5 bg-white rounded-xl border flex items-center justify-between shadow-3xs transition-all cursor-pointer text-left focus:outline-none hover:shadow-xs hover:border-emerald-400 ${
+            statusFilter === 'Site Offered' && !referenceOnlyFilter ? 'ring-2 ring-emerald-500 border-emerald-500 bg-emerald-50/20' : 'border-slate-200'
           }`}
         >
           <div>
             <p className="text-3xs font-extrabold text-slate-400 uppercase tracking-wider">Site Offered</p>
-            <p className="text-lg font-bold text-emerald-600 mt-1">{siteOfferedCount}</p>
+            <p className="text-lg font-bold text-emerald-600 mt-0.5">{siteOfferedCount}</p>
           </div>
           <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
             <Building className="h-4 w-4" />
@@ -831,13 +1087,13 @@ export default function EnquiryViews({
         <button
           id="kpi-card-induction"
           onClick={() => setStatusFilter('Induction')}
-          className={`p-4 bg-white rounded-xl border flex items-center justify-between shadow-3xs transition-all cursor-pointer text-left focus:outline-none hover:shadow-xs hover:border-indigo-400 ${
-            statusFilter === 'Induction' ? 'ring-2 ring-indigo-500 border-indigo-500 bg-indigo-50/20' : 'border-slate-200'
+          className={`p-3.5 bg-white rounded-xl border flex items-center justify-between shadow-3xs transition-all cursor-pointer text-left focus:outline-none hover:shadow-xs hover:border-indigo-400 ${
+            statusFilter === 'Induction' && !referenceOnlyFilter ? 'ring-2 ring-indigo-500 border-indigo-500 bg-indigo-50/20' : 'border-slate-200'
           }`}
         >
           <div>
-            <p className="text-3xs font-extrabold text-slate-400 uppercase tracking-wider">Going for Induction</p>
-            <p className="text-lg font-bold text-indigo-600 mt-1">{inductionCount}</p>
+            <p className="text-3xs font-extrabold text-slate-400 uppercase tracking-wider">Induction</p>
+            <p className="text-lg font-bold text-indigo-600 mt-0.5">{inductionCount}</p>
           </div>
           <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
             <Layers className="h-4 w-4" />
@@ -847,60 +1103,235 @@ export default function EnquiryViews({
         <button
           id="kpi-card-closed"
           onClick={() => setStatusFilter('Closed')}
-          className={`p-4 bg-white rounded-xl border flex items-center justify-between shadow-3xs transition-all cursor-pointer text-left focus:outline-none hover:shadow-xs hover:border-slate-400 col-span-2 lg:col-span-1 ${
-            statusFilter === 'Closed' ? 'ring-2 ring-slate-500 border-slate-500 bg-slate-50' : 'border-slate-200'
+          className={`p-3.5 bg-white rounded-xl border flex items-center justify-between shadow-3xs transition-all cursor-pointer text-left focus:outline-none hover:shadow-xs hover:border-slate-400 ${
+            statusFilter === 'Closed' && !referenceOnlyFilter ? 'ring-2 ring-slate-500 border-slate-500 bg-slate-50' : 'border-slate-200'
           }`}
         >
           <div>
             <p className="text-3xs font-extrabold text-slate-400 uppercase tracking-wider">Closed</p>
-            <p className="text-lg font-bold text-slate-500 mt-1">{closedCount}</p>
+            <p className="text-lg font-bold text-slate-500 mt-0.5">{closedCount}</p>
           </div>
           <div className="p-2 bg-slate-100 text-slate-500 rounded-lg">
             <CheckCircle className="h-4 w-4" />
+          </div>
+        </button>
+
+        <button
+          id="kpi-card-referenced"
+          onClick={() => setReferenceOnlyFilter(!referenceOnlyFilter)}
+          className={`p-3.5 bg-white rounded-xl border flex items-center justify-between shadow-3xs transition-all cursor-pointer text-left focus:outline-none hover:shadow-xs hover:border-purple-400 ${
+            referenceOnlyFilter ? 'ring-2 ring-purple-600 border-purple-600 bg-purple-50/40' : 'border-slate-200'
+          }`}
+        >
+          <div>
+            <div className="flex items-center gap-1">
+              <p className="text-3xs font-extrabold text-slate-400 uppercase tracking-wider">Referenced</p>
+              {referenceOnlyFilter && (
+                <span className="px-1.5 py-0.2 bg-purple-600 text-white text-[8px] font-black rounded-full uppercase">ON</span>
+              )}
+            </div>
+            <p className="text-lg font-bold text-purple-700 mt-0.5">{referencedCount}</p>
+          </div>
+          <div className={`p-2 rounded-lg ${referenceOnlyFilter ? 'bg-purple-600 text-white' : 'bg-purple-50 text-purple-600'}`}>
+            <BookmarkCheck className="h-4 w-4" />
           </div>
         </button>
       </div>
 
       {/* Search and Sort Controls Block placed BELOW Enquiry Desk KPI Box */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-3xs flex flex-col md:flex-row gap-4 justify-between items-center">
-        <div className="relative w-full md:w-96">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-          <input
-            id="enq-search"
-            type="text"
-            placeholder="Search registration, owner, driver, or site preferences..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-          />
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto flex-1">
+          <div className="relative w-full sm:w-80">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <input
+              id="enq-search"
+              type="text"
+              placeholder="Search registration, owner, driver, or site preferences..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+            />
+          </div>
+
+          {/* Reference Enable Button */}
+          <button
+            id="btn-toggle-reference-key"
+            onClick={() => setReferenceOnlyFilter(!referenceOnlyFilter)}
+            className={`w-full sm:w-auto px-3.5 py-2 text-xs font-bold rounded-lg border transition-all flex items-center justify-center gap-2 cursor-pointer shadow-3xs shrink-0 ${
+              referenceOnlyFilter
+                ? 'bg-purple-600 text-white border-purple-700 ring-2 ring-purple-300 shadow-xs'
+                : 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 hover:border-purple-300'
+            }`}
+            title="Enable Reference Key to filter and display referenced vehicle details"
+          >
+            <BookmarkCheck className={`h-4 w-4 ${referenceOnlyFilter ? 'text-white' : 'text-purple-600'}`} />
+            <span>{referenceOnlyFilter ? 'Referenced Vehicles ONLY (ON)' : 'Show Referenced Vehicles'}</span>
+            <span className={`px-2 py-0.5 text-[10px] rounded-full font-black ${referenceOnlyFilter ? 'bg-white text-purple-800' : 'bg-purple-200 text-purple-800'}`}>
+              {referencedCount}
+            </span>
+          </button>
         </div>
 
-        {/* Sort Options */}
-        <div className="flex items-center gap-2 self-start md:self-auto bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 shadow-3xs hover:border-slate-300 transition-all shrink-0">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Sort By:</span>
-          <select
-            id="enq-sort-by"
-            value={`${sortBy}-${sortOrder}`}
-            onChange={(e) => {
-              const [field, order] = e.target.value.split('-');
-              setSortBy(field as any);
-              setSortOrder(order as any);
-            }}
-            className="text-3xs font-black uppercase tracking-wider text-slate-700 bg-transparent border-0 focus:outline-none focus:ring-0 cursor-pointer"
-          >
-            <option value="enquiryDate-desc">Date (Latest First)</option>
-            <option value="enquiryDate-asc">Date (Oldest First)</option>
-            <option value="id-desc">Enquiry ID (Newest)</option>
-            <option value="id-asc">Enquiry ID (Oldest)</option>
-            <option value="vehicleNumber-asc">Vehicle No (A-Z)</option>
-            <option value="vehicleNumber-desc">Vehicle No (Z-A)</option>
-            <option value="driverName-asc">Driver Name (A-Z)</option>
-            <option value="driverName-desc">Driver Name (Z-A)</option>
-            <option value="status-asc">Status (A-Z)</option>
-            <option value="status-desc">Status (Z-A)</option>
-          </select>
+        <div className="flex flex-wrap items-center gap-3 self-start md:self-auto shrink-0">
+          {/* Sort Options */}
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 shadow-3xs hover:border-slate-300 transition-all shrink-0">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Sort By:</span>
+            <select
+              id="enq-sort-by"
+              value={`${sortBy}-${sortOrder}`}
+              onChange={(e) => {
+                const [field, order] = e.target.value.split('-');
+                setSortBy(field as any);
+                setSortOrder(order as any);
+              }}
+              className="text-3xs font-black uppercase tracking-wider text-slate-700 bg-transparent border-0 focus:outline-none focus:ring-0 cursor-pointer"
+            >
+              <option value="enquiryDate-desc">Date (Latest First)</option>
+              <option value="enquiryDate-asc">Date (Oldest First)</option>
+              <option value="id-desc">Enquiry ID (Newest)</option>
+              <option value="id-asc">Enquiry ID (Oldest)</option>
+              <option value="vehicleNumber-asc">Vehicle No (A-Z)</option>
+              <option value="vehicleNumber-desc">Vehicle No (Z-A)</option>
+              <option value="driverName-asc">Driver Name (A-Z)</option>
+              <option value="driverName-desc">Driver Name (Z-A)</option>
+              <option value="status-asc">Status (A-Z)</option>
+              <option value="status-desc">Status (Z-A)</option>
+            </select>
+          </div>
+
+          {/* Column Toggle Visibility Popover Dropdown */}
+          <div className="relative">
+            <button
+              id="btn-column-visibility-toggle"
+              type="button"
+              onClick={() => setShowColumnToggleMenu(!showColumnToggleMenu)}
+              className={`px-3 py-1.5 text-3xs font-black uppercase tracking-wider rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer shadow-3xs ${
+                !columnVisibility.referenceTag
+                  ? 'bg-amber-50 text-amber-800 border-amber-300'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+              }`}
+              title="Toggle Column Visibility"
+            >
+              <Eye className="h-3.5 w-3.5 text-indigo-600" />
+              <span>Column Toggle Visibility</span>
+              <span className="px-1.5 py-0.2 bg-indigo-100 text-indigo-700 text-[9px] rounded-full font-black">
+                {Object.values(columnVisibility).filter(Boolean).length}
+              </span>
+            </button>
+
+            {showColumnToggleMenu && (
+              <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-xl z-40 p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <span className="text-3xs font-extrabold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                    <Eye className="h-3.5 w-3.5 text-indigo-600" />
+                    Column Toggle Visibility
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowColumnToggleMenu(false)}
+                    className="text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer px-1"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                  {[
+                    { key: 'id', label: 'Enquiry ID' },
+                    { key: 'vehicleDetails', label: 'Vehicle Specs & Number' },
+                    { key: 'ownerDetails', label: 'Owner Details' },
+                    { key: 'referenceTag', label: '★ Reference Tag (REFERENCE)' },
+                    { key: 'driverDetails', label: 'Driver Details' },
+                    { key: 'runningCompany', label: 'Already Running Company' },
+                    { key: 'sitePref1', label: 'Site Preference 1' },
+                    { key: 'sitePref2', label: 'Site Preference 2' },
+                    { key: 'status', label: 'Status' },
+                  ].map((col) => (
+                    <label
+                      key={col.key}
+                      className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer select-none text-xs font-bold transition-colors ${
+                        col.key === 'referenceTag'
+                          ? 'bg-purple-50/80 hover:bg-purple-100/80 text-purple-900 border border-purple-200/60'
+                          : 'hover:bg-slate-50 text-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={(columnVisibility as any)[col.key]}
+                          onChange={() =>
+                            setColumnVisibility({
+                              ...columnVisibility,
+                              [col.key]: !(columnVisibility as any)[col.key],
+                            })
+                          }
+                          className="h-3.5 w-3.5 rounded text-purple-600 border-slate-300 focus:ring-0 cursor-pointer"
+                        />
+                        <span className={col.key === 'referenceTag' ? 'font-black text-purple-900' : ''}>
+                          {col.label}
+                        </span>
+                      </div>
+                      {(columnVisibility as any)[col.key] && (
+                        <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.2 rounded uppercase">
+                          ON
+                        </span>
+                      )}
+                    </label>
+                  ))}
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 flex justify-between items-center text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setColumnVisibility({
+                        id: true,
+                        vehicleDetails: true,
+                        ownerDetails: true,
+                        referenceTag: true,
+                        driverDetails: true,
+                        runningCompany: true,
+                        sitePref1: true,
+                        sitePref2: true,
+                        status: true,
+                      })
+                    }
+                    className="text-indigo-600 font-bold hover:underline cursor-pointer"
+                  >
+                    Reset All ON
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowColumnToggleMenu(false)}
+                    className="px-2.5 py-1 bg-indigo-600 text-white rounded-md font-bold cursor-pointer hover:bg-indigo-700"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {referenceOnlyFilter && (
+        <div className="bg-purple-50 border border-purple-200 text-purple-900 rounded-xl p-3.5 px-4 flex items-center justify-between shadow-2xs">
+          <div className="flex items-center gap-2.5 text-xs font-bold">
+            <span className="p-1.5 bg-purple-100 text-purple-700 rounded-lg">
+              <BookmarkCheck className="h-4 w-4 text-purple-700" />
+            </span>
+            <span>
+              Reference Key Active: Displaying <strong>{sortedAndFiltered.length}</strong> referenced vehicle records on Enquiry Desk.
+            </span>
+          </div>
+          <button
+            onClick={() => setReferenceOnlyFilter(false)}
+            className="px-3 py-1 bg-white text-purple-700 border border-purple-200 rounded-lg text-2xs font-extrabold hover:bg-purple-100 cursor-pointer transition-all shadow-3xs"
+          >
+            Show All Vehicles
+          </button>
+        </div>
+      )}
 
       {/* Adding & Editing Form Panel */}
       {(isAdding || editingId) && (
@@ -995,15 +1426,38 @@ export default function EnquiryViews({
                 </div>
 
                 <div>
-                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Owner Name & Phone *</label>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Owner Name *</label>
                   <input
-                    id="enq-form-ownerNamePhone"
+                    id="enq-form-ownerName"
                     type="text"
                     required
-                    placeholder="e.g. Rajesh Kumar (9841234560)"
-                    value={formState.ownerNamePhone || ''}
-                    onChange={(e) => setFormState({ ...formState, ownerNamePhone: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    placeholder="e.g. Rajesh Kumar"
+                    value={formState.ownerName || (formState.ownerNamePhone ? formState.ownerNamePhone.split(/[-–—/]/)[0]?.trim() : '')}
+                    onChange={(e) => {
+                      const name = e.target.value;
+                      const phone = formState.ownerMobile || (formState.ownerNamePhone && formState.ownerNamePhone.split(/[-–—/]/)[1] ? formState.ownerNamePhone.split(/[-–—/]/)[1].trim() : '');
+                      const combined = phone ? `${name} - ${phone}` : name;
+                      setFormState({ ...formState, ownerName: name, ownerNamePhone: combined });
+                    }}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Owner Phone / Mobile *</label>
+                  <input
+                    id="enq-form-ownerMobile"
+                    type="text"
+                    required
+                    placeholder="e.g. 9841234560"
+                    value={formState.ownerMobile || (formState.ownerNamePhone && formState.ownerNamePhone.split(/[-–—/]/)[1] ? formState.ownerNamePhone.split(/[-–—/]/)[1].trim() : '')}
+                    onChange={(e) => {
+                      const phone = e.target.value;
+                      const name = formState.ownerName || (formState.ownerNamePhone ? formState.ownerNamePhone.split(/[-–—/]/)[0]?.trim() : '');
+                      const combined = phone ? `${name} - ${phone}` : name;
+                      setFormState({ ...formState, ownerMobile: phone, ownerNamePhone: combined });
+                    }}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-mono"
                   />
                 </div>
 
@@ -1259,12 +1713,7 @@ export default function EnquiryViews({
                     onChange={(e) => setFormState({ ...formState, sitePreference1: e.target.value })}
                     className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   >
-                    <option value="Open Preference">Open Preference / Any Site</option>
-                    {sites.map((s) => (
-                      <option key={s.id} value={s.name}>
-                        {s.name}
-                      </option>
-                    ))}
+                    {renderSitePrefOptions(formState.sitePreference1 || '')}
                   </select>
                 </div>
 
@@ -1276,12 +1725,7 @@ export default function EnquiryViews({
                     onChange={(e) => setFormState({ ...formState, sitePreference2: e.target.value })}
                     className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
                   >
-                    <option value="Open Preference">Open Preference / Any Site</option>
-                    {sites.map((s) => (
-                      <option key={s.id} value={s.name}>
-                        {s.name}
-                      </option>
-                    ))}
+                    {renderSitePrefOptions(formState.sitePreference2 || '')}
                   </select>
                 </div>
 
@@ -1293,12 +1737,7 @@ export default function EnquiryViews({
                     onChange={(e) => setFormState({ ...formState, sitePreference3: e.target.value })}
                     className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   >
-                    <option value="Open Preference">Open Preference / Any Site</option>
-                    {sites.map((s) => (
-                      <option key={s.id} value={s.name}>
-                        {s.name}
-                      </option>
-                    ))}
+                    {renderSitePrefOptions(formState.sitePreference3 || '')}
                   </select>
                 </div>
 
@@ -1310,12 +1749,7 @@ export default function EnquiryViews({
                     onChange={(e) => setFormState({ ...formState, sitePreference4: e.target.value })}
                     className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   >
-                    <option value="Open Preference">Open Preference / Any Site</option>
-                    {sites.map((s) => (
-                      <option key={s.id} value={s.name}>
-                        {s.name}
-                      </option>
-                    ))}
+                    {renderSitePrefOptions(formState.sitePreference4 || '')}
                   </select>
                 </div>
 
@@ -1495,22 +1929,41 @@ export default function EnquiryViews({
             </div>
 
             {/* Action Buttons */}
-            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
-              <button
-                id="enq-form-btn-cancel"
-                type="button"
-                onClick={handleCloseForm}
-                className="px-4 py-2 text-xs font-semibold border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 transition-all bg-white cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                id="enq-form-btn-save"
-                type="submit"
-                className="px-5 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all cursor-pointer"
-              >
-                {editingId ? 'Update Log' : 'Save Enquiry Log'}
-              </button>
+            <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+              <div>
+                {formState.vehicleNumber && (
+                  <button
+                    id="enq-form-btn-copy-msg"
+                    type="button"
+                    onClick={() => {
+                      const msgText = generateEnquiryMessageFormat(formState);
+                      navigator.clipboard.writeText(msgText);
+                      setInfoNotification("Enquiry message format copied to clipboard!");
+                      setTimeout(() => setInfoNotification(null), 4000);
+                    }}
+                    className="px-3.5 py-2 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <Share2 className="h-3.5 w-3.5 text-emerald-600" /> Copy Message Format
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  id="enq-form-btn-cancel"
+                  type="button"
+                  onClick={handleCloseForm}
+                  className="px-4 py-2 text-xs font-semibold border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 transition-all bg-white cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  id="enq-form-btn-save"
+                  type="submit"
+                  className="px-5 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all cursor-pointer"
+                >
+                  {editingId ? 'Update Log' : 'Save Enquiry Log'}
+                </button>
+              </div>
             </div>
           </form>
             </div>
@@ -1611,39 +2064,56 @@ export default function EnquiryViews({
                 {/* PRIMARY COLOR GROUP HEADERS */}
                 <tr className="border-b border-slate-200 font-extrabold uppercase tracking-wider text-3xs h-[32px]">
                   {/* ENQ001 Header Column */}
-                  <th rowSpan={2} className="sticky top-0 z-20 py-3 px-3 text-center align-middle bg-purple-100 text-purple-900 border-r border-b border-purple-200 font-black font-mono w-[110px]">
-                    ENQUIRY ID
-                  </th>
+                  {columnVisibility.id && (
+                    <th rowSpan={2} className="sticky top-0 z-20 py-3 px-3 text-center align-middle bg-purple-100 text-purple-900 border-r border-b border-purple-200 font-black font-mono w-[110px]">
+                      ENQUIRY ID
+                    </th>
+                  )}
 
-                  {/* VEHICLE DETAILS Group Header (Yellow hue from picture) */}
-                  <th colSpan={6} className="sticky top-0 z-20 py-1.5 px-4 text-center bg-amber-100 text-amber-950 border-r border-b border-amber-200 font-black text-2xs uppercase tracking-widest h-[32px]">
-                    VECHILE DETAILS
-                  </th>
+                  {/* VEHICLE DETAILS Group Header */}
+                  {((columnVisibility.vehicleDetails ? 5 : 0) + (columnVisibility.ownerDetails ? 2 : 0) + (columnVisibility.referenceTag ? 1 : 0)) > 0 && (
+                    <th
+                      colSpan={(columnVisibility.vehicleDetails ? 5 : 0) + (columnVisibility.ownerDetails ? 2 : 0) + (columnVisibility.referenceTag ? 1 : 0)}
+                      className="sticky top-0 z-20 py-1.5 px-4 text-center bg-amber-100 text-amber-950 border-r border-b border-amber-200 font-black text-2xs uppercase tracking-widest h-[32px]"
+                    >
+                      VEHICLE & OWNER DETAILS
+                    </th>
+                  )}
 
-                  {/* DRIVER DETAILS Group Header (Green hue from picture) */}
-                  <th colSpan={5} className="sticky top-0 z-20 py-1.5 px-4 text-center bg-emerald-100 text-emerald-950 border-r border-b border-emerald-200 font-black text-2xs uppercase tracking-widest h-[32px]">
-                    DRIVER DETAILS
-                  </th>
+                  {/* DRIVER DETAILS Group Header */}
+                  {columnVisibility.driverDetails && (
+                    <th colSpan={5} className="sticky top-0 z-20 py-1.5 px-4 text-center bg-emerald-100 text-emerald-950 border-r border-b border-emerald-200 font-black text-2xs uppercase tracking-widest h-[32px]">
+                      DRIVER DETAILS
+                    </th>
+                  )}
 
-                  {/* ALREADY RUNNING COMPANY (Orange/Peach hue from picture) */}
-                  <th rowSpan={2} className="sticky top-0 z-20 py-3 px-3 text-center align-middle bg-orange-100 text-orange-950 border-r border-b border-orange-200 font-black leading-tight w-[160px]">
-                    ALREADY RUNNING COMPANY
-                  </th>
+                  {/* ALREADY RUNNING COMPANY */}
+                  {columnVisibility.runningCompany && (
+                    <th rowSpan={2} className="sticky top-0 z-20 py-3 px-3 text-center align-middle bg-orange-100 text-orange-950 border-r border-b border-orange-200 font-black leading-tight w-[160px]">
+                      ALREADY RUNNING COMPANY
+                    </th>
+                  )}
 
-                  {/* SITE PREFERENCE 1 (Orange/Peach hue from picture) */}
-                  <th rowSpan={2} className="sticky top-0 z-20 py-3 px-3 text-center align-middle bg-amber-50 text-amber-950 border-r border-b border-amber-200 font-black leading-tight w-[150px]">
-                    SITE PREFERENCE 1
-                  </th>
+                  {/* SITE PREFERENCE 1 */}
+                  {columnVisibility.sitePref1 && (
+                    <th rowSpan={2} className="sticky top-0 z-20 py-3 px-3 text-center align-middle bg-amber-50 text-amber-950 border-r border-b border-amber-200 font-black leading-tight w-[150px]">
+                      SITE PREFERENCE 1
+                    </th>
+                  )}
 
-                  {/* SITE PREFERENCE 2 (Pink/Red hue from picture) */}
-                  <th rowSpan={2} className="sticky top-0 z-20 py-3 px-3 text-center align-middle bg-rose-100 text-rose-950 border-r border-b border-rose-200 font-black leading-tight w-[150px]">
-                    SITE PREFERENCE 2
-                  </th>
+                  {/* SITE PREFERENCE 2 */}
+                  {columnVisibility.sitePref2 && (
+                    <th rowSpan={2} className="sticky top-0 z-20 py-3 px-3 text-center align-middle bg-rose-100 text-rose-950 border-r border-b border-rose-200 font-black leading-tight w-[150px]">
+                      SITE PREFERENCE 2
+                    </th>
+                  )}
 
                   {/* STATUS & ACTIONS */}
-                  <th rowSpan={2} className="sticky top-0 z-20 py-3 px-4 text-center align-middle bg-slate-100 text-slate-700 border-r border-b border-slate-200 font-extrabold w-[110px]">
-                    STATUS
-                  </th>
+                  {columnVisibility.status && (
+                    <th rowSpan={2} className="sticky top-0 z-20 py-3 px-4 text-center align-middle bg-slate-100 text-slate-700 border-r border-b border-slate-200 font-extrabold w-[110px]">
+                      STATUS
+                    </th>
+                  )}
                   <th rowSpan={2} className="sticky top-0 z-20 py-3 px-4 text-center align-middle bg-slate-100 text-slate-700 border-b border-slate-200 font-extrabold w-[100px]">
                     ACTIONS
                   </th>
@@ -1652,29 +2122,50 @@ export default function EnquiryViews({
                 {/* SECONDARY DETAILED SUB-HEADERS */}
                 <tr className="bg-slate-50 border-b border-slate-200 font-black text-4xs uppercase tracking-wider text-slate-500">
                   {/* Vehicle Sub-columns */}
-                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-amber-50">NUMBER</th>
-                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-amber-50">TYPE</th>
-                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-amber-50">MODEL/YEAR</th>
-                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-amber-50">COLOR</th>
-                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-amber-50">OWNER NAME/PHONE</th>
-                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-amber-50">REFERENCE</th>
+                  {columnVisibility.vehicleDetails && (
+                    <>
+                      <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-amber-50">NUMBER</th>
+                      <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-amber-50">TYPE</th>
+                      <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-amber-50">FUEL TYPE</th>
+                      <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-amber-50">MODEL/YEAR</th>
+                      <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-amber-50">COLOR</th>
+                    </>
+                  )}
+                  {columnVisibility.ownerDetails && (
+                    <>
+                      <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-amber-50">OWNER NAME</th>
+                      <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-amber-50">OWNER PHONE</th>
+                    </>
+                  )}
+                  {columnVisibility.referenceTag && (
+                    <th className={`sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 transition-colors ${
+                      referenceOnlyFilter ? 'bg-purple-200 text-purple-950 font-black' : 'bg-amber-50 text-slate-700'
+                    }`}>
+                      REFERENCE {referenceOnlyFilter && '★'}
+                    </th>
+                  )}
 
                   {/* Driver Sub-columns */}
-                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-emerald-50">NAME</th>
-                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-emerald-50">AGE</th>
-                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-emerald-50">PHONE NO</th>
-                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-emerald-50">AREA</th>
-                  <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-emerald-50">BATCH EXP</th>
+                  {columnVisibility.driverDetails && (
+                    <>
+                      <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-emerald-50">NAME</th>
+                      <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-emerald-50">AGE</th>
+                      <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-emerald-50">PHONE NO</th>
+                      <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-emerald-50">AREA</th>
+                      <th className="sticky top-[32px] z-20 py-2 px-3 border-r border-slate-200 bg-emerald-50">BATCH EXP</th>
+                    </>
+                  )}
                 </tr>
               </thead>
 
               <tbody className="divide-y divide-slate-100">
                 {sortedAndFiltered.map((enq) => {
+                  const displayStatus = getEffectiveStatus(enq);
                   let badgeColor = 'bg-amber-50 text-amber-700 border-amber-200';
-                  if (enq.status === 'Interested') badgeColor = 'bg-blue-50 text-blue-700 border-blue-200';
-                  if (enq.status === 'Site Offered') badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-                  if (enq.status === 'Induction') badgeColor = 'bg-indigo-50 text-indigo-700 border-indigo-200';
-                  if (enq.status === 'Closed') badgeColor = 'bg-slate-100 text-slate-600 border-slate-200';
+                  if (displayStatus === 'Interested') badgeColor = 'bg-blue-50 text-blue-700 border-blue-200';
+                  if (displayStatus === 'Site Offered') badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                  if (displayStatus === 'Induction') badgeColor = 'bg-indigo-50 text-indigo-700 border-indigo-200';
+                  if (displayStatus === 'Closed') badgeColor = 'bg-slate-100 text-slate-600 border-slate-200';
 
                   return (
                     <tr
@@ -1683,90 +2174,209 @@ export default function EnquiryViews({
                       className="hover:bg-slate-50/60 transition-colors align-middle text-2xs"
                     >
                       {/* ID (Purple background theme column) */}
-                      <td className="py-3 px-3 font-mono font-black text-center border-r border-purple-100/50 bg-purple-50/20 text-purple-800">
-                        {enq.id}
-                        <div className="text-[9px] text-slate-400 font-normal mt-0.5">{enq.enquiryDate}</div>
-                      </td>
+                      {columnVisibility.id && (
+                        <td className="py-3 px-3 font-mono font-black text-center border-r border-purple-100/50 bg-purple-50/20 text-purple-800">
+                          {enq.id}
+                          <div className="text-[9px] text-slate-400 font-normal mt-0.5">{enq.enquiryDate}</div>
+                        </td>
+                      )}
 
                       {/* Vehicle Sub-columns */}
-                      <td className="py-3 px-3 border-r border-slate-100 font-bold text-slate-800">
-                        {enq.vehicleNumber}
-                      </td>
-                      <td className="py-3 px-3 border-r border-slate-100">
-                        <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 font-semibold border border-amber-100">
-                          {enq.vehicleType}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 border-r border-slate-100 text-slate-600">
-                        {enq.vehicleModelYear || <span className="text-slate-300">-</span>}
-                      </td>
-                      <td className="py-3 px-3 border-r border-slate-100 text-slate-600">
-                        {enq.vehicleColor || <span className="text-slate-300">-</span>}
-                      </td>
-                      <td className="py-3 px-3 border-r border-slate-100 font-medium text-slate-700">
-                        {enq.ownerNamePhone}
-                      </td>
-                      <td className="py-3 px-3 border-r border-slate-100 text-slate-500 italic text-[11px]">
-                        {enq.reference || <span className="text-slate-300">-</span>}
-                      </td>
+                      {columnVisibility.vehicleDetails && (
+                        <>
+                          <td className="py-3 px-3 border-r border-slate-100 font-bold text-slate-800">
+                            {enq.vehicleNumber}
+                          </td>
+                          <td className="py-3 px-3 border-r border-slate-100">
+                            <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 font-semibold border border-amber-100">
+                              {enq.vehicleType}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 border-r border-slate-100">
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold border uppercase tracking-wider ${
+                                (enq.fuelType || '').toUpperCase() === 'CNG'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : (enq.fuelType || '').toUpperCase() === 'PETROL'
+                                  ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                  : (enq.fuelType || '').toUpperCase() === 'EV'
+                                  ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                  : 'bg-amber-50 text-amber-800 border-amber-200'
+                              }`}
+                            >
+                              {enq.fuelType || 'Diesel'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 border-r border-slate-100 text-slate-600">
+                            {enq.vehicleModelYear || <span className="text-slate-300">-</span>}
+                          </td>
+                          <td className="py-3 px-3 border-r border-slate-100 text-slate-600">
+                            {enq.vehicleColor || <span className="text-slate-300">-</span>}
+                          </td>
+                        </>
+                      )}
+
+                      {/* Owner Sub-columns */}
+                      {columnVisibility.ownerDetails && (
+                        <>
+                          <td className="py-3 px-3 border-r border-slate-100 font-bold text-slate-800">
+                            {getOwnerNameOnly(enq)}
+                          </td>
+                          <td className="py-3 px-3 border-r border-slate-100 font-mono text-indigo-700 font-bold">
+                            {getOwnerPhone(enq) || <span className="text-slate-300 font-sans font-normal">-</span>}
+                          </td>
+                        </>
+                      )}
+
+                      {/* Reference Tag Column */}
+                      {columnVisibility.referenceTag && (
+                        <td className={`py-3 px-3 border-r border-slate-100 text-[11px] font-bold ${
+                          referenceOnlyFilter ? 'bg-purple-50/60' : ''
+                        }`}>
+                          {enq.reference && enq.reference.trim() !== '' && enq.reference.trim() !== '-' ? (
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-purple-100 text-purple-900 border border-purple-200 font-extrabold text-[11px] shadow-2xs">
+                              <BookmarkCheck className="h-3.5 w-3.5 text-purple-600 shrink-0" />
+                              <span>{enq.reference}</span>
+                            </span>
+                          ) : (
+                            <span className="text-slate-300 font-normal italic">-</span>
+                          )}
+                        </td>
+                      )}
 
                       {/* Driver Sub-columns */}
-                      <td className="py-3 px-3 border-r border-slate-100 font-bold text-emerald-800 bg-emerald-50/10">
-                        {enq.driverName}
-                      </td>
-                      <td className="py-3 px-3 border-r border-slate-100 text-slate-600 text-center bg-emerald-50/10">
-                        {enq.driverAge || <span className="text-slate-300">-</span>}
-                      </td>
-                      <td className="py-3 px-3 border-r border-slate-100 text-slate-700 font-mono bg-emerald-50/10">
-                        {enq.driverPhone || <span className="text-slate-300">-</span>}
-                      </td>
-                      <td className="py-3 px-3 border-r border-slate-100 text-slate-600 bg-emerald-50/10">
-                        {enq.driverArea || <span className="text-slate-300">-</span>}
-                      </td>
-                      <td className="py-3 px-3 border-r border-slate-100 font-mono text-slate-500 bg-emerald-50/10 whitespace-nowrap">
-                        {enq.driverBatchExp ? (
-                          <span className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3 text-slate-400" />
-                            {enq.driverBatchExp}
-                          </span>
-                        ) : (
-                          <span className="text-slate-300">-</span>
-                        )}
-                      </td>
+                      {columnVisibility.driverDetails && (
+                        <>
+                          <td className="py-3 px-3 border-r border-slate-100 font-bold text-emerald-800 bg-emerald-50/10">
+                            {enq.driverName}
+                          </td>
+                          <td className="py-3 px-3 border-r border-slate-100 text-slate-600 text-center bg-emerald-50/10">
+                            {enq.driverAge || <span className="text-slate-300">-</span>}
+                          </td>
+                          <td className="py-3 px-3 border-r border-slate-100 text-slate-700 font-mono bg-emerald-50/10">
+                            {enq.driverPhone || <span className="text-slate-300">-</span>}
+                          </td>
+                          <td className="py-3 px-3 border-r border-slate-100 text-slate-600 bg-emerald-50/10">
+                            {enq.driverArea || <span className="text-slate-300">-</span>}
+                          </td>
+                          <td className="py-3 px-3 border-r border-slate-100 font-mono text-slate-500 bg-emerald-50/10 whitespace-nowrap">
+                            {enq.driverBatchExp ? (
+                              <span className="flex items-center gap-1">
+                                <Calendar className="h-3 w-3 text-slate-400" />
+                                {enq.driverBatchExp}
+                              </span>
+                            ) : (
+                              <span className="text-slate-300">-</span>
+                            )}
+                          </td>
+                        </>
+                      )}
 
                       {/* ALREADY RUNNING COMPANY */}
-                      <td className="py-3 px-3 border-r border-slate-100 bg-orange-50/10 font-medium text-orange-950">
-                        {enq.alreadyRunningCompany || (
-                          <span className="text-slate-300 italic">None / Tour Operator</span>
-                        )}
-                      </td>
+                      {columnVisibility.runningCompany && (
+                        <td className="py-3 px-3 border-r border-slate-100 bg-orange-50/10 font-medium text-orange-950">
+                          {enq.alreadyRunningCompany || (
+                            <span className="text-slate-300 italic">None / Tour Operator</span>
+                          )}
+                        </td>
+                      )}
 
                       {/* SITE PREFERENCE 1 */}
-                      <td className="py-3 px-3 border-r border-slate-100 bg-amber-50/10 font-bold text-slate-700">
-                        <div className="flex items-center gap-1">
-                          <MapPin className="h-3 w-3 text-amber-500" />
-                          {enq.sitePreference1 || <span className="text-slate-300 italic font-normal">Open</span>}
-                        </div>
-                      </td>
+                      {columnVisibility.sitePref1 && (
+                        <td className="py-3 px-3 border-r border-slate-100 bg-amber-50/10 text-slate-700">
+                          {(() => {
+                            const { companyName, siteName, vendor } = getSitePrefCompanyDisplay(enq.sitePreference1);
+                            if (!enq.sitePreference1 || enq.sitePreference1 === 'Open Preference') {
+                              return (
+                                <div className="flex items-center gap-1 text-slate-400 italic text-xs">
+                                  <MapPin className="h-3 w-3 text-slate-300" />
+                                  <span>Open Preference</span>
+                                </div>
+                              );
+                            }
+                            return (
+                              <div className="flex flex-col gap-0.5">
+                                {companyName && (
+                                  <div className="flex items-center gap-1">
+                                    <Building2 className="h-3 w-3 text-amber-600 shrink-0" />
+                                    <span className="font-extrabold text-amber-950 text-xs tracking-tight">
+                                      {companyName}
+                                    </span>
+                                    {vendor && (
+                                      <span className="text-[9px] font-bold px-1 py-0.2 bg-amber-100 text-amber-800 rounded">
+                                        {vendor}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-1 text-xs text-slate-600 font-medium">
+                                  <MapPin className="h-3 w-3 text-amber-500 shrink-0" />
+                                  <span>{siteName}</span>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </td>
+                      )}
 
                       {/* SITE PREFERENCE 2 */}
-                      <td className="py-3 px-3 border-r border-slate-100 bg-rose-50/10 font-bold text-slate-700">
-                        <div className="flex items-center gap-1">
-                          <MapPin className="h-3 w-3 text-rose-400" />
-                          {enq.sitePreference2 || <span className="text-slate-300 italic font-normal">Open</span>}
-                        </div>
-                      </td>
+                      {columnVisibility.sitePref2 && (
+                        <td className="py-3 px-3 border-r border-slate-100 bg-rose-50/10 text-slate-700">
+                          {(() => {
+                            const { companyName, siteName, vendor } = getSitePrefCompanyDisplay(enq.sitePreference2);
+                            if (!enq.sitePreference2 || enq.sitePreference2 === 'Open Preference') {
+                              return (
+                                <div className="flex items-center gap-1 text-slate-400 italic text-xs">
+                                  <MapPin className="h-3 w-3 text-slate-300" />
+                                  <span>Open Preference</span>
+                                </div>
+                              );
+                            }
+                            return (
+                              <div className="flex flex-col gap-0.5">
+                                {companyName && (
+                                  <div className="flex items-center gap-1">
+                                    <Building2 className="h-3 w-3 text-rose-600 shrink-0" />
+                                    <span className="font-extrabold text-rose-950 text-xs tracking-tight">
+                                      {companyName}
+                                    </span>
+                                    {vendor && (
+                                      <span className="text-[9px] font-bold px-1 py-0.2 bg-rose-100 text-rose-800 rounded">
+                                        {vendor}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-1 text-xs text-slate-600 font-medium">
+                                  <MapPin className="h-3 w-3 text-rose-400 shrink-0" />
+                                  <span>{siteName}</span>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </td>
+                      )}
 
                       {/* STATUS */}
-                      <td className="py-3 px-4 border-r border-slate-100 text-center whitespace-nowrap">
-                        <span className={`inline-flex items-center justify-center px-2.5 py-1 text-[9px] font-black uppercase rounded-full border ${badgeColor} leading-none align-middle min-w-[75px]`}>
-                          {enq.status}
-                        </span>
-                      </td>
+                      {columnVisibility.status && (
+                        <td className="py-3 px-4 border-r border-slate-100 text-center whitespace-nowrap">
+                          <span className={`inline-flex items-center justify-center px-2.5 py-1 text-[9px] font-black uppercase rounded-full border ${badgeColor} leading-none align-middle min-w-[75px]`}>
+                            {displayStatus}
+                          </span>
+                        </td>
+                      )}
 
                       {/* ACTIONS */}
                       <td className="py-3 px-4 text-center">
-                        <div className="flex items-center justify-center gap-2">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            id={`enq-btn-share-msg-${enq.id}`}
+                            onClick={() => handleCopyEnquiryMessage(enq)}
+                            className="p-1.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 rounded-lg transition-all cursor-pointer flex items-center justify-center shadow-2xs"
+                            title="Copy / Share Enquiry Details in Message Format"
+                          >
+                            <Share2 className="h-3.5 w-3.5 text-emerald-600" />
+                          </button>
                           <button
                             id={`enq-btn-print-${enq.id}`}
                             onClick={() => setSelectedEnquiryForFormPrint(enq)}
@@ -2350,6 +2960,88 @@ export default function EnquiryViews({
           enquiry={selectedEnquiryForFormPrint}
           onClose={() => setSelectedEnquiryForFormPrint(null)}
         />
+      )}
+
+      {/* SHARE / COPY MESSAGE FORMAT MODAL */}
+      {sharingEnquiryMessage && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 bg-emerald-100 text-emerald-700 rounded-xl">
+                  <Share2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900">Enquiry Message Details</h3>
+                  <p className="text-xs text-slate-500 font-medium">Ready to send via WhatsApp, SMS or Chat</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSharingEnquiryMessage(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              >
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Formatted Text Preview Box */}
+            <div className="relative group">
+              <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1.5">Formatted Message Preview</label>
+              <textarea
+                readOnly
+                rows={9}
+                value={generateEnquiryMessageFormat(sharingEnquiryMessage)}
+                className="w-full p-4 bg-slate-50 text-slate-900 font-mono text-xs rounded-xl border border-slate-200 focus:outline-none resize-none leading-relaxed shadow-inner"
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+              <a
+                href={`https://api.whatsapp.com/send?text=${encodeURIComponent(generateEnquiryMessageFormat(sharingEnquiryMessage))}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer"
+              >
+                <Send className="h-4 w-4" /> Share via WhatsApp
+              </a>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(generateEnquiryMessageFormat(sharingEnquiryMessage));
+                    setIsCopied(true);
+                    setTimeout(() => setIsCopied(false), 2500);
+                  }}
+                  className={`px-4 py-2.5 font-bold text-xs rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer ${
+                    isCopied
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                      : 'bg-indigo-600 text-white hover:bg-indigo-700 border-transparent shadow-xs'
+                  }`}
+                >
+                  {isCopied ? (
+                    <>
+                      <Check className="h-4 w-4 text-emerald-600" /> Copied!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4" /> Copy Text
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSharingEnquiryMessage(null)}
+                  className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

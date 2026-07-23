@@ -168,7 +168,7 @@ export default function PrintVehicleReport({
       )}
 
       {printError && (
-        <div className="w-full max-w-6xl bg-rose-500 text-white p-3.5 text-xs font-extrabold rounded-lg mb-2 flex items-center justify-between border-2 border-rose-600 print:hidden shadow-md">
+        <div className="w-full max-w-[1400px] bg-rose-500 text-white p-3.5 text-xs font-extrabold rounded-lg mb-2 flex items-center justify-between border-2 border-rose-600 print:hidden shadow-md">
           <div className="flex items-center gap-2 text-left">
             <span className="text-sm shrink-0">⚠️</span>
             <span>
@@ -179,7 +179,7 @@ export default function PrintVehicleReport({
       )}
 
       {/* Interactive Controls Bar */}
-      <div className="w-full max-w-6xl bg-slate-800 text-white rounded-t-xl p-4 flex flex-wrap gap-4 items-center justify-between shadow-lg print:hidden">
+      <div className="w-full max-w-[1400px] bg-slate-800 text-white rounded-t-xl p-4 flex flex-wrap gap-4 items-center justify-between shadow-lg print:hidden">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-blue-500 text-white rounded-lg">
             <Printer className="h-5 w-5" />
@@ -192,7 +192,7 @@ export default function PrintVehicleReport({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handlePrint}
             className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black rounded-lg transition-all shadow-xs cursor-pointer"
@@ -211,7 +211,7 @@ export default function PrintVehicleReport({
       </div>
 
       {/* Editor & Preview Split */}
-      <div className="w-full max-w-6xl bg-slate-100 flex flex-col md:flex-row shadow-2xl overflow-visible print:shadow-none print:bg-white print:block rounded-b-xl border border-slate-200">
+      <div className="w-full max-w-[1400px] bg-slate-100 flex flex-col md:flex-row shadow-2xl overflow-visible print:shadow-none print:bg-white print:block rounded-b-xl border border-slate-200">
         
         {/* Left Filters Panel */}
         <div className="w-full md:w-80 bg-white border-r border-slate-200 p-5 shrink-0 overflow-y-auto max-h-[1100px] print:hidden">
@@ -386,17 +386,18 @@ export default function PrintVehicleReport({
           </div>
         </div>
 
-        {/* Printable Paper Sheet */}
-        <div 
-          ref={printAreaRef}
-          className="print-sheet flex-1 bg-white p-6 sm:p-10 font-sans text-slate-900 border border-slate-200 shadow-lg mx-auto rounded relative print:p-0 print:m-0 print:w-full print:shadow-none overflow-x-auto transition-all duration-300"
-          style={{ 
-            width: '100%',
-            maxWidth: orientation === 'landscape' ? '297mm' : '210mm',
-            minHeight: orientation === 'landscape' ? '210mm' : '297mm',
-            boxSizing: 'border-box' 
-          }}
-        >
+        {/* Printable Paper Sheet Workspace */}
+        <div className="flex-1 bg-slate-200/80 p-3 sm:p-6 overflow-x-auto min-w-0 flex justify-center items-start print:p-0 print:bg-transparent print:block print:overflow-visible w-full">
+          <div 
+            ref={printAreaRef}
+            className="print-sheet w-full bg-white p-4 sm:p-6 font-sans text-slate-900 border border-slate-200 shadow-xl rounded relative print:p-0 print:m-0 print:w-full print:shadow-none print:border-none print:rounded-none overflow-visible transition-all duration-300"
+            style={{ 
+              width: '100%',
+              maxWidth: orientation === 'landscape' ? '100%' : '210mm',
+              minHeight: orientation === 'landscape' ? '210mm' : '297mm',
+              boxSizing: 'border-box' 
+            }}
+          >
           {/* Print CSS overrides */}
           <style dangerouslySetInnerHTML={{ __html: `
             @media print {
@@ -405,9 +406,7 @@ export default function PrintVehicleReport({
               }
               
               .print-modal-root {
-                position: absolute !important;
-                left: 0 !important;
-                top: 0 !important;
+                position: static !important;
                 width: 100% !important;
                 max-width: 100% !important;
                 padding: 0 !important;
@@ -432,7 +431,7 @@ export default function PrintVehicleReport({
 
               @page {
                 size: A4 ${orientation};
-                margin: 0.6cm 0.8cm 0.6cm 0.8cm !important;
+                margin: 0.5cm 0.5cm 0.5cm 0.5cm !important;
               }
 
               html, body {
@@ -446,13 +445,16 @@ export default function PrintVehicleReport({
                 line-height: 1.25 !important;
                 overflow: visible !important;
                 width: 100% !important;
+                max-width: 100% !important;
                 height: auto !important;
+                border: none !important;
+                box-shadow: none !important;
               }
 
               .print-sheet {
                 width: 100% !important;
                 max-width: 100% !important;
-                min-width: 100% !important;
+                min-width: 0 !important;
                 min-height: auto !important;
                 height: auto !important;
                 padding: 0 !important;
@@ -460,8 +462,10 @@ export default function PrintVehicleReport({
                 display: block !important;
                 background: white !important;
                 border: none !important;
+                border-radius: 0 !important;
                 box-shadow: none !important;
                 overflow: visible !important;
+                box-sizing: border-box !important;
               }
 
               .print-container {
@@ -471,6 +475,17 @@ export default function PrintVehicleReport({
                 padding: 0 !important;
                 margin: 0 !important;
                 overflow: visible !important;
+                border: none !important;
+                border-radius: 0 !important;
+                box-shadow: none !important;
+                box-sizing: border-box !important;
+                transform: none !important;
+                zoom: 1 !important;
+              }
+
+              .print-container *, .print-sheet * {
+                box-sizing: border-box !important;
+                max-width: 100% !important;
               }
 
               .print-container table {
@@ -481,12 +496,26 @@ export default function PrintVehicleReport({
                 table-layout: fixed !important;
               }
 
+              thead {
+                display: table-header-group !important;
+              }
+
+              tbody {
+                display: table-row-group !important;
+              }
+
+              .print-container tr {
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+              }
+
               .print-container th, .print-container td {
                 word-wrap: break-word !important;
                 word-break: break-word !important;
                 overflow-wrap: break-word !important;
                 white-space: normal !important;
-                padding: 5px 6px !important;
+                padding: 2px 3px !important;
+                box-sizing: border-box !important;
               }
 
               .print-container th {
@@ -500,6 +529,10 @@ export default function PrintVehicleReport({
                 font-size: ${getActualFontSize()} !important;
               }
 
+              .print-container .whitespace-nowrap {
+                white-space: normal !important;
+              }
+
               .print\\:hidden, [print\\:hidden] {
                 display: none !important;
                 visibility: hidden !important;
@@ -510,7 +543,12 @@ export default function PrintVehicleReport({
           {/* Paper layout */}
           <div 
             className="print-container space-y-6 text-left text-xs leading-relaxed"
-            style={{ fontSize: getActualFontSize() }}
+            style={{ 
+              fontSize: getActualFontSize(),
+              width: '100%',
+              maxWidth: '100%',
+              boxSizing: 'border-box'
+            }}
           >
             {/* Header */}
             <div className="flex justify-between items-start border-b-2 border-slate-200 pb-4">
@@ -558,15 +596,15 @@ export default function PrintVehicleReport({
               <table className="w-full text-left text-2xs border-collapse">
                 <thead>
                   <tr className="bg-slate-100 border-b border-slate-300 font-extrabold uppercase text-[9px] text-slate-700 tracking-wider">
-                    {columns.regNo && <th className="py-2 px-2.5 border-r border-slate-300 w-[12%] text-center">Reg Number</th>}
-                    {columns.details && <th className="py-2 px-2.5 border-r border-slate-300 w-[16%]">Model / Specs</th>}
-                    {columns.owner && <th className="py-2 px-2.5 border-r border-slate-300 w-[14%]">Owner</th>}
-                    {columns.driver && <th className="py-2 px-2.5 border-r border-slate-300 w-[14%]">Driver</th>}
-                    {columns.assignment && <th className="py-2 px-2.5 border-r border-slate-300 w-[16%]">Site & Company</th>}
-                    {columns.status && <th className="py-2 px-2 border-r border-slate-300 w-[8%] text-center">Status</th>}
-                    {columns.joiningEmi && <th className="py-2 px-2.5 border-r border-slate-300 w-[13%]">Joining / EMI</th>}
-                    {columns.expiries && <th className="py-2 px-2.5 border-r border-slate-300 w-[13%]">Expiries</th>}
-                    {columns.remarks && <th className="py-2 px-2.5 w-[14%]">Remarks</th>}
+                    {columns.regNo && <th className="py-2 px-2.5 border-r border-slate-300 w-[11%] text-center">Reg Number</th>}
+                    {columns.details && <th className="py-2 px-2.5 border-r border-slate-300 w-[14%]">Model / Specs</th>}
+                    {columns.owner && <th className="py-2 px-2.5 border-r border-slate-300 w-[13%]">Owner</th>}
+                    {columns.driver && <th className="py-2 px-2.5 border-r border-slate-300 w-[13%]">Driver</th>}
+                    {columns.assignment && <th className="py-2 px-2.5 border-r border-slate-300 w-[14%]">Site & Company</th>}
+                    {columns.status && <th className="py-2 px-2 border-r border-slate-300 w-[7%] text-center">Status</th>}
+                    {columns.joiningEmi && <th className="py-2 px-2.5 border-r border-slate-300 w-[11%]">Joining / EMI</th>}
+                    {columns.expiries && <th className="py-2 px-2.5 border-r border-slate-300 w-[11%]">Expiries</th>}
+                    {columns.remarks && <th className="py-2 px-2.5 w-[6%]">Remarks</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -629,7 +667,7 @@ export default function PrintVehicleReport({
                           )}
 
                           {columns.status && (
-                            <td className="py-2 px-2 border-r border-slate-200 text-center whitespace-nowrap">
+                            <td className="py-2 px-2 border-r border-slate-200 text-center">
                               <span className={`inline-flex items-center justify-center px-2 py-0.5 text-[0.85em] font-black uppercase rounded-md border ${
                                 isActive ? 'text-emerald-700 border-emerald-200 bg-emerald-50' : 'text-amber-700 border-amber-200 bg-amber-50'
                               }`}>
@@ -722,7 +760,8 @@ export default function PrintVehicleReport({
           </div>
         </div>
       </div>
-    </div>,
+    </div>
+  </div>,
     document.body
   );
 }

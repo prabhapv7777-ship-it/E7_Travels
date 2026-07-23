@@ -37,6 +37,7 @@ import {
 import { formatDate, toInputDateFormat } from '../lib/dateUtils';
 import PrintJoiningForm from './PrintJoiningForm';
 import PrintVehicleReport from './PrintVehicleReport';
+import { getVendorBadge, VENDOR_SITE_MAP } from './Settings';
 
 interface MasterViewsProps {
   vehicles: Vehicle[];
@@ -44,7 +45,7 @@ interface MasterViewsProps {
   drivers: Driver[];
   companies: Company[];
   sites: Site[];
-  activeSubView: 'Vehicle Master' | 'Owner Master' | 'Driver Master' | 'Company Master' | 'Site Master';
+  activeSubView: 'Vehicle Master' | 'Owner Master' | 'Driver Master' | 'Company Master' | 'Site Master' | 'Vendor Register';
   vehicleFilter?: 'all' | 'running' | 'idle' | 'new';
   onSetVehicleFilter?: (filter: 'all' | 'running' | 'idle' | 'new') => void;
   onUpdateVehicles: (v: Vehicle[]) => void;
@@ -75,6 +76,8 @@ export default function MasterViews({
   const [deleteCandidate, setDeleteCandidate] = useState<{ id: string; name: string } | null>(null);
   const [printEnquiry, setPrintEnquiry] = useState<Enquiry | null | undefined>(undefined);
   const [showPrintVehicleReport, setShowPrintVehicleReport] = useState(false);
+  const [selectedVendorForFleet, setSelectedVendorForFleet] = useState<string | null>(null);
+  const [vendorModalSearch, setVendorModalSearch] = useState('');
   const [activeCommentTarget, setActiveCommentTarget] = useState<{
     id: string;
     name: string;
@@ -383,13 +386,16 @@ export default function MasterViews({
     e.preventDefault();
     setFormError(null);
 
-    if (!companyForm.name) {
-      setFormError('Company Name is mandatory.');
+    const siteName = (companyForm.companySite || companyForm.name || '').trim();
+    if (!siteName) {
+      setFormError('Company Site Name is mandatory.');
       return;
     }
 
     const companyRecord: Company = {
-      name: companyForm.name,
+      name: siteName,
+      vendorName: (companyForm.vendorName || 'ECO').trim(),
+      companySite: siteName,
       billingCycle: companyForm.billingCycle || 'Monthly',
       paymentTerms: companyForm.paymentTerms || 'Net 30',
       contactPerson: companyForm.contactPerson || '',
@@ -410,15 +416,18 @@ export default function MasterViews({
     e.preventDefault();
     setFormError(null);
 
-    if (!siteForm.name || !siteForm.companyName) {
-      setFormError('Site Name and Associated Company are mandatory.');
+    const siteName = siteForm.name?.trim();
+    if (!siteName) {
+      setFormError('Site Hub Name is mandatory.');
       return;
     }
 
+    const assignedCompany = siteForm.companyName || companies[0]?.name || 'Direct';
+
     const siteRecord: Site = {
       id: siteForm.id || `S${(sites.length + 1).toString().padStart(2, '0')}`,
-      name: siteForm.name,
-      companyName: siteForm.companyName,
+      name: siteName,
+      companyName: assignedCompany,
       location: siteForm.location || '',
       contactPerson: siteForm.contactPerson || '',
       phone: siteForm.phone || '',
@@ -481,7 +490,11 @@ export default function MasterViews({
   const filteredCompanies = companies.filter(
     (c) =>
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.contactPerson.toLowerCase().includes(searchQuery.toLowerCase())
+      (c.vendorName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (c.companySite || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.contactPerson.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.phone.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (c.address || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const filteredSites = sites.filter(
@@ -490,6 +503,157 @@ export default function MasterViews({
       s.companyName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       s.location.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Vendor Register Calculation Logic
+  const PRESET_VENDORS = ['FIESTA', 'ECO', 'FOURWAY', 'ROVER FLEET', 'R6 MARS', 'ATHENA', 'SELECT CABS'];
+  const customVendorsList = companies
+    .map((c) => {
+      let raw = (c.vendorName || 'ECO').trim().toUpperCase();
+      if (raw === 'ATHEA' || raw === 'ATHENA TRAVELS') raw = 'ATHENA';
+      if (raw === 'ROVER' || raw === 'REFEX') raw = 'ROVER FLEET';
+      return raw;
+    })
+    .filter(Boolean);
+  const allVendorsList = Array.from(new Set([...PRESET_VENDORS, ...customVendorsList])).sort();
+
+  // Create a map of company site / name to vendor name
+  const companyToVendorMap = new Map<string, string>();
+  companies.forEach((c) => {
+    let vName = (c.vendorName || 'ECO').trim().toUpperCase();
+    if (vName === 'ATHEA' || vName === 'ATHENA TRAVELS') vName = 'ATHENA';
+    if (vName === 'ROVER' || vName === 'REFEX') vName = 'ROVER FLEET';
+    if (c.name) companyToVendorMap.set(c.name.trim().toLowerCase(), vName);
+    if (c.companySite) companyToVendorMap.set(c.companySite.trim().toLowerCase(), vName);
+  });
+
+  // Map predefined VENDOR_SITE_MAP
+  Object.entries(VENDOR_SITE_MAP).forEach(([vendor, siteList]) => {
+    siteList.forEach((s) => {
+      if (!companyToVendorMap.has(s.toLowerCase())) {
+        companyToVendorMap.set(s.toLowerCase(), vendor.toUpperCase());
+      }
+    });
+  });
+
+  const allMasterClients = Array.from(
+    new Set([
+      ...companies.map((c) => (c.name || c.companySite || '').trim().toUpperCase()).filter(Boolean),
+      'WALMART', 'CTS', 'OPTUM', 'OMEGA', 'TCS', 'COMCAST', 'CGI', 'MED EXPERT', 'BARCLAYS', 'EXL', 'WORKDAY', 'REFEX', 'RR DONNELLEY', 'STATE STREET', 'AMAZON'
+    ])
+  ).sort();
+
+  // Calculate stats for each vendor
+  const vendorCalculations = allVendorsList.map((vendorName) => {
+    const vendorUpper = vendorName.toUpperCase();
+
+    // Associated companies in master
+    const vendorCompanies = companies.filter((c) => {
+      const vName = (c.vendorName || 'ECO').trim().toUpperCase();
+      if (vName === vendorUpper) return true;
+      const mappedSites = VENDOR_SITE_MAP[vendorUpper] || [];
+      return (
+        mappedSites.includes(c.name.toUpperCase()) ||
+        (c.companySite && mappedSites.includes(c.companySite.toUpperCase()))
+      );
+    });
+
+    const vendorCompanyNamesSet = new Set([
+      ...vendorCompanies.map((c) => c.name.toLowerCase()),
+      ...vendorCompanies.map((c) => (c.companySite || '').toLowerCase()).filter(Boolean),
+      ...(VENDOR_SITE_MAP[vendorUpper] || []).map((s) => s.toLowerCase()),
+    ]);
+
+    // Find attached vehicles
+    const attachedVehicles = vehicles.filter((v) => {
+      const vComp = (v.company || '').trim().toLowerCase();
+      const vSite = (v.site || '').trim().toLowerCase();
+      const vComp2 = (v.company2 || '').trim().toLowerCase();
+      const vSite2 = (v.site2 || '').trim().toLowerCase();
+
+      // Check if mapped in companyToVendorMap
+      const mappedV =
+        companyToVendorMap.get(vComp) ||
+        companyToVendorMap.get(vSite) ||
+        companyToVendorMap.get(vComp2) ||
+        companyToVendorMap.get(vSite2);
+
+      if (mappedV === vendorUpper) return true;
+
+      // Direct site name match
+      if (
+        vendorCompanyNamesSet.has(vComp) ||
+        vendorCompanyNamesSet.has(vSite) ||
+        vendorCompanyNamesSet.has(vComp2) ||
+        vendorCompanyNamesSet.has(vSite2)
+      ) {
+        return true;
+      }
+
+      // Direct text inclusion check
+      if (
+        (vComp && vComp.includes(vendorName.toLowerCase())) ||
+        (vSite && vSite.includes(vendorName.toLowerCase()))
+      ) {
+        return true;
+      }
+
+      return false;
+    });
+
+    const runningVehicles = attachedVehicles.filter((v) => v.status !== 'Inactive');
+    const idleVehicles = attachedVehicles.filter((v) => v.status === 'Inactive');
+
+    // Vehicle types breakdown for running vehicles
+    const runningVehicleTypes: Record<string, number> = {};
+    runningVehicles.forEach((v) => {
+      const t = v.vehicleType || 'Other';
+      runningVehicleTypes[t] = (runningVehicleTypes[t] || 0) + 1;
+    });
+
+    const clientSitesList = Array.from(
+      new Set([
+        ...vendorCompanies.map((c) => c.companySite || c.name),
+        ...(VENDOR_SITE_MAP[vendorUpper] || []),
+      ])
+    ).filter(Boolean);
+
+    return {
+      vendorName,
+      companies: vendorCompanies,
+      clientSites: clientSitesList,
+      attachedVehicles,
+      runningVehicles,
+      idleVehicles,
+      runningCount: runningVehicles.length,
+      idleCount: idleVehicles.length,
+      totalCount: attachedVehicles.length,
+      runningVehicleTypes,
+      utilizationRate:
+        attachedVehicles.length > 0
+          ? Math.round((runningVehicles.length / attachedVehicles.length) * 100)
+          : 0,
+    };
+  });
+
+  // Keep ONLY available vendors (those with active master companies or attached vehicles)
+  const availableVendorCalculations = vendorCalculations.filter(
+    (v) => v.companies.length > 0 || v.attachedVehicles.length > 0
+  );
+
+  const filteredVendors = availableVendorCalculations.filter((v) => {
+    const q = searchQuery.toLowerCase();
+    if (!q) return true;
+    return (
+      v.vendorName.toLowerCase().includes(q) ||
+      v.clientSites.some((s) => s.toLowerCase().includes(q)) ||
+      v.runningVehicles.some(
+        (veh) =>
+          veh.registrationNumber.toLowerCase().includes(q) ||
+          veh.driverName.toLowerCase().includes(q) ||
+          veh.ownerName.toLowerCase().includes(q)
+      )
+    );
+  });
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
@@ -532,7 +696,8 @@ export default function MasterViews({
             {activeSubView === 'Driver Master' && <Briefcase className="text-blue-600" />}
             {activeSubView === 'Company Master' && <Building className="text-blue-600" />}
             {activeSubView === 'Site Master' && <MapPin className="text-blue-600" />}
-            {activeSubView} Register
+            {activeSubView === 'Vendor Register' && <Building className="text-amber-600" />}
+            {activeSubView === 'Vendor Register' ? 'Vendor Register' : `${activeSubView} Register`}
           </h2>
           <p className="text-xs text-slate-500">Manage data, configure parameters, and review system settings</p>
         </div>
@@ -575,9 +740,9 @@ export default function MasterViews({
               setIsAdding(true);
               setFormError(null);
             }}
-            className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-1.5 shadow-xs transition-colors"
+            className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
           >
-            <Plus className="h-4 w-4" /> Add Record
+            <Plus className="h-4 w-4" /> {activeSubView === 'Site Master' ? 'Add Campus Site / Hub' : 'Add Record'}
           </button>
         </div>
       </div>
@@ -747,35 +912,65 @@ export default function MasterViews({
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Company Client</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Company Client</label>
                 <select
                   id="field-company"
                   value={vehicleForm.company || ''}
                   onChange={(e) => setVehicleForm({ ...vehicleForm, company: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-medium"
                 >
                   <option value="">-- Choose Corporate Client --</option>
-                  {companies.map((c) => (
-                    <option key={c.name} value={c.name}>
-                      {c.name}
-                    </option>
-                  ))}
+                  {allMasterClients.map((clientName) => {
+                    const matched = companies.find((c) => c.name === clientName || c.companySite === clientName);
+                    const vendor = matched?.vendorName || companyToVendorMap.get(clientName.toLowerCase());
+                    return (
+                      <option key={clientName} value={clientName}>
+                        {clientName} {vendor ? `(Vendor: ${vendor})` : ''}
+                      </option>
+                    );
+                  })}
+                  {vehicleForm.company && !allMasterClients.includes(vehicleForm.company.toUpperCase()) && (
+                    <option value={vehicleForm.company}>{vehicleForm.company} (Custom Client)</option>
+                  )}
                 </select>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {allMasterClients.slice(0, 7).map((cName) => (
+                    <button
+                      key={cName}
+                      type="button"
+                      onClick={() => setVehicleForm({ ...vehicleForm, company: cName })}
+                      className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-colors cursor-pointer ${
+                        vehicleForm.company === cName
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {cName}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Company Client 2 (Optional)</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Company Client 2 (Optional)</label>
                 <select
                   id="field-company2"
                   value={vehicleForm.company2 || ''}
                   onChange={(e) => setVehicleForm({ ...vehicleForm, company2: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-medium"
                 >
                   <option value="">-- Choose Second Corporate Client --</option>
-                  {companies.map((c) => (
-                    <option key={c.name} value={c.name}>
-                      {c.name}
-                    </option>
-                  ))}
+                  {allMasterClients.map((clientName) => {
+                    const matched = companies.find((c) => c.name === clientName || c.companySite === clientName);
+                    const vendor = matched?.vendorName || companyToVendorMap.get(clientName.toLowerCase());
+                    return (
+                      <option key={clientName} value={clientName}>
+                        {clientName} {vendor ? `(Vendor: ${vendor})` : ''}
+                      </option>
+                    );
+                  })}
+                  {vehicleForm.company2 && !allMasterClients.includes(vehicleForm.company2.toUpperCase()) && (
+                    <option value={vehicleForm.company2}>{vehicleForm.company2} (Custom Client)</option>
+                  )}
                 </select>
               </div>
               <div>
@@ -1243,171 +1438,141 @@ export default function MasterViews({
           )}
 
           {/* COMPANY MASTER FORM */}
-          {activeSubView === 'Company Master' && (
+          {(activeSubView === 'Company Master' || activeSubView === 'Site Master' || activeSubView === 'Vendor Register') && (
             <form onSubmit={handleSaveCompany} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Vendor Name */}
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Company Name *</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Vendor Name *</label>
                 <input
-                  id="field-company-name"
+                  id="field-company-vendorName"
                   type="text"
-                  value={companyForm.name || ''}
-                  onChange={(e) => setCompanyForm({ ...companyForm, name: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                  disabled={!!editingId}
+                  placeholder="e.g. ECO, ATHENA, FIESTA, ROVER FLEET"
+                  value={companyForm.vendorName || ''}
+                  onChange={(e) => setCompanyForm({ ...companyForm, vendorName: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-medium"
                 />
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {['ATHENA', 'ECO', 'FIESTA', 'FOURWAY', 'R6 MARS', 'ROVER FLEET', 'SELECT CABS'].map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setCompanyForm({ ...companyForm, vendorName: v })}
+                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
+                        (companyForm.vendorName || '').toUpperCase() === v
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              {/* Company Site */}
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Billing Cycle</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Company Site *</label>
                 <input
+                  id="field-company-site"
+                  type="text"
+                  placeholder="e.g. Comcast - SEZ Campus"
+                  value={companyForm.companySite || companyForm.name || ''}
+                  onChange={(e) =>
+                    setCompanyForm({
+                      ...companyForm,
+                      companySite: e.target.value,
+                      name: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-semibold text-slate-800"
+                  required
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Specify Corporate Client & Operating Site Campus</p>
+              </div>
+
+              {/* Billing Cycle */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Billing Cycle *</label>
+                <select
                   id="field-company-billingCycle"
-                  type="text"
-                  placeholder="e.g. Monthly"
-                  value={companyForm.billingCycle || ''}
+                  value={companyForm.billingCycle || 'Monthly'}
                   onChange={(e) => setCompanyForm({ ...companyForm, billingCycle: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                />
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-medium"
+                >
+                  <option value="Monthly">Monthly</option>
+                  <option value="15 Days">15 Days</option>
+                  <option value="Weekly">Weekly</option>
+                  <option value="Net 15">Net 15</option>
+                  <option value="Net 30">Net 30</option>
+                  <option value="Net 45">Net 45</option>
+                  <option value="Net 60">Net 60</option>
+                </select>
               </div>
+
+              {/* Contact Person */}
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Payment Terms</label>
-                <input
-                  id="field-company-paymentTerms"
-                  type="text"
-                  placeholder="e.g. Net 30"
-                  value={companyForm.paymentTerms || ''}
-                  onChange={(e) => setCompanyForm({ ...companyForm, paymentTerms: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Contact Person</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Contact Person</label>
                 <input
                   id="field-company-contactPerson"
                   type="text"
+                  placeholder="Name of Coordinator / Manager"
                   value={companyForm.contactPerson || ''}
                   onChange={(e) => setCompanyForm({ ...companyForm, contactPerson: e.target.value })}
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                 />
               </div>
+
+              {/* Phone */}
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Phone</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Phone</label>
                 <input
                   id="field-company-phone"
                   type="text"
+                  placeholder="Contact Phone Number"
                   value={companyForm.phone || ''}
                   onChange={(e) => setCompanyForm({ ...companyForm, phone: e.target.value })}
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                 />
               </div>
+
+              {/* Email */}
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Email</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Email</label>
                 <input
                   id="field-company-email"
                   type="email"
+                  placeholder="Corporate Email"
                   value={companyForm.email || ''}
                   onChange={(e) => setCompanyForm({ ...companyForm, email: e.target.value })}
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                 />
               </div>
+
+              {/* Vendor Address */}
               <div className="md:col-span-3">
-                <label className="block text-xs font-medium text-slate-600 mb-1">Billing Office Address</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Vendor Address</label>
                 <textarea
                   id="field-company-address"
+                  placeholder="Office / Vendor Address"
                   value={companyForm.address || ''}
                   onChange={(e) => setCompanyForm({ ...companyForm, address: e.target.value })}
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                   rows={2}
                 />
               </div>
-              <div className="md:col-span-3">
+
+              <div className="md:col-span-3 flex items-center gap-2">
                 <button
                   id="btn-save-company"
                   type="submit"
-                  className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-xs transition-colors mr-2"
+                  className="px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-xs transition-colors cursor-pointer"
                 >
-                  Save Corporate Master
+                  {editingId ? 'Update Company Master' : 'Save Company Master'}
                 </button>
                 <button
                   type="button"
                   onClick={resetForms}
-                  className="px-4 py-2 text-sm font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* SITE MASTER FORM */}
-          {activeSubView === 'Site Master' && (
-            <form onSubmit={handleSaveSite} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Site Name *</label>
-                <input
-                  id="field-site-name"
-                  type="text"
-                  value={siteForm.name || ''}
-                  onChange={(e) => setSiteForm({ ...siteForm, name: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Corporate Client Name *</label>
-                <select
-                  id="field-site-companyName"
-                  value={siteForm.companyName || ''}
-                  onChange={(e) => setSiteForm({ ...siteForm, companyName: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                >
-                  <option value="">-- Select Client --</option>
-                  {companies.map((c) => (
-                    <option key={c.name} value={c.name}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Site Coordinator</label>
-                <input
-                  id="field-site-contactPerson"
-                  type="text"
-                  value={siteForm.contactPerson || ''}
-                  onChange={(e) => setSiteForm({ ...siteForm, contactPerson: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Site Phone</label>
-                <input
-                  id="field-site-phone"
-                  type="text"
-                  value={siteForm.phone || ''}
-                  onChange={(e) => setSiteForm({ ...siteForm, phone: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                />
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-xs font-medium text-slate-600 mb-1">Location Campus Address</label>
-                <input
-                  id="field-site-location"
-                  type="text"
-                  value={siteForm.location || ''}
-                  onChange={(e) => setSiteForm({ ...siteForm, location: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                />
-              </div>
-              <div className="md:col-span-3">
-                <button
-                  id="btn-save-site"
-                  type="submit"
-                  className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-xs transition-colors mr-2"
-                >
-                  Save Campus Site
-                </button>
-                <button
-                  type="button"
-                  onClick={resetForms}
-                  className="px-4 py-2 text-sm font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
+                  className="px-4 py-2 text-sm font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -1453,13 +1618,29 @@ export default function MasterViews({
                     <td className="py-3 px-4 text-xs font-mono">{v.fuelType}</td>
                     <td className="py-3 px-4 text-slate-700">{v.driverName}</td>
                     <td className="py-3 px-4 text-slate-700">{v.ownerName}</td>
-                    <td className="py-3 px-4 text-xs text-slate-600 max-w-[160px]">
-                      <div className="font-semibold text-slate-800" title={v.site ? `Site: ${v.site}` : undefined}>
-                        {v.company || <span className="text-slate-300 italic">Unassigned</span>}
-                        {v.site && <span className="text-[10px] text-slate-400 block font-normal">@{v.site}</span>}
+                    <td className="py-3 px-4 text-xs text-slate-600 max-w-[180px]">
+                      <div className="font-bold text-slate-900 flex flex-col gap-0.5" title={v.site ? `Site: ${v.site}` : undefined}>
+                        <span>{v.company || <span className="text-slate-300 italic font-normal">Unassigned</span>}</span>
+                        {v.company && (
+                          <div className="flex items-center gap-1 mt-0.5">
+                            {(() => {
+                              const vendorName = companyToVendorMap.get(v.company.trim().toLowerCase()) || companies.find((c) => c.name === v.company || c.companySite === v.company)?.vendorName;
+                              return vendorName ? (
+                                <span className="text-[9px] font-extrabold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100 uppercase tracking-tight">
+                                  Vendor: {vendorName}
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                  Unlisted
+                                </span>
+                              );
+                            })()}
+                          </div>
+                        )}
+                        {v.site && <span className="text-[10px] text-slate-400 font-normal">@{v.site}</span>}
                       </div>
                       {v.company2 && (
-                        <div className="mt-1 pt-1 border-t border-dashed border-slate-100 text-[10px]" title={v.site2 ? `Site 2: ${v.site2}` : undefined}>
+                        <div className="mt-1 pt-1 border-t border-dashed border-slate-200 text-[10px]" title={v.site2 ? `Site 2: ${v.site2}` : undefined}>
                           <span className="font-bold text-amber-600">Dual: </span>
                           <span className="font-semibold text-slate-700">{v.company2}</span>
                           {v.site2 && <span className="text-slate-400 block font-normal">@{v.site2}</span>}
@@ -1738,38 +1919,44 @@ export default function MasterViews({
         )}
 
         {/* COMPANY REGISTER TABLE */}
-        {activeSubView === 'Company Master' && (
+        {(activeSubView === 'Company Master' || activeSubView === 'Site Master') && (
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                <th className="py-3.5 px-4">Company Name</th>
+                <th className="py-3.5 px-4">Vendor Name</th>
+                <th className="py-3.5 px-4">Company Site</th>
                 <th className="py-3.5 px-4">Billing Cycle</th>
-                <th className="py-3.5 px-4">Payment Terms</th>
                 <th className="py-3.5 px-4">Contact Person</th>
                 <th className="py-3.5 px-4">Phone</th>
-                <th className="py-3.5 px-4">Email Address</th>
+                <th className="py-3.5 px-4">Vendor Address</th>
                 <th className="py-3.5 px-4 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">
               {filteredCompanies.map((c) => (
                 <tr key={c.name} className="hover:bg-slate-50/50">
-                  <td className="py-3 px-4 font-semibold text-slate-800">{c.name}</td>
-                  <td className="py-3 px-4 text-slate-600">{c.billingCycle}</td>
-                  <td className="py-3 px-4 text-slate-600 font-mono text-xs">{c.paymentTerms}</td>
-                  <td className="py-3 px-4 text-slate-700">{c.contactPerson}</td>
-                  <td className="py-3 px-4 text-slate-700">{c.phone}</td>
-                  <td className="py-3 px-4 text-xs text-slate-500">{c.email}</td>
+                  <td className="py-3 px-4">{getVendorBadge(c.vendorName || 'ECO')}</td>
+                  <td className="py-3 px-4 font-bold text-slate-800">{c.companySite || c.name}</td>
+                  <td className="py-3 px-4 text-slate-600 font-medium">
+                    {c.billingCycle || c.paymentTerms || 'Monthly'}
+                  </td>
+                  <td className="py-3 px-4 text-slate-700">{c.contactPerson || '-'}</td>
+                  <td className="py-3 px-4 text-slate-700 font-mono text-xs">{c.phone || '-'}</td>
+                  <td className="py-3 px-4 text-xs text-slate-500 max-w-[200px] truncate" title={c.address}>
+                    {c.address || '-'}
+                  </td>
                   <td className="py-3 px-4 text-center">
                     <div className="flex items-center justify-center gap-2">
                       <button
                         id={`btn-comments-company-${c.name.toLowerCase().replace(/\s+/g, '-')}`}
-                        onClick={() => setActiveCommentTarget({
-                          id: c.name,
-                          name: c.name,
-                          type: 'Company',
-                          comments: c.comments || []
-                        })}
+                        onClick={() =>
+                          setActiveCommentTarget({
+                            id: c.name,
+                            name: c.companySite || c.name,
+                            type: 'Company',
+                            comments: c.comments || [],
+                          })
+                        }
                         className="p-1 hover:bg-indigo-50 text-indigo-600 rounded cursor-pointer relative"
                         title="View / Add Comments"
                       >
@@ -1784,16 +1971,23 @@ export default function MasterViews({
                         id={`btn-edit-company-${c.name.toLowerCase().replace(/\s+/g, '-')}`}
                         onClick={() => {
                           setEditingId(c.name);
-                          setCompanyForm(c);
+                          setCompanyForm({
+                            ...c,
+                            vendorName: c.vendorName || 'ECO',
+                            companySite: c.companySite || c.name,
+                          });
+                          setIsAdding(true);
                         }}
-                        className="p-1 hover:bg-slate-100 text-slate-600 rounded"
+                        className="p-1 hover:bg-slate-100 text-slate-600 rounded cursor-pointer"
+                        title="Edit Company record"
                       >
                         <Edit2 className="h-4 w-4" />
                       </button>
                       <button
                         id={`btn-delete-company-${c.name.toLowerCase().replace(/\s+/g, '-')}`}
-                        onClick={() => handleDeleteRecord(c.name, c.name)}
-                        className="p-1 hover:bg-rose-50 text-rose-600 rounded"
+                        onClick={() => handleDeleteRecord(c.name, c.companySite || c.name)}
+                        className="p-1 hover:bg-rose-50 text-rose-600 rounded cursor-pointer"
+                        title="Delete Company record"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -1804,7 +1998,7 @@ export default function MasterViews({
               {filteredCompanies.length === 0 && (
                 <tr>
                   <td colSpan={7} className="text-center py-8 text-slate-400">
-                    No corporate accounts registered yet.
+                    No company master records found.
                   </td>
                 </tr>
               )}
@@ -1812,79 +2006,194 @@ export default function MasterViews({
           </table>
         )}
 
-        {/* SITE REGISTER TABLE */}
-        {activeSubView === 'Site Master' && (
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                <th className="py-3.5 px-4">Site ID</th>
-                <th className="py-3.5 px-4">Site Campus Name</th>
-                <th className="py-3.5 px-4">Associated Company</th>
-                <th className="py-3.5 px-4">Location</th>
-                <th className="py-3.5 px-4">Coordinator</th>
-                <th className="py-3.5 px-4">Phone</th>
-                <th className="py-3.5 px-4 text-center">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-sm">
-              {filteredSites.map((s) => (
-                <tr key={s.id} className="hover:bg-slate-50/50">
-                  <td className="py-3 px-4 font-mono font-medium text-slate-500">{s.id}</td>
-                  <td className="py-3 px-4 font-semibold text-slate-800">{s.name}</td>
-                  <td className="py-3 px-4 text-xs text-slate-600">{s.companyName}</td>
-                  <td className="py-3 px-4 text-slate-700 text-xs max-w-[200px] truncate">{s.location}</td>
-                  <td className="py-3 px-4 text-slate-700">{s.contactPerson || '-'}</td>
-                  <td className="py-3 px-4 text-slate-600 font-mono text-xs">{s.phone || '-'}</td>
-                  <td className="py-3 px-4 text-center">
-                    <div className="flex items-center justify-center gap-2">
-                      <button
-                        id={`btn-comments-site-${s.id}`}
-                        onClick={() => setActiveCommentTarget({
-                          id: s.id,
-                          name: s.name,
-                          type: 'Site',
-                          comments: s.comments || []
-                        })}
-                        className="p-1 hover:bg-indigo-50 text-indigo-600 rounded cursor-pointer relative"
-                        title="View / Add Comments"
-                      >
-                        <MessageSquare className="h-4 w-4" />
-                        {s.comments && s.comments.length > 0 && (
-                          <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-indigo-600 text-[8px] font-bold text-white">
-                            {s.comments.length}
-                          </span>
-                        )}
-                      </button>
-                      <button
-                        id={`btn-edit-site-${s.id}`}
-                        onClick={() => {
-                          setEditingId(s.id);
-                          setSiteForm(s);
-                        }}
-                        className="p-1 hover:bg-slate-100 text-slate-600 rounded"
-                      >
-                        <Edit2 className="h-4 w-4" />
-                      </button>
-                      <button
-                        id={`btn-delete-site-${s.id}`}
-                        onClick={() => handleDeleteRecord(s.id, s.name)}
-                        className="p-1 hover:bg-rose-50 text-rose-600 rounded"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+        {/* VENDOR REGISTER VIEW */}
+        {activeSubView === 'Vendor Register' && (
+          <div className="p-6 space-y-6">
+            {/* KPI Summary Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* KPI 1: Total Registered Vendors */}
+              <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-4 rounded-xl shadow-xs border border-slate-700/50">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Total Vendors</span>
+                  <div className="p-2 bg-blue-500/20 text-blue-400 rounded-lg">
+                    <Building className="h-5 w-5" />
+                  </div>
+                </div>
+                <div className="text-2xl font-black tracking-tight">{availableVendorCalculations.length}</div>
+                <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1 font-semibold">
+                  <CheckCircle className="h-3 w-3 text-emerald-400" /> Active Vendor Network
+                </div>
+              </div>
+
+              {/* KPI 2: Total Active Running Vehicles */}
+              <div className="bg-emerald-50 text-emerald-950 p-4 rounded-xl shadow-xs border border-emerald-200/80">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">Running Vehicles</span>
+                  <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg">
+                    <Car className="h-5 w-5" />
+                  </div>
+                </div>
+                <div className="text-2xl font-black text-emerald-900 tracking-tight">
+                  {availableVendorCalculations.reduce((acc, v) => acc + v.runningCount, 0)}
+                </div>
+                <div className="text-[10px] text-emerald-700 font-bold mt-1">
+                  Active in Vendors ({vehicles.length > 0 ? Math.round((availableVendorCalculations.reduce((acc, v) => acc + v.runningCount, 0) / vehicles.length) * 100) : 0}% Fleet Utilization)
+                </div>
+              </div>
+
+              {/* KPI 3: Total Idle Vehicles */}
+              <div className="bg-amber-50 text-amber-950 p-4 rounded-xl shadow-xs border border-amber-200/80">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-700">Idle / Standby Vehicles</span>
+                  <div className="p-2 bg-amber-100 text-amber-700 rounded-lg">
+                    <AlertTriangle className="h-5 w-5" />
+                  </div>
+                </div>
+                <div className="text-2xl font-black text-amber-900 tracking-tight">
+                  {availableVendorCalculations.reduce((acc, v) => acc + v.idleCount, 0)}
+                </div>
+                <div className="text-[10px] text-amber-700 font-bold mt-1">
+                  Inactive / Standby Vehicles
+                </div>
+              </div>
+
+              {/* KPI 4: Top Vendor Fleet */}
+              <div className="bg-blue-50 text-blue-950 p-4 rounded-xl shadow-xs border border-blue-200/80">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-700">Top Fleet Vendor</span>
+                  <div className="p-2 bg-blue-100 text-blue-700 rounded-lg">
+                    <Briefcase className="h-5 w-5" />
+                  </div>
+                </div>
+                {(() => {
+                  const top = [...availableVendorCalculations].sort((a, b) => b.runningCount - a.runningCount)[0];
+                  return (
+                    <div>
+                      <div className="text-base font-black text-blue-900 tracking-tight truncate flex items-center gap-1.5">
+                        {top ? getVendorBadge(top.vendorName) : 'N/A'}
+                      </div>
+                      <div className="text-[10px] text-blue-700 font-bold mt-1">
+                        {top ? `${top.runningCount} Active Running Vehicles` : 'No data'}
+                      </div>
                     </div>
-                  </td>
-                </tr>
-              ))}
-              {filteredSites.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="text-center py-8 text-slate-400">
-                    No operating sites registered.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Vendor Summary Table */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+              <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-xs font-black text-slate-800 tracking-tight uppercase flex items-center gap-2">
+                    <Building className="h-4 w-4 text-amber-600" /> Vendor Fleet & Running Vehicles Calculations Register
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Calculated vehicle count per vendor including active running fleet and site distributions
+                  </p>
+                </div>
+                <span className="text-2xs font-extrabold text-slate-600 bg-white px-3 py-1 rounded-lg border border-slate-200 shadow-3xs">
+                  {filteredVendors.length} Vendors Listed
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-100/90 text-[11px] font-black text-slate-700 uppercase tracking-wider">
+                      <th className="py-3.5 px-4">Vendor Name</th>
+                      <th className="py-3.5 px-4">Operating Sites & Corporate Clients</th>
+                      <th className="py-3.5 px-4 text-center">Total Attached</th>
+                      <th className="py-3.5 px-4 text-center bg-emerald-100/80 text-emerald-950 border-x border-emerald-200">
+                        RUNNING VEHICLES
+                      </th>
+                      <th className="py-3.5 px-4 text-center">IDLE VEHICLES</th>
+                      <th className="py-3.5 px-4">Running Vehicle Types</th>
+                      <th className="py-3.5 px-4 text-center">Fleet Utilization</th>
+                      <th className="py-3.5 px-4 text-center">Running Fleet Details</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-xs">
+                    {filteredVendors.map((v) => (
+                      <tr key={v.vendorName} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3 px-4 font-bold text-slate-900">
+                          {getVendorBadge(v.vendorName)}
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex flex-wrap gap-1 max-w-xs">
+                            {v.clientSites.length > 0 ? (
+                              v.clientSites.map((site) => (
+                                <span key={site} className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                  {site}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-slate-400 text-[10px] italic">General Fleet</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-center font-bold text-slate-800 text-sm">
+                          {v.totalCount}
+                        </td>
+                        <td className="py-3 px-4 text-center bg-emerald-50/40 border-x border-emerald-100">
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-600 text-white shadow-3xs">
+                            <Car className="h-3.5 w-3.5" />
+                            {v.runningCount} RUNNING
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${v.idleCount > 0 ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-slate-100 text-slate-500'}`}>
+                            {v.idleCount} Idle
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex flex-wrap gap-1">
+                            {Object.entries(v.runningVehicleTypes).length > 0 ? (
+                              Object.entries(v.runningVehicleTypes).map(([type, count]) => (
+                                <span key={type} className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                  {type}: {count}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-slate-400 text-[10px]">None</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            <div className="w-16 bg-slate-200 rounded-full h-2 overflow-hidden">
+                              <div className="bg-emerald-500 h-2 rounded-full" style={{ width: `${v.utilizationRate}%` }} />
+                            </div>
+                            <span className="font-extrabold text-slate-700 text-[10px]">{v.utilizationRate}%</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <button
+                            id={`btn-view-running-${v.vendorName.toLowerCase().replace(/\s+/g, '-')}`}
+                            onClick={() => {
+                              setSelectedVendorForFleet(v.vendorName);
+                              setVendorModalSearch('');
+                            }}
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-3xs transition-all flex items-center gap-1.5 mx-auto cursor-pointer"
+                          >
+                            <Car className="h-3.5 w-3.5" /> View Running Vehicles ({v.runningCount})
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredVendors.length === 0 && (
+                      <tr>
+                        <td colSpan={8} className="text-center py-12 text-slate-400">
+                          <p className="font-bold text-slate-600 text-sm">No vendor records match your search criteria.</p>
+                          <p className="text-xs text-slate-400 mt-1">Try entering a vendor name or client site in the search box.</p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         )}
       </div>
       {deleteCandidate && (
@@ -2025,6 +2334,155 @@ export default function MasterViews({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {selectedVendorForFleet && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full border border-slate-200 overflow-hidden my-8 flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-200 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                {getVendorBadge(selectedVendorForFleet)}
+                <div>
+                  <h3 className="text-base font-black tracking-tight text-white flex items-center gap-2">
+                    <Car className="h-5 w-5 text-emerald-400" />
+                    Running Vehicles List — Vendor: {selectedVendorForFleet}
+                  </h3>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    List of active running vehicles operating under {selectedVendorForFleet}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedVendorForFleet(null)}
+                className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <XCircle className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Modal Toolbar */}
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+              <div className="relative flex-1 max-w-xs">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Filter vehicle reg, driver, owner..."
+                  value={vendorModalSearch}
+                  onChange={(e) => setVendorModalSearch(e.target.value)}
+                  className="pl-9 pr-4 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full font-medium"
+                />
+              </div>
+
+              {(() => {
+                const selectedVendorData = availableVendorCalculations.find((v) => v.vendorName === selectedVendorForFleet);
+                const runningFleet = selectedVendorData ? selectedVendorData.runningVehicles : [];
+                return (
+                  <div className="flex items-center gap-3 text-xs font-bold text-slate-700">
+                    <span className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-lg border border-emerald-200 flex items-center gap-1.5">
+                      <CheckCircle className="h-4 w-4 text-emerald-600" /> Total Running: {runningFleet.length} Vehicles
+                    </span>
+                    <span className="px-3 py-1 bg-slate-200 text-slate-700 rounded-lg">
+                      Total Attached: {selectedVendorData?.totalCount || 0} Vehicles
+                    </span>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Modal Table Content */}
+            <div className="p-6 overflow-y-auto flex-1">
+              {(() => {
+                const selectedVendorData = availableVendorCalculations.find((v) => v.vendorName === selectedVendorForFleet);
+                if (!selectedVendorData) return null;
+
+                const runningList = selectedVendorData.runningVehicles.filter((v) =>
+                  v.registrationNumber.toLowerCase().includes(vendorModalSearch.toLowerCase()) ||
+                  v.driverName.toLowerCase().includes(vendorModalSearch.toLowerCase()) ||
+                  v.ownerName.toLowerCase().includes(vendorModalSearch.toLowerCase()) ||
+                  (v.company || '').toLowerCase().includes(vendorModalSearch.toLowerCase()) ||
+                  (v.site || '').toLowerCase().includes(vendorModalSearch.toLowerCase())
+                );
+
+                return (
+                  <div className="overflow-x-auto border border-slate-200 rounded-lg shadow-2xs">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-100 text-[11px] font-black text-slate-700 uppercase tracking-wider">
+                          <th className="py-2.5 px-3">S.No</th>
+                          <th className="py-2.5 px-3">Vehicle Reg No</th>
+                          <th className="py-2.5 px-3">Model & Type</th>
+                          <th className="py-2.5 px-3">Assigned Site / Company</th>
+                          <th className="py-2.5 px-3">Owner Name & Mobile</th>
+                          <th className="py-2.5 px-3">Crew Driver Name & Phone</th>
+                          <th className="py-2.5 px-3">Joining Date</th>
+                          <th className="py-2.5 px-3 text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-150 text-xs">
+                        {runningList.map((veh, idx) => {
+                          const owner = owners.find((o) => o.id === veh.ownerId);
+                          const driver = drivers.find((d) => d.id === veh.driverId);
+                          return (
+                            <tr key={veh.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="py-2.5 px-3 font-bold text-slate-400 text-[10px]">{idx + 1}</td>
+                              <td className="py-2.5 px-3 font-black text-slate-900 tracking-tight font-mono text-xs">
+                                {veh.registrationNumber}
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <span className="font-bold text-slate-800 block">{veh.model || veh.vehicleType}</span>
+                                <span className="text-[10px] text-slate-500 font-semibold">{veh.vehicleType} &bull; {veh.fuelType}</span>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <span className="font-extrabold text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 text-[11px] block max-w-max">
+                                  {veh.company || veh.site || 'General Fleet'}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <span className="font-bold text-slate-800 block">{veh.ownerName || owner?.name || 'Unassigned'}</span>
+                                <span className="text-[10px] font-mono text-slate-500 block">{owner?.phone || '-'}</span>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <span className="font-bold text-slate-800 block">{veh.driverName || driver?.name || 'Unassigned'}</span>
+                                <span className="text-[10px] font-mono text-slate-500 block">{driver?.phone || '-'}</span>
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-600 font-medium">{formatDate(veh.joiningDate)}</td>
+                              <td className="py-2.5 px-3 text-center">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 uppercase">
+                                  <CheckCircle className="h-3 w-3 text-emerald-600" />
+                                  Running
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {runningList.length === 0 && (
+                          <tr>
+                            <td colSpan={8} className="text-center py-8 text-slate-400 font-medium">
+                              No running vehicles found matching your search.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedVendorForFleet(null)}
+                className="px-4 py-2 text-xs font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg transition-all cursor-pointer shadow-3xs"
+              >
+                Close Register
+              </button>
+            </div>
           </div>
         </div>
       )}

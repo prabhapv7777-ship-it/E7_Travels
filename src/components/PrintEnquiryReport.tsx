@@ -47,6 +47,7 @@ export default function PrintEnquiryReport({
     date: true,
     vehicleDetails: true,
     ownerDetails: true,
+    referenceTag: true,
     driverDetails: true,
     preferences: true,
     status: true,
@@ -82,11 +83,53 @@ export default function PrintEnquiryReport({
     new Set(enquiries.map((e) => e.vehicleType).filter(Boolean))
   );
 
+  const hasSitePref = (e: {
+    sitePreference1?: string;
+    sitePreference2?: string;
+    sitePreference3?: string;
+    sitePreference4?: string;
+    inductionSite?: string;
+    site?: string;
+  }) => {
+    const prefs = [
+      e.sitePreference1,
+      e.sitePreference2,
+      e.sitePreference3,
+      e.sitePreference4,
+      e.inductionSite,
+      e.site,
+    ];
+    return prefs.some((p) => {
+      if (!p) return false;
+      const s = p.trim().toLowerCase();
+      return (
+        s !== '' &&
+        s !== 'open preference' &&
+        s !== 'open preference / any site' &&
+        s !== 'none' &&
+        s !== '-' &&
+        s !== 'select site' &&
+        s !== 'none / tour operator'
+      );
+    });
+  };
+
+  const getEffectiveStatus = (e: Enquiry) => {
+    if (e.status === 'Induction' || e.status === 'Closed') {
+      return e.status;
+    }
+    if (e.status === 'Site Offered' || hasSitePref(e)) {
+      return 'Site Offered';
+    }
+    return e.status || 'New';
+  };
+
   // Apply Filtering & Sorting
   const filteredEnquiries = enquiries
     .filter((e) => {
       // Status
-      if (statusFilter !== 'all' && e.status !== statusFilter) return false;
+      const effStatus = getEffectiveStatus(e);
+      if (statusFilter !== 'all' && effStatus !== statusFilter) return false;
       
       // Vehicle Type
       if (vehicleTypeFilter !== 'all' && e.vehicleType !== vehicleTypeFilter) return false;
@@ -167,7 +210,7 @@ export default function PrintEnquiryReport({
       
       {/* Helpful banner for users printing inside the iframe environment */}
       {isInIframe && (
-        <div className="w-full max-w-6xl bg-amber-500 text-slate-950 p-3.5 text-xs font-extrabold rounded-lg mb-2 flex items-center justify-between border-2 border-amber-600 print:hidden shadow-md">
+        <div className="w-full max-w-[1400px] bg-amber-500 text-slate-950 p-3.5 text-xs font-extrabold rounded-lg mb-2 flex items-center justify-between border-2 border-amber-600 print:hidden shadow-md">
           <div className="flex items-center gap-2 text-left">
             <span className="text-sm shrink-0">💡</span>
             <span>
@@ -178,7 +221,7 @@ export default function PrintEnquiryReport({
       )}
 
       {printError && (
-        <div className="w-full max-w-6xl bg-rose-500 text-white p-3.5 text-xs font-extrabold rounded-lg mb-2 flex items-center justify-between border-2 border-rose-600 print:hidden shadow-md">
+        <div className="w-full max-w-[1400px] bg-rose-500 text-white p-3.5 text-xs font-extrabold rounded-lg mb-2 flex items-center justify-between border-2 border-rose-600 print:hidden shadow-md">
           <div className="flex items-center gap-2 text-left">
             <span className="text-sm shrink-0">⚠️</span>
             <span>
@@ -189,7 +232,7 @@ export default function PrintEnquiryReport({
       )}
 
       {/* Interactive Controls Bar - Hidden on print */}
-      <div className="w-full max-w-6xl bg-slate-800 text-white rounded-t-xl p-4 flex flex-wrap gap-4 items-center justify-between shadow-lg print:hidden">
+      <div className="w-full max-w-[1400px] bg-slate-800 text-white rounded-t-xl p-4 flex flex-wrap gap-4 items-center justify-between shadow-lg print:hidden">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-amber-500 text-slate-950 rounded-lg">
             <Printer className="h-5 w-5" />
@@ -202,7 +245,7 @@ export default function PrintEnquiryReport({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handlePrint}
             className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-lg transition-all shadow-xs cursor-pointer"
@@ -221,7 +264,7 @@ export default function PrintEnquiryReport({
       </div>
 
       {/* Editor & Preview Side-by-Side (or stacked on mobile) - Editor Hidden on Print */}
-      <div className="w-full max-w-6xl bg-slate-100 flex flex-col md:flex-row shadow-2xl overflow-visible print:shadow-none print:bg-white print:block rounded-b-xl border border-slate-200">
+      <div className="w-full max-w-[1400px] bg-slate-100 flex flex-col md:flex-row shadow-2xl overflow-visible print:shadow-none print:bg-white print:block rounded-b-xl border border-slate-200">
         
         {/* Filter Selection Panel (Left side in desktop, hidden on print) */}
         <div className="w-full md:w-80 bg-white border-r border-slate-200 p-5 shrink-0 overflow-y-auto max-h-[1100px] print:hidden">
@@ -334,6 +377,7 @@ export default function PrintEnquiryReport({
                   if (col === 'date') labelText = 'Call Date';
                   if (col === 'vehicleDetails') labelText = 'Vehicle Details';
                   if (col === 'ownerDetails') labelText = 'Owner Details (Full)';
+                  if (col === 'referenceTag') labelText = 'Reference / Tag';
                   if (col === 'driverDetails') labelText = 'Driver Details (Full)';
                   if (col === 'preferences') labelText = 'Preferences & Bank';
                   if (col === 'status') labelText = 'Status';
@@ -432,17 +476,18 @@ export default function PrintEnquiryReport({
           </div>
         </div>
 
-        {/* Printable Paper Layout Sheet */}
-        <div 
-          ref={printAreaRef}
-          className="print-sheet flex-1 bg-white p-6 sm:p-10 font-sans text-slate-900 border border-slate-200 shadow-lg mx-auto rounded relative print:p-0 print:m-0 print:w-full print:shadow-none overflow-x-auto transition-all duration-300"
-          style={{ 
-            width: '100%',
-            maxWidth: orientation === 'landscape' ? '297mm' : '210mm',
-            minHeight: orientation === 'landscape' ? '210mm' : '297mm',
-            boxSizing: 'border-box' 
-          }}
-        >
+        {/* Printable Paper Workspace */}
+        <div className="flex-1 bg-slate-200/80 p-3 sm:p-6 overflow-x-auto min-w-0 flex justify-center items-start print:p-0 print:bg-transparent print:block print:overflow-visible w-full">
+          <div 
+            ref={printAreaRef}
+            className="print-sheet w-full bg-white p-4 sm:p-6 font-sans text-slate-900 border border-slate-200 shadow-xl rounded relative print:p-0 print:m-0 print:w-full print:shadow-none print:border-none print:rounded-none overflow-visible transition-all duration-300"
+            style={{ 
+              width: '100%',
+              maxWidth: orientation === 'landscape' ? '100%' : '210mm',
+              minHeight: orientation === 'landscape' ? '210mm' : '297mm',
+              boxSizing: 'border-box' 
+            }}
+          >
           {/* Print specific CSS override injected directly */}
           <style dangerouslySetInnerHTML={{ __html: `
             @media print {
@@ -451,11 +496,9 @@ export default function PrintEnquiryReport({
                 display: none !important;
               }
               
-              /* Force the print modal portal to expand to full width and act as a standard block */
+              /* Force the print modal portal to expand as a static container within page margins */
               .print-modal-root {
-                position: absolute !important;
-                left: 0 !important;
-                top: 0 !important;
+                position: static !important;
                 width: 100% !important;
                 max-width: 100% !important;
                 padding: 0 !important;
@@ -481,7 +524,7 @@ export default function PrintEnquiryReport({
 
               @page {
                 size: A4 ${orientation};
-                margin: 0.6cm 0.8cm 0.6cm 0.8cm !important;
+                margin: 0.5cm 0.5cm 0.5cm 0.5cm !important;
               }
 
               html, body {
@@ -495,13 +538,16 @@ export default function PrintEnquiryReport({
                 line-height: 1.25 !important;
                 overflow: visible !important;
                 width: 100% !important;
+                max-width: 100% !important;
                 height: auto !important;
+                border: none !important;
+                box-shadow: none !important;
               }
 
               .print-sheet {
                 width: 100% !important;
                 max-width: 100% !important;
-                min-width: 100% !important;
+                min-width: 0 !important;
                 min-height: auto !important;
                 height: auto !important;
                 padding: 0 !important;
@@ -509,8 +555,10 @@ export default function PrintEnquiryReport({
                 display: block !important;
                 background: white !important;
                 border: none !important;
+                border-radius: 0 !important;
                 box-shadow: none !important;
                 overflow: visible !important;
+                box-sizing: border-box !important;
               }
 
               .print-container {
@@ -520,6 +568,17 @@ export default function PrintEnquiryReport({
                 padding: 0 !important;
                 margin: 0 !important;
                 overflow: visible !important;
+                border: none !important;
+                border-radius: 0 !important;
+                box-shadow: none !important;
+                box-sizing: border-box !important;
+                transform: none !important;
+                zoom: 1 !important;
+              }
+
+              .print-container *, .print-sheet * {
+                box-sizing: border-box !important;
+                max-width: 100% !important;
               }
 
               .print-container table {
@@ -527,7 +586,20 @@ export default function PrintEnquiryReport({
                 max-width: 100% !important;
                 font-size: ${getActualFontSize()} !important;
                 border-collapse: collapse !important;
-                table-layout: fixed !important; /* Force columns to respect table limits */
+                table-layout: fixed !important;
+              }
+
+              thead {
+                display: table-header-group !important;
+              }
+
+              tbody {
+                display: table-row-group !important;
+              }
+
+              .print-container tr {
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
               }
 
               .print-container th, .print-container td {
@@ -535,7 +607,8 @@ export default function PrintEnquiryReport({
                 word-break: break-word !important;
                 overflow-wrap: break-word !important;
                 white-space: normal !important;
-                padding: 5px 6px !important;
+                padding: 2px 3px !important;
+                box-sizing: border-box !important;
               }
 
               .print-container th {
@@ -549,6 +622,10 @@ export default function PrintEnquiryReport({
                 font-size: ${getActualFontSize()} !important;
               }
 
+              .print-container .whitespace-nowrap {
+                white-space: normal !important;
+              }
+
               .print\\:hidden, [print\\:hidden] {
                 display: none !important;
                 visibility: hidden !important;
@@ -559,7 +636,12 @@ export default function PrintEnquiryReport({
           {/* Also inject print styles into screen preview wrapper so user can see auto-scaling */}
           <div 
             className="print-container space-y-6 text-left text-xs leading-relaxed"
-            style={{ fontSize: getActualFontSize() }}
+            style={{ 
+              fontSize: getActualFontSize(),
+              width: '100%',
+              maxWidth: '100%',
+              boxSizing: 'border-box'
+            }}
           >
             
             {/* Header Branding */}
@@ -610,14 +692,15 @@ export default function PrintEnquiryReport({
               <table className="w-full text-left text-2xs border-collapse">
                 <thead>
                   <tr className="bg-slate-100 border-b border-slate-300 font-extrabold uppercase text-[10px] text-slate-700 tracking-wider">
-                    {columns.id && <th className="py-2.5 px-2 border-r border-slate-300 w-[6%] text-center">ID</th>}
-                    {columns.date && <th className="py-2.5 px-2 border-r border-slate-300 w-[9%] text-center">Date</th>}
-                    {columns.vehicleDetails && <th className="py-2.5 px-3 border-r border-slate-300 w-[19%]">Vehicle Details</th>}
-                    {columns.ownerDetails && <th className="py-2.5 px-3 border-r border-slate-300 w-[15%]">Owner Details (Full)</th>}
-                    {columns.driverDetails && <th className="py-2.5 px-3 border-r border-slate-300 w-[19%]">Driver Details (Full)</th>}
-                    {columns.preferences && <th className="py-2.5 px-3 border-r border-slate-300 w-[15%]">Preferences & Bank</th>}
-                    {columns.status && <th className="py-2.5 px-2 border-r border-slate-300 w-[8%] text-center">Status</th>}
-                    {columns.remarks && <th className="py-2.5 px-2 w-[11%]">Remarks / Notes</th>}
+                    {columns.id && <th className="py-2.5 px-2 border-r border-slate-300 w-[5%] text-center">ID</th>}
+                    {columns.date && <th className="py-2.5 px-2 border-r border-slate-300 w-[8%] text-center">Date</th>}
+                    {columns.vehicleDetails && <th className="py-2.5 px-3 border-r border-slate-300 w-[17%]">Vehicle Details</th>}
+                    {columns.ownerDetails && <th className="py-2.5 px-3 border-r border-slate-300 w-[14%]">Owner Details (Full)</th>}
+                    {columns.referenceTag && <th className="py-2.5 px-3 border-r border-slate-300 w-[11%]">Reference Tag</th>}
+                    {columns.driverDetails && <th className="py-2.5 px-3 border-r border-slate-300 w-[17%]">Driver Details (Full)</th>}
+                    {columns.preferences && <th className="py-2.5 px-3 border-r border-slate-300 w-[14%]">Preferences & Bank</th>}
+                    {columns.status && <th className="py-2.5 px-2 border-r border-slate-300 w-[6%] text-center">Status</th>}
+                    {columns.remarks && <th className="py-2.5 px-2 w-[8%]">Remarks / Notes</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -629,12 +712,13 @@ export default function PrintEnquiryReport({
                     </tr>
                   ) : (
                     filteredEnquiries.map((enq) => {
+                      const effStatus = getEffectiveStatus(enq);
                       let statusBadge = '';
-                      if (enq.status === 'New') statusBadge = 'text-amber-600 border-amber-200 bg-amber-50';
-                      if (enq.status === 'Interested') statusBadge = 'text-blue-600 border-blue-200 bg-blue-50';
-                      if (enq.status === 'Site Offered') statusBadge = 'text-emerald-600 border-emerald-200 bg-emerald-50';
-                      if (enq.status === 'Induction') statusBadge = 'text-indigo-600 border-indigo-200 bg-indigo-50';
-                      if (enq.status === 'Closed') statusBadge = 'text-slate-500 border-slate-200 bg-slate-50';
+                      if (effStatus === 'New') statusBadge = 'text-amber-600 border-amber-200 bg-amber-50';
+                      if (effStatus === 'Interested') statusBadge = 'text-blue-600 border-blue-200 bg-blue-50';
+                      if (effStatus === 'Site Offered') statusBadge = 'text-emerald-600 border-emerald-200 bg-emerald-50';
+                      if (effStatus === 'Induction') statusBadge = 'text-indigo-600 border-indigo-200 bg-indigo-50';
+                      if (effStatus === 'Closed') statusBadge = 'text-slate-500 border-slate-200 bg-slate-50';
 
                       return (
                         <tr key={enq.id} className="hover:bg-slate-50/50 align-top">
@@ -698,6 +782,19 @@ export default function PrintEnquiryReport({
                                   </div>
                                 )}
                               </div>
+                            </td>
+                          )}
+
+                          {/* Reference Tag Column */}
+                          {columns.referenceTag && (
+                            <td className="py-2 px-3 border-r border-slate-200 text-slate-700 leading-normal text-[0.95em]">
+                              {enq.reference && enq.reference.trim() !== '' && enq.reference.trim() !== '-' ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-purple-100 text-purple-900 font-extrabold border border-purple-200 text-[0.9em]">
+                                  <span>🏷️ {enq.reference}</span>
+                                </span>
+                              ) : (
+                                <span className="text-slate-300 italic font-normal">-</span>
+                              )}
                             </td>
                           )}
 
@@ -767,8 +864,8 @@ export default function PrintEnquiryReport({
 
                           {/* Status */}
                           {columns.status && (
-                            <td className="py-2 px-2 border-r border-slate-200 text-center whitespace-nowrap">
-                              <span className={`inline-flex items-center justify-center px-2 py-0.5 text-[0.8em] font-black uppercase rounded-md border ${statusBadge} shadow-3xs leading-none align-middle`}>
+                            <td className="py-2 px-2 border-r border-slate-200 text-center">
+                              <span className={`inline-flex items-center justify-center px-1.5 py-0.5 text-[0.8em] font-black uppercase rounded-md border ${statusBadge} shadow-3xs leading-none align-middle`}>
                                 {enq.status}
                               </span>
                             </td>
@@ -776,7 +873,7 @@ export default function PrintEnquiryReport({
 
                           {/* Remarks / Comments */}
                           {columns.remarks && (
-                            <td className="py-2 px-3 text-slate-650 text-[0.9em] leading-tight max-w-[180px] min-w-[140px] align-middle">
+                            <td className="py-2 px-2 text-slate-650 text-[0.9em] leading-tight align-middle">
                               {emptyRemarksForNotes ? (
                                 /* Ruled lines / dotted lines for hand-written notes after printing */
                                 <div className="w-full flex flex-col justify-center gap-2.5 py-1 select-none">
@@ -823,23 +920,23 @@ export default function PrintEnquiryReport({
               </div>
               <div className="text-center border-r border-slate-200 last:border-0 py-1">
                 <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest block">New</span>
-                <span className="text-sm font-bold text-amber-600">{filteredEnquiries.filter(e => e.status === 'New').length}</span>
+                <span className="text-sm font-bold text-amber-600">{filteredEnquiries.filter(e => getEffectiveStatus(e) === 'New').length}</span>
               </div>
               <div className="text-center border-r border-slate-200 last:border-0 py-1">
                 <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest block">Interested</span>
-                <span className="text-sm font-bold text-blue-600">{filteredEnquiries.filter(e => e.status === 'Interested').length}</span>
+                <span className="text-sm font-bold text-blue-600">{filteredEnquiries.filter(e => getEffectiveStatus(e) === 'Interested').length}</span>
               </div>
               <div className="text-center border-r border-slate-200 last:border-0 py-1">
                 <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest block">Site Offered</span>
-                <span className="text-sm font-bold text-emerald-600">{filteredEnquiries.filter(e => e.status === 'Site Offered').length}</span>
+                <span className="text-sm font-bold text-emerald-600">{filteredEnquiries.filter(e => getEffectiveStatus(e) === 'Site Offered').length}</span>
               </div>
               <div className="text-center border-r border-slate-200 last:border-0 py-1">
                 <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest block">Induction</span>
-                <span className="text-sm font-bold text-indigo-600">{filteredEnquiries.filter(e => e.status === 'Induction').length}</span>
+                <span className="text-sm font-bold text-indigo-600">{filteredEnquiries.filter(e => getEffectiveStatus(e) === 'Induction').length}</span>
               </div>
               <div className="text-center border-r border-slate-200 last:border-0 py-1">
                 <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest block">Closed</span>
-                <span className="text-sm font-bold text-slate-500">{filteredEnquiries.filter(e => e.status === 'Closed').length}</span>
+                <span className="text-sm font-bold text-slate-500">{filteredEnquiries.filter(e => getEffectiveStatus(e) === 'Closed').length}</span>
               </div>
             </div>
 
@@ -861,9 +958,9 @@ export default function PrintEnquiryReport({
 
           </div>
         </div>
-
       </div>
-    </div>,
+    </div>
+  </div>,
     document.body
   );
 }

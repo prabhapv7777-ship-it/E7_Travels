@@ -88,9 +88,7 @@ export const VENDOR_SITE_MAP: Record<string, string[]> = {
   ECO: ['CGI', 'MED EXPERT', 'BARCLAYS', 'EXL', 'WORKDAY'],
   'ROVER FLEET': ['REFEX'],
   'R6 MARS': ['RR DONNELLEY'],
-  ATHEA: ['STATE STREET'],
-  REFEX: ['REFEX'],
-  ROVER: ['REFEX'],
+  ATHENA: ['STATE STREET'],
   'SELECT CABS': ['CTS'],
 };
 
@@ -120,7 +118,7 @@ export const getVendorBadge = (vendor: string) => {
   if (v === 'ROVER FLEET' || v === 'ROVER') {
     return (
       <span className="inline-flex items-center justify-center whitespace-nowrap px-3 py-1 text-2xs font-extrabold rounded-full bg-purple-50 text-purple-700 border border-purple-200 uppercase tracking-wider">
-        {v}
+        ROVER FLEET
       </span>
     );
   }
@@ -131,10 +129,10 @@ export const getVendorBadge = (vendor: string) => {
       </span>
     );
   }
-  if (v === 'ATHEA') {
+  if (v === 'ATHENA' || v === 'ATHEA' || v === 'ATHENA TRAVELS') {
     return (
       <span className="inline-flex items-center justify-center whitespace-nowrap px-3 py-1 text-2xs font-extrabold rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 uppercase tracking-wider">
-        ATHEA
+        ATHENA
       </span>
     );
   }
@@ -174,6 +172,7 @@ export default function Settings({
 }: SettingsProps) {
   const [newSiteName, setNewSiteName] = useState('');
   const [newSiteLocation, setNewSiteLocation] = useState('');
+  const [newSiteCompany, setNewSiteCompany] = useState('');
   const [deleteCandidate, setDeleteCandidate] = useState<{ id: string; type: 'company' | 'site'; title: string } | null>(null);
 
   // ================= SPREADSHEET CONFIG STATE =================
@@ -351,7 +350,7 @@ export default function Settings({
   };
 
   const handleOpenEditClient = (c: Company) => {
-    const isCustomVendor = !['ATHEA', 'ECO', 'FIESTA', 'FOURWAY', 'R6 MARS', 'REFEX', 'ROVER', 'ROVER FLEET', 'SELECT CABS'].includes(c.vendorName || '');
+    const isCustomVendor = !['ATHENA', 'ECO', 'FIESTA', 'FOURWAY', 'R6 MARS', 'ROVER FLEET', 'SELECT CABS'].includes(c.vendorName || '');
     const isCustomCompany = !['WALMART', 'CTS', 'OPTUM', 'OMEGA', 'TCS', 'COMCAST', 'CGI', 'MED EXPERT', 'BARCLAYS', 'BARCLYS', 'EXL', 'WORKDAY', 'REFEX', 'RR DONLLEY', 'RR DONNELLEY', 'STATE STREET'].includes(c.companySite || c.name);
     const isCustomTerms = !['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Monthly'].includes(c.paymentTerms);
 
@@ -456,19 +455,25 @@ export default function Settings({
 
   const handleAddSite = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSiteName) return;
-
-    const exists = sites.some((s) => s.name.toLowerCase() === newSiteName.toLowerCase());
-    if (exists) {
-      alert('Site name must be unique!');
+    const trimmedName = newSiteName.trim();
+    if (!trimmedName) {
+      alert('Please enter a Site Hub Name before clicking Add Hub.');
       return;
     }
 
+    const exists = sites.some((s) => s.name.toLowerCase() === trimmedName.toLowerCase());
+    if (exists) {
+      alert(`A Site Hub with the name "${trimmedName}" already exists!`);
+      return;
+    }
+
+    const assignedCompany = newSiteCompany || companies[0]?.name || 'Direct';
+
     const newSite: Site = {
       id: `SITE-${Date.now()}`,
-      name: newSiteName,
-      companyName: companies[0]?.name || 'Direct',
-      location: newSiteLocation || 'Chennai SEZ',
+      name: trimmedName,
+      companyName: assignedCompany,
+      location: newSiteLocation.trim() || 'Chennai SEZ',
       contactPerson: '',
       phone: '',
       remarks: '',
@@ -477,6 +482,8 @@ export default function Settings({
     onUpdateSites([...sites, newSite]);
     setNewSiteName('');
     setNewSiteLocation('');
+    setNewSiteCompany('');
+    setSpellingSuccess(`Site Hub "${trimmedName}" added successfully.`);
   };
 
   const handleDeleteSite = (id: string) => {
@@ -809,11 +816,11 @@ export default function Settings({
             <MapPin className="text-slate-400 h-4 w-4" /> Operational Site Hub Registry
           </h3>
 
-          <form onSubmit={handleAddSite} className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-4">
+          <form onSubmit={handleAddSite} className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-4">
             <input
               id="set-site-name"
               type="text"
-              placeholder="Site Hub Name"
+              placeholder="Site Hub Name *"
               value={newSiteName}
               onChange={(e) => setNewSiteName(e.target.value)}
               className="px-2.5 py-1.5 border border-slate-200 rounded-md text-xs bg-white"
@@ -826,12 +833,25 @@ export default function Settings({
               onChange={(e) => setNewSiteLocation(e.target.value)}
               className="px-2.5 py-1.5 border border-slate-200 rounded-md text-xs bg-white"
             />
+            <select
+              id="set-site-company"
+              value={newSiteCompany}
+              onChange={(e) => setNewSiteCompany(e.target.value)}
+              className="px-2.5 py-1.5 border border-slate-200 rounded-md text-xs bg-white text-slate-700 font-medium"
+            >
+              <option value="">-- Client (Optional) --</option>
+              {companies.map((c) => (
+                <option key={c.name} value={c.name}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
             <button
               id="set-site-submit"
               type="submit"
-              className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-md font-semibold flex items-center justify-center gap-1"
+              className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-md font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors"
             >
-              <Plus className="h-3 w-3" /> Add Hub
+              <Plus className="h-3.5 w-3.5" /> Add Hub
             </button>
           </form>
 
@@ -949,7 +969,7 @@ export default function Settings({
                       value={clientForm.customVendorName}
                       onChange={(e) => {
                         const val = e.target.value;
-                        const isPreset = ['ATHEA', 'ECO', 'FIESTA', 'FOURWAY', 'R6 MARS', 'REFEX', 'ROVER', 'ROVER FLEET', 'SELECT CABS'].includes(val);
+                        const isPreset = ['ATHENA', 'ECO', 'FIESTA', 'FOURWAY', 'R6 MARS', 'ROVER FLEET', 'SELECT CABS'].includes(val);
                         setClientForm({
                           ...clientForm,
                           customVendorName: val,
@@ -963,7 +983,7 @@ export default function Settings({
                       <div>
                         <label className="block text-[10px] text-slate-400 font-medium mb-1">Predefined Presets</label>
                         <select
-                          value={['ATHEA', 'ECO', 'FIESTA', 'FOURWAY', 'R6 MARS', 'REFEX', 'ROVER', 'ROVER FLEET', 'SELECT CABS'].includes(clientForm.customVendorName) ? clientForm.customVendorName : 'custom'}
+                          value={['ATHENA', 'ECO', 'FIESTA', 'FOURWAY', 'R6 MARS', 'ROVER FLEET', 'SELECT CABS'].includes(clientForm.customVendorName) ? clientForm.customVendorName : 'custom'}
                           onChange={(e) => {
                             const selectedVendor = e.target.value;
                             if (selectedVendor !== 'custom' && selectedVendor !== '') {
@@ -986,13 +1006,11 @@ export default function Settings({
                           className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-2xs bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-600 font-semibold cursor-pointer"
                         >
                           <option value="custom">-- Choose Preset --</option>
-                          <option value="ATHEA">ATHEA</option>
+                          <option value="ATHENA">ATHENA</option>
                           <option value="ECO">ECO</option>
                           <option value="FIESTA">FIESTA</option>
                           <option value="FOURWAY">FOURWAY</option>
                           <option value="R6 MARS">R6 MARS</option>
-                          <option value="REFEX">REFEX</option>
-                          <option value="ROVER">ROVER</option>
                           <option value="ROVER FLEET">ROVER FLEET</option>
                           <option value="SELECT CABS">SELECT CABS</option>
                         </select>
@@ -1004,7 +1022,7 @@ export default function Settings({
                           onChange={(e) => {
                             const selectedVal = e.target.value;
                             if (selectedVal !== '') {
-                              const isPreset = ['ATHEA', 'ECO', 'FIESTA', 'FOURWAY', 'R6 MARS', 'REFEX', 'ROVER', 'ROVER FLEET', 'SELECT CABS'].includes(selectedVal);
+                              const isPreset = ['ATHENA', 'ECO', 'FIESTA', 'FOURWAY', 'R6 MARS', 'ROVER FLEET', 'SELECT CABS'].includes(selectedVal);
                               setClientForm({
                                 ...clientForm,
                                 customVendorName: selectedVal,
