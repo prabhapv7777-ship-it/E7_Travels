@@ -141,6 +141,11 @@ export default function InductionViews({
     driverDlExp: '',
     driverAadhaar: '',
     driverAddress: '',
+    officeDocSubmitted: false,
+    officeDocSubmitDate: '',
+    officeDocVendorCompany: '',
+    officeDocLetterpadRef: '',
+    officeDocRemarks: '',
   });
   const [promoteError, setPromoteError] = useState<string | null>(null);
   const [promoteSuccess, setPromoteSuccess] = useState<string | null>(null);
@@ -386,6 +391,11 @@ export default function InductionViews({
       driverDlExp: enq.driverDlExpiry || '',
       driverAadhaar: enq.driverAadhaar || '',
       driverAddress: enq.driverAddress || '',
+      officeDocSubmitted: enq.officeDocSubmitted || false,
+      officeDocSubmitDate: enq.officeDocSubmitDate || new Date().toISOString().substring(0, 10),
+      officeDocVendorCompany: enq.officeDocVendorCompany || enq.inductionCompany || '',
+      officeDocLetterpadRef: enq.officeDocLetterpadRef || '',
+      officeDocRemarks: enq.officeDocRemarks || '',
     });
 
     setPromoteError(null);
@@ -534,6 +544,12 @@ export default function InductionViews({
         fcExpiry: promotingEnquiry?.fcExpiry || '',
         pollutionExpiry: '',
         fastagNumber: '',
+        officeDocSubmitted: promoteForm.officeDocSubmitted || false,
+        officeDocSubmitDate: promoteForm.officeDocSubmitDate || '',
+        officeDocVendorCompany: promoteForm.officeDocVendorCompany || promoteForm.company || '',
+        officeDocLetterpadRef: promoteForm.officeDocLetterpadRef || '',
+        officeDocRemarks: promoteForm.officeDocRemarks || '',
+        officeDocChecklist: promotingEnquiry?.officeDocChecklist,
         remarks: 'Promoted from Induction ' + (promotingEnquiry?.id || '') + (promotingEnquiry?.gpsVendor ? ` | GPS: ${promotingEnquiry.gpsVendor} (${promotingEnquiry.gpsImei || 'No IMEI'})` : ' | No GPS'),
       };
 

@@ -20,7 +20,7 @@ function formatDateToDDMMYYYY(dateStr: string | undefined | null): string {
 interface PrintVehicleReportProps {
   vehicles: Vehicle[];
   onClose: () => void;
-  initialFilter?: 'all' | 'running' | 'idle' | 'new';
+  initialFilter?: 'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted' | 'gps_hold';
 }
 
 export default function PrintVehicleReport({
@@ -31,7 +31,7 @@ export default function PrintVehicleReport({
   const printAreaRef = useRef<HTMLDivElement>(null);
 
   // Filter States
-  const [filterType, setFilterType] = useState<'all' | 'running' | 'idle' | 'new'>(initialFilter);
+  const [filterType, setFilterType] = useState<'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted'>(initialFilter);
   const [vehicleTypeFilter, setVehicleTypeFilter] = useState<string>('all');
   const [fuelFilter, setFuelFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -84,6 +84,9 @@ export default function PrintVehicleReport({
       // 1. Vehicle filter types (Total, Running, Idle, New)
       if (filterType === 'running' && v.status !== 'Active') return false;
       if (filterType === 'idle' && v.status === 'Active') return false;
+      if (filterType === 'doc_pending' && v.officeDocSubmitted) return false;
+      if (filterType === 'doc_submitted' && !v.officeDocSubmitted) return false;
+      if (filterType === 'gps_hold' && !(v.status === 'Inactive' && (!!v.gpsVendor || !!v.gpsImei || !!v.gpsFittingDate) && !v.gpsReturned)) return false;
       if (filterType === 'new') {
         const currentMonth = '2026-07'; // Match matching logic in MasterViews.tsx
         if (!v.joiningDate || !v.joiningDate.startsWith(currentMonth)) return false;

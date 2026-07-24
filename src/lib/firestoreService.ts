@@ -3,9 +3,57 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { db } from './firebase';
+import { db, auth } from './firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { Vehicle, Owner, Driver, Company, Site, CompanyPayment, Expense, Enquiry } from '../types';
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const currentUser = auth.currentUser;
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: currentUser?.uid,
+      email: currentUser?.email,
+      emailVerified: currentUser?.emailVerified,
+      isAnonymous: currentUser?.isAnonymous,
+      tenantId: currentUser?.tenantId,
+      providerInfo: currentUser?.providerData?.map((provider) => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || [],
+    },
+    operationType,
+    path,
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 export interface FleetState {
   vehicles: Vehicle[];
@@ -37,16 +85,19 @@ export const isQuotaError = (error: unknown): boolean => {
 };
 
 export const saveStateToFirestore = async (key: keyof FleetState, data: any) => {
+  const docPath = `${FLEET_COLLECTION}/${key}`;
   try {
     const docRef = doc(db, FLEET_COLLECTION, key);
-    await setDoc(docRef, { data }, { merge: false });
+    // Sanitize data: convert undefined values/properties into clean JSON without undefined fields
+    const sanitizedData = data === undefined ? [] : JSON.parse(JSON.stringify(data));
+    await setDoc(docRef, { data: sanitizedData }, { merge: false });
   } catch (error) {
     if (isQuotaError(error)) {
       console.warn(`Firestore quota limit exceeded while auto-saving "${key}". Local storage fallback active.`);
       return; // Do not throw so caller doesn't log unhandled promise rejections
     }
     console.error(`Error saving ${key} to Firestore:`, error);
-    throw error;
+    handleFirestoreError(error, OperationType.WRITE, docPath);
   }
 };
 

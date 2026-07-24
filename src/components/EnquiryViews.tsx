@@ -243,6 +243,15 @@ export default function EnquiryViews({
   const [promoteSuccess, setPromoteSuccess] = useState<string | null>(null);
   const [infoNotification, setInfoNotification] = useState<string | null>(null);
 
+  // Vehicle Induction Dialog States
+  const [inductionModalEnquiry, setInductionModalEnquiry] = useState<Enquiry | null>(null);
+  const [inductionCompanyChoice, setInductionCompanyChoice] = useState<string>('');
+  const [customInductionCompany, setCustomInductionCompany] = useState<string>('');
+  const [inductionSiteChoice, setInductionSiteChoice] = useState<string>('');
+  const [inductionDateInput, setInductionDateInput] = useState<string>(new Date().toISOString().substring(0, 10));
+  const [inductionRemarksInput, setInductionRemarksInput] = useState<string>('');
+  const [inductionModalError, setInductionModalError] = useState<string | null>(null);
+
   // Share / Message Format State
   const [sharingEnquiryMessage, setSharingEnquiryMessage] = useState<Enquiry | null>(null);
   const [isCopied, setIsCopied] = useState(false);
@@ -629,20 +638,96 @@ AREA: ${areaStr}`;
     }
   };
 
-  const handleMoveToInduction = (id: string) => {
-    const updated = enquiries.map((item) =>
-      item.id === id ? { ...item, status: 'Induction' as const } : item
+  // Start Induction dialog to select target company
+  const handleStartInductionModal = (enq: Enquiry) => {
+    setInductionModalEnquiry(enq);
+    setInductionModalError(null);
+    setInductionRemarksInput('');
+    setInductionDateInput(new Date().toISOString().substring(0, 10));
+
+    let initialCompany = '';
+    let initialCustom = '';
+    const pref1 = (enq.sitePreference1 || '').trim();
+    const running = (enq.alreadyRunningCompany || '').trim();
+
+    // Look up matching company in companies list
+    const matched = companies.find(
+      (c) =>
+        (pref1 && c.name.toLowerCase() === pref1.toLowerCase()) ||
+        (running && c.name.toLowerCase() === running.toLowerCase())
     );
+
+    if (matched) {
+      initialCompany = matched.name;
+    } else if (companies.length > 0) {
+      if (pref1 && pref1 !== 'Open Preference' && pref1 !== '-') {
+        initialCompany = 'Other';
+        initialCustom = pref1;
+      } else {
+        initialCompany = companies[0].name;
+      }
+    } else if (pref1 && pref1 !== 'Open Preference' && pref1 !== '-') {
+      initialCompany = 'Other';
+      initialCustom = pref1;
+    }
+
+    setInductionCompanyChoice(initialCompany);
+    setCustomInductionCompany(initialCustom);
+    setInductionSiteChoice(enq.sitePreference2 || '');
+  };
+
+  const handleMoveToInduction = (id: string) => {
+    const enq = enquiries.find((e) => e.id === id);
+    if (enq) {
+      handleStartInductionModal(enq);
+    }
+  };
+
+  const handleConfirmMoveToInduction = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inductionModalEnquiry) return;
+
+    let targetCompany = '';
+    if (inductionCompanyChoice === 'Other') {
+      targetCompany = customInductionCompany.trim();
+    } else {
+      targetCompany = inductionCompanyChoice.trim();
+    }
+
+    if (!targetCompany) {
+      setInductionModalError('Please select or enter the company going for induction.');
+      return;
+    }
+
+    const enqId = inductionModalEnquiry.id;
+    const vehicleNo = inductionModalEnquiry.vehicleNumber || enqId;
+
+    const updated = enquiries.map((item) => {
+      if (item.id === enqId) {
+        return {
+          ...item,
+          status: 'Induction' as const,
+          inductionCompany: targetCompany,
+          sitePreference1: targetCompany, // Set primary site/company preference
+          inductionDate: inductionDateInput || new Date().toISOString().substring(0, 10),
+          inductionCompleted: true,
+          remarks: inductionRemarksInput.trim()
+            ? (item.remarks ? item.remarks + '\n' : '') + `[INDUCTION] Assigned to company: ${targetCompany}. Note: ${inductionRemarksInput.trim()}`
+            : item.remarks,
+        };
+      }
+      return item;
+    });
+
     onUpdateEnquiries(updated);
 
-    const enq = enquiries.find(e => e.id === id);
-    const label = enq ? `${enq.vehicleNumber} (${enq.driverName})` : id;
-    setInfoNotification(`Successfully moved "${label}" to the Vehicle Induction Stage!`);
-    
-    // Automatically dismiss after 6 seconds
-    setTimeout(() => {
-      setInfoNotification((current) => current?.includes(label) ? null : current);
-    }, 6000);
+    const label = `${vehicleNo} (${inductionModalEnquiry.driverName || 'Driver'})`;
+    setInfoNotification(`Successfully assigned "${label}" to company "${targetCompany}" and moved to Vehicle Induction!`);
+
+    setInductionModalEnquiry(null);
+
+    // Automatically navigate to Induction Page
+    onNavigate?.('Induction');
   };
 
   const handleOpenPromote = (enq: Enquiry) => {
@@ -872,6 +957,12 @@ AREA: ${areaStr}`;
         fcExpiry: promotingEnquiry?.fcExpiry || '',
         pollutionExpiry: '',
         fastagNumber: '',
+        officeDocSubmitted: promotingEnquiry?.officeDocSubmitted || false,
+        officeDocSubmitDate: promotingEnquiry?.officeDocSubmitDate || '',
+        officeDocVendorCompany: promotingEnquiry?.officeDocVendorCompany || promoteForm.company || '',
+        officeDocLetterpadRef: promotingEnquiry?.officeDocLetterpadRef || '',
+        officeDocRemarks: promotingEnquiry?.officeDocRemarks || '',
+        officeDocChecklist: promotingEnquiry?.officeDocChecklist,
         remarks: 'Promoted from Enquiry ' + (promotingEnquiry?.id || ''),
       };
 
@@ -3040,6 +3131,186 @@ AREA: ${areaStr}`;
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* VEHICLE INDUCTION - SELECT TARGET COMPANY MODAL */}
+      {inductionModalEnquiry && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-auto">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-teal-900 via-slate-900 to-indigo-900 text-white p-5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-teal-500/20 rounded-xl border border-teal-400/30 text-teal-300">
+                  <Building2 className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black tracking-wide text-white uppercase">
+                    Select Company for Induction
+                  </h3>
+                  <p className="text-xs text-teal-200/90 font-medium">
+                    Choose the company where this vehicle will be inducted & deployed
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInductionModalEnquiry(null)}
+                className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+              >
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleConfirmMoveToInduction} className="p-6 space-y-4">
+              {/* Summary Card for Vehicle */}
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200/80 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-500 uppercase tracking-wider">
+                    Vehicle Enquiry Details
+                  </span>
+                  <span className="px-2.5 py-1 bg-teal-100 text-teal-800 text-xs font-mono font-black rounded-md border border-teal-200">
+                    {inductionModalEnquiry.vehicleNumber || 'NO REG'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs text-slate-700 font-medium pt-2 border-t border-slate-200/60">
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Type & Model</span>
+                    <p className="font-bold text-slate-900">{inductionModalEnquiry.vehicleType || 'Vehicle'} - {inductionModalEnquiry.vehicleModelYear || '-'}</p>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Driver Name</span>
+                    <p className="font-bold text-slate-900">{inductionModalEnquiry.driverName || '-'} ({inductionModalEnquiry.driverPhone || 'No Phone'})</p>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Owner Name</span>
+                    <p className="font-bold text-slate-900">{inductionModalEnquiry.ownerNamePhone || '-'}</p>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Current Site Pref</span>
+                    <p className="font-bold text-amber-700">{inductionModalEnquiry.sitePreference1 || 'Open Preference'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {inductionModalError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl flex items-center gap-2">
+                  <XCircle className="h-4 w-4 shrink-0 text-rose-600" />
+                  <span>{inductionModalError}</span>
+                </div>
+              )}
+
+              {/* Target Company Selection Field */}
+              <div>
+                <label className="block text-3xs font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Target Company Going For Induction <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  id="induction-modal-company-select"
+                  value={inductionCompanyChoice}
+                  onChange={(e) => {
+                    setInductionCompanyChoice(e.target.value);
+                    setInductionModalError(null);
+                  }}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 transition-all cursor-pointer"
+                  required
+                >
+                  <option value="">-- Select Company --</option>
+                  {companies.map((comp) => (
+                    <option key={comp.name} value={comp.name}>
+                      {comp.name} {comp.companySite ? `(${comp.companySite})` : ''}
+                    </option>
+                  ))}
+                  <option value="Other">+ Enter Custom Company Name</option>
+                </select>
+              </div>
+
+              {/* Custom Company Input if "Other" is chosen */}
+              {inductionCompanyChoice === 'Other' && (
+                <div>
+                  <label className="block text-3xs font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Custom Company Name <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="induction-modal-custom-company"
+                    placeholder="e.g. AMAZON, CTS, OPTUM, WALMART, ASTRAZENICA"
+                    value={customInductionCompany}
+                    onChange={(e) => {
+                      setCustomInductionCompany(e.target.value);
+                      setInductionModalError(null);
+                    }}
+                    className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 transition-all"
+                    required
+                  />
+                </div>
+              )}
+
+              {/* Induction Date & Site */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-3xs font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Induction Date
+                  </label>
+                  <input
+                    type="date"
+                    id="induction-modal-date"
+                    value={inductionDateInput}
+                    onChange={(e) => setInductionDateInput(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-3xs font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Site / Branch Location
+                  </label>
+                  <input
+                    type="text"
+                    id="induction-modal-site"
+                    placeholder="e.g. OMR Campus / Main Site"
+                    value={inductionSiteChoice}
+                    onChange={(e) => setInductionSiteChoice(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600"
+                  />
+                </div>
+              </div>
+
+              {/* Remarks */}
+              <div>
+                <label className="block text-3xs font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Induction Remarks / Notes
+                </label>
+                <input
+                  type="text"
+                  id="induction-modal-remarks"
+                  placeholder="e.g. Driver documents verified, scheduled for orientation"
+                  value={inductionRemarksInput}
+                  onChange={(e) => setInductionRemarksInput(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setInductionModalEnquiry(null)}
+                  className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  id="btn-confirm-induction-company"
+                  className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  <CheckCircle className="h-4 w-4" />
+                  Confirm & Go to Induction Page
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

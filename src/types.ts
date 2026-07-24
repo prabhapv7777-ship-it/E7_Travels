@@ -32,6 +32,32 @@ export interface Vehicle {
   remarks: string;
   paymentCycle?: 'Monthly' | 'Weekly';
   comments?: Array<{ date: string; text: string; author: string }>;
+  // VENDOR COMPANY OFFICE DOCUMENT SUBMISSION TRACKING (FOR FIESTA, ECO, TCS, ETC.)
+  officeDocSubmitted?: boolean;
+  officeDocSubmitDate?: string;
+  officeDocVendorCompany?: string; // e.g. 'Fiesta', 'Eco Mobility', 'TCS', etc.
+  officeDocLetterpadRef?: string;  // Letterpad ref / memo no. e.g. 'LP-FIESTA-2026-001'
+  officeDocRemarks?: string;
+  officeDocChecklist?: OfficeDocChecklist;
+  // GPS INSTALLATION & INACTIVATION RETURN TRACKING
+  gpsVendor?: string;              // e.g. 'Fiesta GPS', 'Autoplant', 'Fleetx'
+  gpsImei?: string;                // GPS IMEI number
+  gpsFittingDate?: string;         // YYYY-MM-DD
+  gpsReturned?: boolean;           // true if returned when vehicle went inactive
+  gpsReturnDate?: string;          // YYYY-MM-DD
+  gpsReturnRemarks?: string;       // Notes on removal / return
+  gpsReturnedBy?: string;          // Person who handed over or received
+}
+
+export interface OfficeDocChecklist {
+  rc?: boolean;
+  insurance?: boolean;
+  permit?: boolean;
+  pollution?: boolean;
+  aadhaarCard?: boolean;
+  policeVerification?: boolean;
+  drivingLicense?: boolean;
+  medicalCertificate?: boolean;
 }
 
 export interface Owner {
@@ -224,6 +250,14 @@ export interface Enquiry {
   gpsFittingDate?: string;
   routeActivated?: boolean;
   routeStartDate?: string;
+
+  // Office / Vendor Document Submission Track (Fiesta, Eco, etc.)
+  officeDocSubmitted?: boolean;
+  officeDocSubmitDate?: string;
+  officeDocVendorCompany?: string;
+  officeDocLetterpadRef?: string;
+  officeDocRemarks?: string;
+  officeDocChecklist?: OfficeDocChecklist;
 }
 
 export const ENQUIRY_STATUSES = ['New', 'Interested', 'Site Offered', 'Induction', 'Closed'] as const;
@@ -264,8 +298,12 @@ export interface SlabRate {
   id: string;
   slabName: string;
   rateSource: RateSource;
-  vehicleType: string; // 'Sedan' | 'SUV' | 'EV' | 'Tempo Traveller'
+  companyName?: string; // Company providing this slab rate e.g. 'TCS', 'Amazon', 'Optum', 'All Companies'
+  vehicleType: string; // Primary Vehicle Type: 'Sedan' | 'SUV' | 'EV' | 'Tempo Traveller'
+  applicableVehicles?: string[]; // Array of vehicles provided by this company e.g. ['Sedan', 'SUV']
   rateCategory: RateCategory;
+  isTwoWayKm?: boolean; // Company provides Two Way KM option
+  kmType?: 'One Way KM' | 'Two Way KM'; // KM Calculation method
   kmSlabs?: KmSlabRow[];
   packageDetails?: PackageDetails;
   flatRateDetails?: FlatRateDetails;

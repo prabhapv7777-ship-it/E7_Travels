@@ -32,6 +32,7 @@ import {
   Gauge,
   ShieldCheck,
   Wrench,
+  FileText,
 } from 'lucide-react';
 import { Vehicle, Expense, CompanyPayment } from '../types';
 import { formatMonth } from '../lib/dateUtils';
@@ -40,7 +41,7 @@ interface DashboardProps {
   vehicles: Vehicle[];
   expenses: Expense[];
   payments: CompanyPayment[];
-  onNavigate: (view: string, filter?: 'all' | 'running' | 'idle' | 'new') => void;
+  onNavigate: (view: string, filter?: 'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted') => void;
 }
 
 export default function Dashboard({ vehicles, expenses, payments, onNavigate }: DashboardProps) {
@@ -51,6 +52,7 @@ export default function Dashboard({ vehicles, expenses, payments, onNavigate }: 
   const totalVehicles = vehicles.length;
   const runningVehicles = vehicles.filter((v) => v.status === 'Active').length;
   const idleVehicles = totalVehicles - runningVehicles;
+  const docPendingCount = vehicles.filter((v) => !v.officeDocSubmitted).length;
   
   const newVehiclesThisMonth = vehicles.filter((v) => {
     return v.joiningDate && v.joiningDate.startsWith(currentMonth);
@@ -141,6 +143,7 @@ export default function Dashboard({ vehicles, expenses, payments, onNavigate }: 
   const kpis = [
     { id: 'total-vehicles', title: 'Total Vehicles', value: totalVehicles, icon: Car, bg: 'bg-blue-50 text-blue-600 border-blue-100', nav: 'Vehicle Master', filter: 'all' as const },
     { id: 'running-vehicles', title: 'Running Vehicles', value: runningVehicles, icon: CheckCircle, bg: 'bg-green-50 text-green-600 border-green-100', nav: 'Vehicle Master', filter: 'running' as const },
+    { id: 'doc-pending-vehicles', title: 'Office Doc Pending', value: docPendingCount, icon: FileText, bg: 'bg-rose-50 text-rose-700 border-rose-200', nav: 'Vehicle Master', filter: 'doc_pending' as const },
     { id: 'idle-vehicles', title: 'Inactive Vehicles', value: idleVehicles, icon: AlertTriangle, bg: 'bg-amber-50 text-amber-600 border-amber-100', nav: 'Vehicle Master', filter: 'idle' as const },
     { id: 'new-vehicles', title: 'New (This Month)', value: newVehiclesThisMonth, icon: Sparkles, bg: 'bg-purple-50 text-purple-600 border-purple-100', nav: 'Vehicle Master', filter: 'new' as const },
     { id: 'total-billing', title: 'Total Billing', value: formatCurrency(totalBilling), icon: DollarSign, bg: 'bg-blue-50 text-blue-700 border-blue-200', nav: 'Company Payments' },

@@ -754,21 +754,46 @@ export default function SettlementViews({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-2xs font-semibold text-slate-700">
-                  {settlementList.map((row) => (
-                    <tr key={row.vehicle} className="hover:bg-slate-50/20">
-                      <td className="py-2.5 px-4 font-mono font-bold text-slate-800">{row.vehicle}</td>
-                      <td className="py-2.5 px-4 text-slate-600 truncate max-w-[110px]">{row.owner}</td>
-                      <td className="py-2.5 px-4 text-right text-emerald-600">{formatCurrency(row.billing)}</td>
-                      <td className="py-2.5 px-4 text-right text-rose-500">{formatCurrency(row.cng + row.fuel)}</td>
-                      <td className="py-2.5 px-4 text-right text-rose-500">{formatCurrency(row.emi)}</td>
-                      <td className="py-2.5 px-4 text-right text-rose-500">{formatCurrency(row.fastag)}</td>
-                      <td className="py-2.5 px-4 text-right text-rose-500">{formatCurrency(row.advance)}</td>
-                      <td className="py-2.5 px-4 text-right text-rose-500">{formatCurrency(row.repair + row.service)}</td>
-                      <td className="py-2.5 px-4 text-right text-rose-500">{formatCurrency(row.penalty)}</td>
-                      <td className="py-2.5 px-4 text-right text-rose-600 font-bold">{formatCurrency(row.totalDeductions)}</td>
-                      <td className="py-2.5 px-4 text-right text-blue-700 font-extrabold">{formatCurrency(row.netPayable)}</td>
-                    </tr>
-                  ))}
+                  {settlementList.map((row) => {
+                    const matchedVeh = vehicles.find((v) => v.registrationNumber === row.vehicle);
+                    const isGpsHeld = matchedVeh?.status === 'Inactive' && (!!matchedVeh.gpsVendor || !!matchedVeh.gpsImei || !!matchedVeh.gpsFittingDate) && !matchedVeh.gpsReturned;
+
+                    return (
+                      <tr key={row.vehicle} className={`hover:bg-slate-50/20 ${isGpsHeld ? 'bg-rose-50/50' : ''}`}>
+                        <td className="py-2.5 px-4 font-mono font-bold text-slate-800">
+                          <div className="flex flex-col gap-0.5">
+                            <span>{row.vehicle}</span>
+                            {isGpsHeld && (
+                              <span className="text-[9px] font-extrabold text-rose-800 bg-rose-100 px-1.5 py-0.5 rounded border border-rose-300 uppercase tracking-tight flex items-center gap-1 w-fit animate-pulse">
+                                🚨 GPS Hold (Unreturned)
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-4 text-slate-600 truncate max-w-[110px]">{row.owner}</td>
+                        <td className="py-2.5 px-4 text-right text-emerald-600">{formatCurrency(row.billing)}</td>
+                        <td className="py-2.5 px-4 text-right text-rose-500">{formatCurrency(row.cng + row.fuel)}</td>
+                        <td className="py-2.5 px-4 text-right text-rose-500">{formatCurrency(row.emi)}</td>
+                        <td className="py-2.5 px-4 text-right text-rose-500">{formatCurrency(row.fastag)}</td>
+                        <td className="py-2.5 px-4 text-right text-rose-500">{formatCurrency(row.advance)}</td>
+                        <td className="py-2.5 px-4 text-right text-rose-500">{formatCurrency(row.repair + row.service)}</td>
+                        <td className="py-2.5 px-4 text-right text-rose-500">{formatCurrency(row.penalty)}</td>
+                        <td className="py-2.5 px-4 text-right text-rose-600 font-bold">{formatCurrency(row.totalDeductions)}</td>
+                        <td className="py-2.5 px-4 text-right">
+                          {isGpsHeld ? (
+                            <div className="flex flex-col items-end">
+                              <span className="line-through text-slate-400 text-[10px]">{formatCurrency(row.netPayable)}</span>
+                              <span className="text-rose-700 font-extrabold text-3xs bg-rose-100 px-1.5 py-0.5 rounded border border-rose-300 uppercase tracking-tight">
+                                ₹0 (PAYMENT HELD)
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-blue-700 font-extrabold">{formatCurrency(row.netPayable)}</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
 
                   {/* Consolidated Summary */}
                   <tr className="bg-slate-100 font-bold text-xs text-slate-800">

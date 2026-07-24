@@ -132,6 +132,12 @@ export default function TransactionViews({
     }
 
     const matchedVehicle = vehicles.find((v) => v.registrationNumber === weeklyVehicle);
+
+    if (matchedVehicle?.status === 'Inactive' && (!!matchedVehicle.gpsVendor || !!matchedVehicle.gpsImei || !!matchedVehicle.gpsFittingDate) && !matchedVehicle.gpsReturned) {
+      alert(`🚨 PAYMENT BLOCKED: Vehicle ${weeklyVehicle} is INACTIVE and has an installed GPS unit (${matchedVehicle.gpsVendor || 'GPS'}) that has NOT been returned. Return GPS in Master Register to release payment hold.`);
+      return;
+    }
+
     const company = matchedVehicle ? matchedVehicle.company : 'Direct Client';
 
     const serviceCharge = Math.round(weeklyGross * 0.05);
@@ -979,6 +985,24 @@ export default function TransactionViews({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             {/* Form Inputs */}
             <form onSubmit={handlePostWeeklyPayment} className="lg:col-span-7 space-y-4">
+              {(() => {
+                const selectedVeh = vehicles.find((v) => v.registrationNumber === weeklyVehicle);
+                const isGpsHold = selectedVeh?.status === 'Inactive' && (!!selectedVeh.gpsVendor || !!selectedVeh.gpsImei || !!selectedVeh.gpsFittingDate) && !selectedVeh.gpsReturned;
+                if (!isGpsHold || !selectedVeh) return null;
+                return (
+                  <div className="p-3.5 bg-rose-50 border border-rose-300 rounded-xl text-rose-900 text-xs flex items-start gap-2.5 animate-pulse text-left">
+                    <AlertTriangle className="h-5 w-5 text-rose-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="font-extrabold uppercase text-2xs tracking-wide text-rose-900">
+                        🚨 PAYMENT BLOCKED: GPS DEVICE PENDING RETURN
+                      </p>
+                      <p className="text-[11px] leading-relaxed opacity-90">
+                        Vehicle <strong className="font-mono">{selectedVeh.registrationNumber}</strong> is currently set to <strong className="uppercase">Inactive</strong> and has an installed GPS hardware device (<strong className="font-bold">{selectedVeh.gpsVendor || 'GPS'}</strong>, IMEI: {selectedVeh.gpsImei || 'N/A'}) that has NOT been returned. As per company rules, payment posting for this vehicle is on hold until the GPS unit is returned in Master Register.
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Select Vehicle *</label>

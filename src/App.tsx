@@ -678,10 +678,10 @@ export default function App() {
   // Layout & Navigation State
   const [activeTab, setActiveTab] = useState<'Dashboard' | 'Enquiries' | 'Induction' | 'Registers' | 'Transactions' | 'Ledgers' | 'Settlement' | 'Reports' | 'Tariff' | 'VBA Export' | 'Settings' | 'Rules' | 'Documents'>('Dashboard');
   const [activeSubTab, setActiveSubTab] = useState<string>('Vehicle Master');
-  const [vehicleFilter, setVehicleFilter] = useState<'all' | 'running' | 'idle' | 'new'>('all');
+  const [vehicleFilter, setVehicleFilter] = useState<'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted' | 'gps_hold'>('all');
 
   // Unified Navigation Router
-  const handleNavigate = (route: string, filter?: 'all' | 'running' | 'idle' | 'new') => {
+  const handleNavigate = (route: string, filter?: 'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted' | 'gps_hold') => {
     if (filter) {
       setVehicleFilter(filter);
     } else if (route === 'Vehicle Master') {

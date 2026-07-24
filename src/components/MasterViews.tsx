@@ -21,6 +21,9 @@ import {
   Car,
   Printer,
   MessageSquare,
+  FileCheck,
+  CheckCircle2,
+  Radio,
 } from 'lucide-react';
 import {
   Vehicle,
@@ -37,6 +40,7 @@ import {
 import { formatDate, toInputDateFormat } from '../lib/dateUtils';
 import PrintJoiningForm from './PrintJoiningForm';
 import PrintVehicleReport from './PrintVehicleReport';
+import PrintLetterpadSubmissionSlip from './PrintLetterpadSubmissionSlip';
 import { getVendorBadge, VENDOR_SITE_MAP } from './Settings';
 
 interface MasterViewsProps {
@@ -46,8 +50,8 @@ interface MasterViewsProps {
   companies: Company[];
   sites: Site[];
   activeSubView: 'Vehicle Master' | 'Owner Master' | 'Driver Master' | 'Company Master' | 'Site Master' | 'Vendor Register';
-  vehicleFilter?: 'all' | 'running' | 'idle' | 'new';
-  onSetVehicleFilter?: (filter: 'all' | 'running' | 'idle' | 'new') => void;
+  vehicleFilter?: 'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted' | 'gps_hold';
+  onSetVehicleFilter?: (filter: 'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted' | 'gps_hold') => void;
   onUpdateVehicles: (v: Vehicle[]) => void;
   onUpdateOwners: (o: Owner[]) => void;
   onUpdateDrivers: (d: Driver[]) => void;
@@ -78,6 +82,38 @@ export default function MasterViews({
   const [showPrintVehicleReport, setShowPrintVehicleReport] = useState(false);
   const [selectedVendorForFleet, setSelectedVendorForFleet] = useState<string | null>(null);
   const [vendorModalSearch, setVendorModalSearch] = useState('');
+  
+  // Office Document Submission & Letterpad Modal States
+  const [docModalVehicle, setDocModalVehicle] = useState<Vehicle | null>(null);
+  const [docModalForm, setDocModalForm] = useState({
+    officeDocSubmitted: false,
+    officeDocSubmitDate: new Date().toISOString().substring(0, 10),
+    officeDocVendorCompany: '',
+    officeDocLetterpadRef: '',
+    officeDocRemarks: '',
+    officeDocChecklist: {
+      rc: true,
+      insurance: true,
+      permit: true,
+      pollution: true,
+      aadhaarCard: true,
+      policeVerification: true,
+      drivingLicense: true,
+      medicalCertificate: true,
+    },
+  });
+  const [showPrintLetterpadModal, setShowPrintLetterpadModal] = useState<Vehicle | null>(null);
+
+  // GPS Device Removal & Payment Release Modal States
+  const [gpsModalVehicle, setGpsModalVehicle] = useState<Vehicle | null>(null);
+  const [gpsModalForm, setGpsModalForm] = useState({
+    gpsVendor: '',
+    gpsImei: '',
+    gpsReturned: false,
+    gpsReturnDate: new Date().toISOString().substring(0, 10),
+    gpsReturnedBy: 'Office Admin',
+    gpsReturnRemarks: '',
+  });
   const [activeCommentTarget, setActiveCommentTarget] = useState<{
     id: string;
     name: string;
@@ -178,7 +214,16 @@ export default function MasterViews({
     const perDiff = getDaysDiff(v.permitExpiry);
     const fcDiff = getDaysDiff(v.fcExpiry);
 
-    if (v.status === 'Inactive') return { label: 'Inactive', color: 'bg-slate-100 text-slate-700 border-slate-300' };
+    if (v.status === 'Inactive') {
+      const hasGps = !!(v.gpsVendor || v.gpsImei || v.gpsFittingDate);
+      if (hasGps && !v.gpsReturned) {
+        return { label: '🚨 Payment Held (GPS Pending Return)', color: 'bg-rose-100 text-rose-900 border-rose-400 font-extrabold animate-pulse' };
+      }
+      if (hasGps && v.gpsReturned) {
+        return { label: 'Inactive (GPS Returned)', color: 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold' };
+      }
+      return { label: 'Inactive', color: 'bg-slate-100 text-slate-700 border-slate-300' };
+    }
     if (emiDiff < 0) return { label: 'Overdue EMI', color: 'bg-rose-100 text-rose-800 border-rose-300 animate-pulse' };
     if (insDiff >= 0 && insDiff <= 30) return { label: 'Insurance Expiring', color: 'bg-orange-100 text-orange-800 border-orange-300' };
     if (perDiff >= 0 && perDiff <= 30) return { label: 'Permit Expiring', color: 'bg-amber-100 text-amber-800 border-amber-300' };
@@ -301,6 +346,19 @@ export default function MasterViews({
       fastagNumber: vehicleForm.fastagNumber || '',
       remarks: vehicleForm.remarks || '',
       paymentCycle: vehicleForm.paymentCycle || 'Monthly',
+      officeDocSubmitted: vehicleForm.officeDocSubmitted || false,
+      officeDocSubmitDate: vehicleForm.officeDocSubmitDate || '',
+      officeDocVendorCompany: vehicleForm.officeDocVendorCompany || vehicleForm.company || '',
+      officeDocLetterpadRef: vehicleForm.officeDocLetterpadRef || '',
+      officeDocRemarks: vehicleForm.officeDocRemarks || '',
+      officeDocChecklist: vehicleForm.officeDocChecklist,
+      gpsVendor: vehicleForm.gpsVendor || '',
+      gpsImei: vehicleForm.gpsImei || '',
+      gpsFittingDate: vehicleForm.gpsFittingDate || '',
+      gpsReturned: vehicleForm.status === 'Inactive' ? (vehicleForm.gpsReturned ?? false) : (vehicleForm.gpsReturned ?? true),
+      gpsReturnDate: vehicleForm.gpsReturnDate || '',
+      gpsReturnRemarks: vehicleForm.gpsReturnRemarks || '',
+      gpsReturnedBy: vehicleForm.gpsReturnedBy || '',
     };
 
     if (editingId) {
@@ -469,6 +527,15 @@ export default function MasterViews({
     if (vehicleFilter === 'new') {
       const currentMonth = '2026-07';
       return v.joiningDate && v.joiningDate.startsWith(currentMonth);
+    }
+    if (vehicleFilter === 'doc_pending') {
+      return !v.officeDocSubmitted;
+    }
+    if (vehicleFilter === 'doc_submitted') {
+      return !!v.officeDocSubmitted;
+    }
+    if (vehicleFilter === 'gps_hold') {
+      return v.status === 'Inactive' && (!!v.gpsVendor || !!v.gpsImei || !!v.gpsFittingDate) && !v.gpsReturned;
     }
     return true;
   });
@@ -751,15 +818,33 @@ export default function MasterViews({
       {activeSubView === 'Vehicle Master' && (
         <div className="px-6 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center gap-2">
           <span className="text-2xs font-extrabold text-slate-400 uppercase tracking-wider mr-2">Filter Fleet:</span>
-          {(['all', 'running', 'idle', 'new'] as const).map((f) => {
-            const label = f === 'all' ? 'Total Vehicles' : f === 'running' ? 'Running Vehicles' : f === 'idle' ? 'Inactive Vehicles' : 'New (This Month)';
+          {(['all', 'running', 'doc_pending', 'doc_submitted', 'gps_hold', 'idle', 'new'] as const).map((f) => {
+            const label = f === 'all' 
+              ? 'Total Vehicles' 
+              : f === 'running' 
+                ? 'Running Vehicles' 
+                : f === 'doc_pending'
+                  ? '📄 Office Doc Pending'
+                  : f === 'doc_submitted'
+                    ? '✅ Office Doc Submitted'
+                    : f === 'gps_hold'
+                      ? '🚨 GPS Payment Hold'
+                      : f === 'idle' 
+                        ? 'Inactive Vehicles' 
+                        : 'New (This Month)';
             const count = f === 'all' 
               ? vehicles.length 
               : f === 'running' 
                 ? vehicles.filter(v => v.status === 'Active').length 
-                : f === 'idle' 
-                  ? vehicles.filter(v => v.status !== 'Active').length 
-                  : vehicles.filter(v => v.joiningDate && v.joiningDate.startsWith('2026-07')).length;
+                : f === 'doc_pending'
+                  ? vehicles.filter(v => !v.officeDocSubmitted).length
+                  : f === 'doc_submitted'
+                    ? vehicles.filter(v => !!v.officeDocSubmitted).length
+                    : f === 'gps_hold'
+                      ? vehicles.filter(v => v.status === 'Inactive' && (!!v.gpsVendor || !!v.gpsImei || !!v.gpsFittingDate) && !v.gpsReturned).length
+                      : f === 'idle' 
+                        ? vehicles.filter(v => v.status !== 'Active').length 
+                        : vehicles.filter(v => v.joiningDate && v.joiningDate.startsWith('2026-07')).length;
             const isActive = vehicleFilter === f;
             return (
               <button
@@ -768,13 +853,25 @@ export default function MasterViews({
                 onClick={() => onSetVehicleFilter(f)}
                 className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all flex items-center gap-1.5 ${
                   isActive
-                    ? 'bg-blue-600 border-blue-600 text-white shadow-3xs'
-                    : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                    ? f === 'doc_pending' || f === 'gps_hold'
+                      ? 'bg-rose-600 border-rose-600 text-white shadow-3xs'
+                      : f === 'doc_submitted'
+                        ? 'bg-emerald-600 border-emerald-600 text-white shadow-3xs'
+                        : 'bg-blue-600 border-blue-600 text-white shadow-3xs'
+                    : f === 'gps_hold' && count > 0
+                      ? 'bg-rose-50 border-rose-200 text-rose-800 hover:bg-rose-100 font-bold animate-pulse'
+                      : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
                 }`}
               >
                 {label}
                 <span className={`px-1.5 py-0.5 rounded-full text-3xs font-bold ${
-                  isActive ? 'bg-blue-700 text-blue-100' : 'bg-slate-100 text-slate-500'
+                  isActive 
+                    ? 'bg-black/20 text-white' 
+                    : f === 'doc_pending' && count > 0 
+                      ? 'bg-rose-100 text-rose-700'
+                      : f === 'doc_submitted'
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-slate-100 text-slate-500'
                 }`}>
                   {count}
                 </span>
@@ -1111,6 +1208,131 @@ export default function MasterViews({
                   <option value="Monthly">Monthly Payment</option>
                   <option value="Weekly">Weekly Payment</option>
                 </select>
+              </div>
+
+              {/* GPS DEVICE CONFIGURATION & REMOVAL TRACKING */}
+              <div className="md:col-span-3 p-3 bg-indigo-50/60 border border-indigo-200 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-2xs font-extrabold text-indigo-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <Radio className="h-4 w-4 text-indigo-600" />
+                    GPS Tracking Hardware Details
+                  </span>
+                  {vehicleForm.gpsVendor && (
+                    <span className="text-[10px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded-md border border-indigo-200">
+                      GPS Installed ({vehicleForm.gpsVendor})
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-2xs font-bold text-slate-700 mb-1">GPS Vendor / Provider</label>
+                    <input
+                      id="field-gpsVendor"
+                      type="text"
+                      placeholder="e.g. Autoplant GPS, Fiesta GPS, Fleetx"
+                      value={vehicleForm.gpsVendor || ''}
+                      onChange={(e) => setVehicleForm({ ...vehicleForm, gpsVendor: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-2xs font-bold text-slate-700 mb-1">GPS Device IMEI No.</label>
+                    <input
+                      id="field-gpsImei"
+                      type="text"
+                      placeholder="15-digit IMEI number"
+                      value={vehicleForm.gpsImei || ''}
+                      onChange={(e) => setVehicleForm({ ...vehicleForm, gpsImei: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-2xs font-bold text-slate-700 mb-1">GPS Fitting Date</label>
+                    <input
+                      id="field-gpsFittingDate"
+                      type="date"
+                      value={vehicleForm.gpsFittingDate || ''}
+                      onChange={(e) => setVehicleForm({ ...vehicleForm, gpsFittingDate: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white"
+                    />
+                  </div>
+                </div>
+
+                {/* INACTIVE VEHICLE GPS REMOVAL PROTOCOL */}
+                {vehicleForm.status === 'Inactive' && (
+                  <div className={`p-3 rounded-lg border text-xs space-y-2.5 transition-all ${
+                    !vehicleForm.gpsReturned && (vehicleForm.gpsVendor || vehicleForm.gpsImei)
+                      ? 'bg-rose-50 border-rose-300 text-rose-900'
+                      : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                  }`}>
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className={`h-4 w-4 shrink-0 mt-0.5 ${!vehicleForm.gpsReturned ? 'text-rose-600 animate-bounce' : 'text-emerald-600'}`} />
+                      <div className="flex-1">
+                        <p className="font-extrabold uppercase tracking-wide text-2xs">
+                          {!vehicleForm.gpsReturned ? '🚨 Payment Held - GPS Device Removal & Return Required' : '✅ GPS Device Returned & Payment Unblocked'}
+                        </p>
+                        <p className="text-[11px] opacity-90 mt-0.5">
+                          {!vehicleForm.gpsReturned
+                            ? 'Vehicle is set to Inactive. As per company rules, the installed GPS unit must be removed and returned to the office. Payments will remain ON HOLD until GPS return is recorded.'
+                            : 'GPS device removal has been verified and recorded. Vehicle payments can proceed as per policy.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200/60">
+                      <label className="sm:col-span-3 flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-300 cursor-pointer hover:bg-slate-50">
+                        <input
+                          type="checkbox"
+                          checked={!!vehicleForm.gpsReturned}
+                          onChange={(e) => setVehicleForm({
+                            ...vehicleForm,
+                            gpsReturned: e.target.checked,
+                            gpsReturnDate: e.target.checked ? (vehicleForm.gpsReturnDate || new Date().toISOString().substring(0, 10)) : ''
+                          })}
+                          className="h-4 w-4 text-indigo-600 rounded cursor-pointer"
+                        />
+                        <span className="font-bold text-slate-800 text-2xs uppercase">
+                          Confirm: GPS Hardware Unit Removed and Handed Over to Office
+                        </span>
+                      </label>
+
+                      {vehicleForm.gpsReturned && (
+                        <>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">GPS Return Date</label>
+                            <input
+                              type="date"
+                              value={vehicleForm.gpsReturnDate || ''}
+                              onChange={(e) => setVehicleForm({ ...vehicleForm, gpsReturnDate: e.target.value })}
+                              className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-md bg-white font-mono"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Received / Handled By</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Office Admin / Garage Manager"
+                              value={vehicleForm.gpsReturnedBy || ''}
+                              onChange={(e) => setVehicleForm({ ...vehicleForm, gpsReturnedBy: e.target.value })}
+                              className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-md bg-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Return Remarks</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Handed over device at Navalur office"
+                              value={vehicleForm.gpsReturnRemarks || ''}
+                              onChange={(e) => setVehicleForm({ ...vehicleForm, gpsReturnRemarks: e.target.value })}
+                              className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-md bg-white"
+                            />
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="md:col-span-3">
                 <button
@@ -1600,6 +1822,7 @@ export default function MasterViews({
                 <th className="py-3.5 px-4">Owner Name</th>
                 <th className="py-3.5 px-4">Client</th>
                 <th className="py-3.5 px-4">Cycle</th>
+                <th className="py-3.5 px-4 text-center">Office Doc (Letterpad)</th>
                 <th className="py-3.5 px-4 text-center">Status Flag</th>
                 <th className="py-3.5 px-4 text-center">Actions</th>
               </tr>
@@ -1655,12 +1878,121 @@ export default function MasterViews({
                       </span>
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <span className={`inline-flex items-center justify-center px-3 py-1 text-2xs font-bold rounded-full border ${badge.color} leading-none align-middle`}>
-                        {badge.label}
-                      </span>
+                      {v.officeDocSubmitted ? (
+                        <div className="flex flex-col items-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDocModalVehicle(v);
+                              setDocModalForm({
+                                officeDocSubmitted: true,
+                                officeDocSubmitDate: v.officeDocSubmitDate || new Date().toISOString().substring(0, 10),
+                                officeDocVendorCompany: v.officeDocVendorCompany || v.company || '',
+                                officeDocLetterpadRef: v.officeDocLetterpadRef || '',
+                                officeDocRemarks: v.officeDocRemarks || '',
+                                officeDocChecklist: {
+                                  rc: v.officeDocChecklist?.rc ?? true,
+                                  insurance: v.officeDocChecklist?.insurance ?? true,
+                                  permit: v.officeDocChecklist?.permit ?? true,
+                                  pollution: v.officeDocChecklist?.pollution ?? true,
+                                  aadhaarCard: v.officeDocChecklist?.aadhaarCard ?? true,
+                                  policeVerification: v.officeDocChecklist?.policeVerification ?? true,
+                                  drivingLicense: v.officeDocChecklist?.drivingLicense ?? true,
+                                  medicalCertificate: v.officeDocChecklist?.medicalCertificate ?? true,
+                                },
+                              });
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-extrabold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-full transition-colors cursor-pointer shadow-3xs"
+                            title={`Submitted to ${v.officeDocVendorCompany || v.company || 'Office'} on ${v.officeDocSubmitDate || 'N/A'}`}
+                          >
+                            <FileCheck className="h-3 w-3 text-emerald-600" />
+                            <span>Submitted</span>
+                          </button>
+                          {v.officeDocLetterpadRef && (
+                            <span className="text-[9px] font-mono font-bold text-slate-500">
+                              {v.officeDocLetterpadRef}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDocModalVehicle(v);
+                              setDocModalForm({
+                                officeDocSubmitted: false,
+                                officeDocSubmitDate: new Date().toISOString().substring(0, 10),
+                                officeDocVendorCompany: v.officeDocVendorCompany || v.company || 'Fiesta',
+                                officeDocLetterpadRef: `LP-${(v.company || 'OFFICE').replace(/[^A-Z]/gi, '').slice(0, 6).toUpperCase()}-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+                                officeDocRemarks: 'Document package and letterpad pending for vendor office submission.',
+                                officeDocChecklist: {
+                                  rc: v.officeDocChecklist?.rc ?? true,
+                                  insurance: v.officeDocChecklist?.insurance ?? true,
+                                  permit: v.officeDocChecklist?.permit ?? true,
+                                  pollution: v.officeDocChecklist?.pollution ?? true,
+                                  aadhaarCard: v.officeDocChecklist?.aadhaarCard ?? true,
+                                  policeVerification: v.officeDocChecklist?.policeVerification ?? true,
+                                  drivingLicense: v.officeDocChecklist?.drivingLicense ?? true,
+                                  medicalCertificate: v.officeDocChecklist?.medicalCertificate ?? true,
+                                },
+                              });
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-300 rounded-full transition-colors cursor-pointer animate-pulse shadow-3xs"
+                            title="Click to record Office Document Submission"
+                          >
+                            <AlertTriangle className="h-3 w-3 text-rose-600" />
+                            <span>Doc Pending</span>
+                          </button>
+                          <span className="text-[9px] text-slate-400">Letterpad Req</span>
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-3 px-4 text-center">
+                      <div className="flex flex-col items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (v.status === 'Inactive' && (v.gpsVendor || v.gpsImei || v.gpsFittingDate)) {
+                              setGpsModalVehicle(v);
+                              setGpsModalForm({
+                                gpsVendor: v.gpsVendor || '',
+                                gpsImei: v.gpsImei || '',
+                                gpsReturned: !!v.gpsReturned,
+                                gpsReturnDate: v.gpsReturnDate || new Date().toISOString().substring(0, 10),
+                                gpsReturnedBy: v.gpsReturnedBy || 'Office Admin',
+                                gpsReturnRemarks: v.gpsReturnRemarks || '',
+                              });
+                            }
+                          }}
+                          className={`inline-flex items-center justify-center px-3 py-1 text-2xs font-bold rounded-full border ${badge.color} leading-none align-middle ${
+                            v.status === 'Inactive' && (v.gpsVendor || v.gpsImei || v.gpsFittingDate) ? 'cursor-pointer hover:scale-105 transition-transform shadow-3xs' : ''
+                          }`}
+                          title={v.status === 'Inactive' && (v.gpsVendor || v.gpsImei || v.gpsFittingDate) ? 'Click to manage GPS Device Return & Payment Release' : undefined}
+                        >
+                          {badge.label}
+                        </button>
+                        
+                        {(v.gpsVendor || v.gpsImei) && (
+                          <span className={`text-[9px] font-mono flex items-center gap-0.5 ${
+                            v.status === 'Inactive' && !v.gpsReturned ? 'text-rose-600 font-extrabold' : 'text-slate-500'
+                          }`}>
+                            <Radio className="h-2.5 w-2.5 text-indigo-500 inline shrink-0" />
+                            {v.gpsVendor || 'GPS'} {v.status === 'Inactive' ? (v.gpsReturned ? '(Returned)' : '🚨 HELD') : ''}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="py-3 px-4 text-center">
                       <div className="flex items-center justify-center gap-2">
+                        <button
+                          id={`btn-letterpad-slip-${v.id}`}
+                          onClick={() => setShowPrintLetterpadModal(v)}
+                          className="p-1 hover:bg-indigo-50 text-indigo-600 rounded cursor-pointer"
+                          title="Print Vendor Office Letterpad Submission Slip"
+                        >
+                          <FileCheck className="h-4 w-4" />
+                        </button>
                         <button
                           id={`btn-comments-vehicle-${v.id}`}
                           onClick={() => setActiveCommentTarget({
@@ -2485,6 +2817,393 @@ export default function MasterViews({
             </div>
           </div>
         </div>
+      )}
+
+      {/* OFFICE DOCUMENT & LETTERPAD SUBMISSION MANAGER MODAL */}
+      {docModalVehicle && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-8">
+            <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-indigo-500/20 text-indigo-300 rounded-xl border border-indigo-500/30">
+                  <FileCheck className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold tracking-wide uppercase">
+                    Office Document & Letterpad Tracking
+                  </h3>
+                  <p className="text-2xs text-slate-400 font-mono">
+                    {docModalVehicle.registrationNumber} &bull; {docModalVehicle.manufacturer} {docModalVehicle.model}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDocModalVehicle(null)}
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+              >
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const updatedVehicles = vehicles.map((v) => {
+                  if (v.id === docModalVehicle.id) {
+                    return {
+                      ...v,
+                      officeDocSubmitted: docModalForm.officeDocSubmitted,
+                      officeDocSubmitDate: docModalForm.officeDocSubmitDate,
+                      officeDocVendorCompany: docModalForm.officeDocVendorCompany || v.company,
+                      officeDocLetterpadRef: docModalForm.officeDocLetterpadRef,
+                      officeDocRemarks: docModalForm.officeDocRemarks,
+                      officeDocChecklist: docModalForm.officeDocChecklist,
+                    };
+                  }
+                  return v;
+                });
+                onUpdateVehicles(updatedVehicles);
+                setDocModalVehicle(null);
+              }}
+              className="p-6 space-y-4"
+            >
+              {/* Submission Toggle */}
+              <div className="p-4 rounded-xl border border-indigo-200 bg-indigo-50/50 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-black text-slate-900 block">
+                    Office Document Submission Status
+                  </span>
+                  <span className="text-2xs text-slate-600">
+                    Has vehicle document package been submitted on letterpad to vendor company?
+                  </span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={docModalForm.officeDocSubmitted}
+                    onChange={(e) =>
+                      setDocModalForm({ ...docModalForm, officeDocSubmitted: e.target.checked })
+                    }
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                </label>
+              </div>
+
+              {/* Vendor Company Name */}
+              <div>
+                <label className="block text-2xs font-extrabold text-slate-700 uppercase mb-1">
+                  Target Vendor / Client Company Name (e.g. Fiesta, Eco Mobility, TCS)
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Fiesta / Eco Mobility"
+                  value={docModalForm.officeDocVendorCompany}
+                  onChange={(e) =>
+                    setDocModalForm({ ...docModalForm, officeDocVendorCompany: e.target.value })
+                  }
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-white font-semibold text-slate-800"
+                />
+              </div>
+
+              {/* Letterpad Ref & Date Grid */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-2xs font-extrabold text-slate-700 uppercase mb-1">
+                    Company Letterpad Ref / Memo No
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. LP-FIESTA-2026-001"
+                    value={docModalForm.officeDocLetterpadRef}
+                    onChange={(e) =>
+                      setDocModalForm({ ...docModalForm, officeDocLetterpadRef: e.target.value })
+                    }
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-white font-mono font-bold text-indigo-900"
+                  />
+                </div>
+                <div>
+                  <label className="block text-2xs font-extrabold text-slate-700 uppercase mb-1">
+                    Office Submission Date
+                  </label>
+                  <input
+                    type="date"
+                    value={docModalForm.officeDocSubmitDate}
+                    onChange={(e) =>
+                      setDocModalForm({ ...docModalForm, officeDocSubmitDate: e.target.value })
+                    }
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-white font-semibold"
+                  />
+                </div>
+              </div>
+
+              {/* Document Checklist Section */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <label className="block text-2xs font-black text-slate-800 uppercase tracking-wider">
+                  Checklist of Enclosed Documents (Letterpad Submission Package)
+                </label>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  {[
+                    { key: 'rc', label: 'RC (Registration Certificate)' },
+                    { key: 'insurance', label: 'INSURANCE' },
+                    { key: 'permit', label: 'PERMIT' },
+                    { key: 'pollution', label: 'POLLUTION' },
+                    { key: 'aadhaarCard', label: 'AADHAAR CARD' },
+                    { key: 'policeVerification', label: 'POLICE VERIFICATION' },
+                    { key: 'drivingLicense', label: 'DRIVING LICENSE' },
+                    { key: 'medicalCertificate', label: 'MEDICAL CERTIFICATE' },
+                  ].map((doc) => (
+                    <label key={doc.key} className="flex items-center gap-2 p-1.5 bg-white border border-slate-200 rounded-lg cursor-pointer hover:bg-indigo-50/50 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={(docModalForm.officeDocChecklist as any)[doc.key] ?? true}
+                        onChange={(e) => setDocModalForm({
+                          ...docModalForm,
+                          officeDocChecklist: {
+                            ...docModalForm.officeDocChecklist,
+                            [doc.key]: e.target.checked
+                          }
+                        })}
+                        className="h-3.5 w-3.5 text-indigo-600 rounded cursor-pointer"
+                      />
+                      <span className="text-2xs font-bold text-slate-800 uppercase">{doc.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Remarks */}
+              <div>
+                <label className="block text-2xs font-extrabold text-slate-700 uppercase mb-1">
+                  Submission Notes / Office Acknowledgement
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="e.g. Documents submitted with official letterpad signed by Fiesta transport head."
+                  value={docModalForm.officeDocRemarks}
+                  onChange={(e) =>
+                    setDocModalForm({ ...docModalForm, officeDocRemarks: e.target.value })
+                  }
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-white"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPrintLetterpadModal({
+                      ...docModalVehicle,
+                      officeDocSubmitted: docModalForm.officeDocSubmitted,
+                      officeDocSubmitDate: docModalForm.officeDocSubmitDate,
+                      officeDocVendorCompany: docModalForm.officeDocVendorCompany || docModalVehicle.company,
+                      officeDocLetterpadRef: docModalForm.officeDocLetterpadRef,
+                      officeDocRemarks: docModalForm.officeDocRemarks,
+                      officeDocChecklist: docModalForm.officeDocChecklist,
+                    });
+                  }}
+                  className="px-3.5 py-2 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-3xs"
+                >
+                  <Printer className="h-4 w-4 text-indigo-600" />
+                  Print Letterpad Slip
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDocModalVehicle(null)}
+                    className="px-4 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs transition-colors cursor-pointer"
+                  >
+                    Save Status
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* GPS DEVICE REMOVAL & PAYMENT RELEASE MANAGER MODAL */}
+      {gpsModalVehicle && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-8">
+            <div className={`px-6 py-4 flex items-center justify-between border-b text-white ${
+              !gpsModalForm.gpsReturned ? 'bg-rose-900 border-rose-800' : 'bg-emerald-900 border-emerald-800'
+            }`}>
+              <div className="flex items-center gap-2.5">
+                <div className={`p-2 rounded-xl border ${
+                  !gpsModalForm.gpsReturned ? 'bg-rose-800/80 text-rose-200 border-rose-700' : 'bg-emerald-800/80 text-emerald-200 border-emerald-700'
+                }`}>
+                  <Radio className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold tracking-wide uppercase flex items-center gap-1.5">
+                    {!gpsModalForm.gpsReturned ? '🚨 GPS Device Return & Payment Hold Manager' : '✅ GPS Device Return Verified'}
+                  </h3>
+                  <p className="text-2xs opacity-80 font-mono">
+                    {gpsModalVehicle.registrationNumber} &bull; Owner: {gpsModalVehicle.ownerName} &bull; Status: {gpsModalVehicle.status}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGpsModalVehicle(null)}
+                className="p-1.5 text-slate-300 hover:text-white hover:bg-black/20 rounded-lg transition-colors cursor-pointer"
+              >
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const updatedVehicles = vehicles.map((v) => {
+                  if (v.id === gpsModalVehicle.id) {
+                    return {
+                      ...v,
+                      gpsVendor: gpsModalForm.gpsVendor || v.gpsVendor,
+                      gpsImei: gpsModalForm.gpsImei || v.gpsImei,
+                      gpsReturned: gpsModalForm.gpsReturned,
+                      gpsReturnDate: gpsModalForm.gpsReturned ? gpsModalForm.gpsReturnDate : '',
+                      gpsReturnedBy: gpsModalForm.gpsReturnedBy,
+                      gpsReturnRemarks: gpsModalForm.gpsReturnRemarks,
+                    };
+                  }
+                  return v;
+                });
+                onUpdateVehicles(updatedVehicles);
+                setGpsModalVehicle(null);
+              }}
+              className="p-6 space-y-4"
+            >
+              {/* Rule Banner */}
+              <div className={`p-3.5 rounded-xl border text-xs space-y-1.5 ${
+                !gpsModalForm.gpsReturned
+                  ? 'bg-rose-50 border-rose-200 text-rose-900'
+                  : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              }`}>
+                <div className="flex items-center gap-2 font-extrabold uppercase text-2xs">
+                  <AlertTriangle className={`h-4 w-4 shrink-0 ${!gpsModalForm.gpsReturned ? 'text-rose-600 animate-bounce' : 'text-emerald-600'}`} />
+                  <span>Company Rule: GPS Return on Vehicle Deactivation</span>
+                </div>
+                <p className="text-[11px] leading-relaxed">
+                  "If any vehicle goes to Inactive state and has an installed GPS unit, the GPS device MUST be removed and returned to the office. Until GPS device return is recorded, vehicle payment payout processing remains ON HOLD."
+                </p>
+              </div>
+
+              {/* Hardware Info Summary */}
+              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700">
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold block uppercase">Installed GPS Vendor</span>
+                  <span className="font-bold text-slate-900">{gpsModalForm.gpsVendor || gpsModalVehicle.gpsVendor || 'Autoplant GPS'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold block uppercase">Device IMEI Number</span>
+                  <span className="font-mono font-bold text-slate-900">{gpsModalForm.gpsImei || gpsModalVehicle.gpsImei || 'N/A'}</span>
+                </div>
+              </div>
+
+              {/* Toggle Return Checkbox */}
+              <label className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
+                gpsModalForm.gpsReturned ? 'bg-emerald-50 border-emerald-300 ring-2 ring-emerald-400/20' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+              }`}>
+                <input
+                  type="checkbox"
+                  checked={gpsModalForm.gpsReturned}
+                  onChange={(e) => setGpsModalForm({
+                    ...gpsModalForm,
+                    gpsReturned: e.target.checked,
+                    gpsReturnDate: e.target.checked ? (gpsModalForm.gpsReturnDate || new Date().toISOString().substring(0, 10)) : '',
+                  })}
+                  className="h-5 w-5 text-emerald-600 rounded cursor-pointer mt-0.5"
+                />
+                <div className="flex-1">
+                  <span className="text-xs font-black text-slate-900 block uppercase">
+                    GPS Device Hardware Removed & Handed Over to Office
+                  </span>
+                  <span className="text-2xs text-slate-600">
+                    Checking this box certifies that the physical GPS device has been removed from {gpsModalVehicle.registrationNumber} and returned to the company office/vendor. Payment processing will be RELEASED.
+                  </span>
+                </div>
+              </label>
+
+              {/* Return Form Details */}
+              {gpsModalForm.gpsReturned && (
+                <div className="space-y-3 p-3.5 bg-emerald-50/60 border border-emerald-200 rounded-xl text-left animate-in fade-in duration-200">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Return Received Date *</label>
+                      <input
+                        type="date"
+                        required
+                        value={gpsModalForm.gpsReturnDate}
+                        onChange={(e) => setGpsModalForm({ ...gpsModalForm, gpsReturnDate: e.target.value })}
+                        className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Handled / Received By *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Admin / Office Manager"
+                        value={gpsModalForm.gpsReturnedBy}
+                        onChange={(e) => setGpsModalForm({ ...gpsModalForm, gpsReturnedBy: e.target.value })}
+                        className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Return Remarks / Notes</label>
+                    <textarea
+                      rows={2}
+                      placeholder="e.g. GPS unit inspected and placed in office hardware store box #2."
+                      value={gpsModalForm.gpsReturnRemarks}
+                      onChange={(e) => setGpsModalForm({ ...gpsModalForm, gpsReturnRemarks: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setGpsModalVehicle(null)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className={`px-5 py-2 text-xs font-bold text-white rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    gpsModalForm.gpsReturned ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'
+                  }`}
+                >
+                  <CheckCircle className="h-4 w-4" />
+                  {gpsModalForm.gpsReturned ? 'Release Payment Hold & Save' : 'Save (Keep Payment Held)'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PRINT LETTERPAD SUBMISSION SLIP MODAL */}
+      {showPrintLetterpadModal && (
+        <PrintLetterpadSubmissionSlip
+          vehicle={showPrintLetterpadModal}
+          onClose={() => setShowPrintLetterpadModal(null)}
+        />
       )}
 
       {showPrintVehicleReport && (
