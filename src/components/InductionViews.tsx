@@ -983,6 +983,9 @@ export default function InductionViews({
             <div style="font-weight: 700; font-size: 12px;">${enq.driverName || 'N/A'}</div>
             <div style="font-size: 10px; color: #64748b; font-family: monospace;">${enq.driverPhone || 'N/A'}</div>
           </td>
+          <td style="padding: 10px 12px; font-size: 11px; font-weight: bold; color: #0f172a;">
+            📍 ${enq.driverArea || enq.driverAddress || 'N/A'}
+          </td>
           <td style="padding: 10px 12px; font-size: 11px; max-width: 180px;">${prefText}</td>
           <td style="padding: 10px 12px; font-family: monospace; font-size: 11px; font-weight: 700;">${formatDateDDMMYYYY(enq.inductionDate || enq.enquiryDate)}</td>
           <td style="padding: 10px 12px;">
@@ -1040,6 +1043,7 @@ export default function InductionViews({
               <th>CAR NO</th>
               <th>OWNER NAME & NUMBER</th>
               <th>DRIVER & NUMBER</th>
+              <th>LOCATION / AREA</th>
               <th>SITE PREFERENCE</th>
               <th>INDUCTION DATE</th>
               <th>STATUS</th>
@@ -1047,7 +1051,7 @@ export default function InductionViews({
             </tr>
           </thead>
           <tbody>
-            ${printRows || '<tr><td colspan="8" style="padding: 20px; text-align: center; color: #94a3b8;">No active induction records found.</td></tr>'}
+            ${printRows || '<tr><td colspan="9" style="padding: 20px; text-align: center; color: #94a3b8;">No active induction records found.</td></tr>'}
           </tbody>
         </table>
 
@@ -1300,6 +1304,7 @@ export default function InductionViews({
                 <th className="py-3 px-3">YEAR / MODEL</th>
                 <th className="py-3 px-3">OWNER NAME & NO</th>
                 <th className="py-3 px-3">DRIVER & NO</th>
+                <th className="py-3 px-3">LOCATION / AREA</th>
                 <th className="py-3 px-3">COMPANY PREFERENCE</th>
                 <th className="py-3 px-3">INDUCTION DATE</th>
                 <th className="py-3 px-3">INDUCTION HIGHLIGHT</th>
@@ -1309,7 +1314,7 @@ export default function InductionViews({
             <tbody className="divide-y divide-slate-100 text-2xs font-semibold text-slate-700">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-slate-400 font-bold">
+                  <td colSpan={11} className="py-12 text-center text-slate-400 font-bold">
                     No active induction records found.
                   </td>
                 </tr>
@@ -1374,6 +1379,21 @@ export default function InductionViews({
                           ) : (
                             <span className="text-[10px] text-slate-400 italic mt-0.5">No phone</span>
                           )}
+                        </div>
+                      </td>
+                      <td className="py-3 px-3">
+                        <div className="flex items-center gap-1.5 min-w-[120px]">
+                          <MapPin className="h-3.5 w-3.5 text-rose-500 shrink-0" />
+                          <div className="flex flex-col">
+                            <span className="font-bold text-slate-800 text-xs truncate max-w-[140px]" title={enq.driverArea || enq.driverAddress || 'N/A'}>
+                              {enq.driverArea || enq.driverAddress || 'N/A'}
+                            </span>
+                            {enq.driverArea && enq.driverAddress && (
+                              <span className="text-[9px] text-slate-400 truncate max-w-[130px]" title={enq.driverAddress}>
+                                {enq.driverAddress}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td className="py-3 px-3">
