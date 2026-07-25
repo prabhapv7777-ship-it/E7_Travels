@@ -32,6 +32,9 @@ interface SettingsProps {
   onUpdateSites: (s: Site[]) => void;
   onForceSync: () => void;
   onExportToSheets?: () => void;
+  onSmartMerge?: () => void;
+  onExportBackupJSON?: () => void;
+  onImportBackupJSON?: (data: any) => void;
   customLogo: string | null;
   onUpdateLogo: (logo: string | null) => void;
   onUpdateSpreadsheetId?: (id: string | null) => void;
@@ -165,6 +168,9 @@ export default function Settings({
   onUpdateSites,
   onForceSync,
   onExportToSheets,
+  onSmartMerge,
+  onExportBackupJSON,
+  onImportBackupJSON,
   customLogo,
   onUpdateLogo,
   onUpdateSpreadsheetId,
@@ -520,7 +526,7 @@ export default function Settings({
           <Cloud className="text-blue-600 h-5 w-5" /> Google Sheets Database Mappings
         </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="border border-slate-200 rounded-lg p-4 bg-slate-50 flex flex-col justify-between gap-4">
             <div>
               <span className="text-3xs font-semibold text-slate-400 uppercase">Synchronisation Mode</span>
@@ -619,7 +625,66 @@ export default function Settings({
             </div>
           </div>
 
-          {/* Standard Rates */}
+          {/* Data Recovery & Backup */}
+          <div className="border border-slate-200 rounded-lg p-4 bg-slate-50 flex flex-col justify-between">
+            <div>
+              <span className="text-3xs font-semibold text-slate-400 uppercase">Data Recovery & Backup</span>
+              <p className="text-xs font-bold text-slate-800 mt-1 flex items-center gap-1">
+                <RefreshCw className="text-emerald-600 h-4 w-4" /> Yesterday's Data Recovery
+              </p>
+              <p className="text-3xs text-slate-500 mt-2 font-medium">
+                Smart-merge local browser records with cloud, or import/export a full database backup JSON.
+              </p>
+            </div>
+            <div className="mt-4 flex flex-col gap-2">
+              {onSmartMerge && (
+                <button
+                  type="button"
+                  id="btn-smart-merge-settings"
+                  onClick={onSmartMerge}
+                  className="w-full px-3 py-1.5 text-2xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md shadow-3xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" /> Merge Yesterday's Data
+                </button>
+              )}
+              <div className="flex gap-2">
+                {onExportBackupJSON && (
+                  <button
+                    type="button"
+                    id="btn-export-backup-json"
+                    onClick={onExportBackupJSON}
+                    className="flex-1 px-2 py-1.5 text-4xs font-extrabold bg-white border border-slate-250 text-slate-700 hover:bg-slate-100 rounded-md shadow-3xs flex items-center justify-center gap-1 transition-all cursor-pointer uppercase tracking-wider"
+                  >
+                    Export JSON
+                  </button>
+                )}
+                {onImportBackupJSON && (
+                  <label className="flex-1 px-2 py-1.5 text-4xs font-extrabold bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 rounded-md shadow-3xs flex items-center justify-center gap-1 transition-all cursor-pointer uppercase tracking-wider text-center">
+                    Import JSON
+                    <input
+                      type="file"
+                      accept=".json"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = (evt) => {
+                          try {
+                            const parsed = JSON.parse(evt.target?.result as string);
+                            onImportBackupJSON(parsed);
+                          } catch (err) {
+                            alert('Invalid JSON file format.');
+                          }
+                        };
+                        reader.readAsText(file);
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
+            </div>
+          </div>
           <div className="border border-slate-200 rounded-lg p-4 bg-slate-50 space-y-4">
             <div>
               <span className="text-3xs font-semibold text-slate-400 uppercase">Corporate Service Tax (GST)</span>

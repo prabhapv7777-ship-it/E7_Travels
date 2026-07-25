@@ -5,7 +5,7 @@
 
 import { db, auth } from './firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { Vehicle, Owner, Driver, Company, Site, CompanyPayment, Expense, Enquiry } from '../types';
+import { Vehicle, Owner, Driver, Company, Site, CompanyPayment, Expense, Enquiry, DeletedVehicle } from '../types';
 
 export enum OperationType {
   CREATE = 'create',
@@ -64,6 +64,7 @@ export interface FleetState {
   payments: CompanyPayment[];
   expenses: Expense[];
   enquiries: Enquiry[];
+  deletedVehicles?: DeletedVehicle[];
 }
 
 export interface FleetStateResult {
@@ -73,6 +74,13 @@ export interface FleetStateResult {
 }
 
 const FLEET_COLLECTION = 'fleet';
+
+const lastSavedHashes: Record<string, string> = {};
+
+export const setLastSavedHash = (key: keyof FleetState, data: any) => {
+  const sanitizedData = data === undefined ? [] : JSON.parse(JSON.stringify(data));
+  lastSavedHashes[key] = JSON.stringify(sanitizedData);
+};
 
 export const isQuotaError = (error: unknown): boolean => {
   if (!error) return false;
@@ -90,8 +98,17 @@ export const saveStateToFirestore = async (key: keyof FleetState, data: any) => 
     const docRef = doc(db, FLEET_COLLECTION, key);
     // Sanitize data: convert undefined values/properties into clean JSON without undefined fields
     const sanitizedData = data === undefined ? [] : JSON.parse(JSON.stringify(data));
+    const serialized = JSON.stringify(sanitizedData);
+
+    // Read/Write Optimization: Skip network write if current data is identical to last known cloud state
+    if (lastSavedHashes[key] === serialized) {
+      return;
+    }
+
+    lastSavedHashes[key] = serialized;
     await setDoc(docRef, { data: sanitizedData }, { merge: false });
   } catch (error) {
+    delete lastSavedHashes[key];
     if (isQuotaError(error)) {
       console.warn(`Firestore quota limit exceeded while auto-saving "${key}". Local storage fallback active.`);
       return; // Do not throw so caller doesn't log unhandled promise rejections
@@ -111,6 +128,7 @@ export const saveAllStateToFirestore = async (state: FleetState) => {
     'payments',
     'expenses',
     'enquiries',
+    'deletedVehicles',
   ];
   for (const key of keys) {
     if (state[key]) {
@@ -123,74 +141,81 @@ export const saveAllStateToFirestore = async (state: FleetState) => {
   }
 };
 
+export function smartMergeRecords<T extends Record<string, any>>(
+  localList: T[] = [],
+  cloudList: T[] = [],
+  sampleList: T[] = [],
+  keyFields: string[] = ['id', 'name', 'registrationNumber']
+): T[] {
+  const map = new Map<string, T>();
+
+  const getKey = (item: T): string | null => {
+    if (!item) return null;
+    for (const f of keyFields) {
+      if (item[f] !== undefined && item[f] !== null && String(item[f]).trim() !== '') {
+        return String(item[f]).trim();
+      }
+    }
+    return null;
+  };
+
+  const hasUserData =
+    (Array.isArray(localList) && localList.length > 0) ||
+    (Array.isArray(cloudList) && cloudList.length > 0);
+
+  // 1. Seed with sampleList ONLY if user has no saved local or cloud data at all
+  if (!hasUserData && Array.isArray(sampleList)) {
+    sampleList.forEach((item) => {
+      if (!item) return;
+      const k = getKey(item);
+      if (k) map.set(k, { ...item });
+    });
+  }
+
+  // 2. Process cloudList (authoritative server-side persistence)
+  if (Array.isArray(cloudList)) {
+    cloudList.forEach((item) => {
+      if (!item) return;
+      const k = getKey(item);
+      if (!k) return;
+
+      const existing = map.get(k);
+      if (!existing) {
+        map.set(k, { ...item });
+      } else {
+        // Overlay cloud item over existing sample item
+        map.set(k, { ...existing, ...item });
+      }
+    });
+  }
+
+  // 3. Process localList (user's active local inputs and updates on this device)
+  if (Array.isArray(localList)) {
+    localList.forEach((item) => {
+      if (!item) return;
+      const k = getKey(item);
+      if (!k) return;
+
+      const existing = map.get(k);
+      if (!existing) {
+        map.set(k, { ...item });
+      } else {
+        // User manual edits ALWAYS override existing values
+        map.set(k, { ...existing, ...item });
+      }
+    });
+  }
+
+  return Array.from(map.values());
+}
+
 export function mergeArraysById<T extends Record<string, any>>(
   local: T[] = [],
   cloud: T[] = [],
   keyFields: string[] = ['id', 'name'],
   preferCloud: boolean = false
 ): T[] {
-  const mergedMap = new Map<string, T>();
-  
-  const getKey = (item: T): string | null => {
-    for (const field of keyFields) {
-      if (item && item[field]) {
-        return String(item[field]);
-      }
-    }
-    return null;
-  };
-
-  if (preferCloud) {
-    // Add local items first
-    if (local && Array.isArray(local)) {
-      local.forEach((item) => {
-        const k = getKey(item);
-        if (k) mergedMap.set(k, item);
-      });
-    }
-
-    // Add cloud items (overwriting local items with cloud values)
-    if (cloud && Array.isArray(cloud)) {
-      cloud.forEach((item) => {
-        const k = getKey(item);
-        if (k) {
-          const existing = mergedMap.get(k);
-          if (existing) {
-            // Overwrite with cloud properties
-            mergedMap.set(k, { ...existing, ...item, ...item });
-          } else {
-            mergedMap.set(k, item);
-          }
-        }
-      });
-    }
-  } else {
-    // Add cloud items first
-    if (cloud && Array.isArray(cloud)) {
-      cloud.forEach((item) => {
-        const k = getKey(item);
-        if (k) mergedMap.set(k, item);
-      });
-    }
-
-    // Add local items (overwriting or merging with cloud, giving preference to local)
-    if (local && Array.isArray(local)) {
-      local.forEach((item) => {
-        const k = getKey(item);
-        if (k) {
-          const existing = mergedMap.get(k);
-          if (existing) {
-            // Merge properties, giving preference to local
-            mergedMap.set(k, { ...existing, ...item });
-          } else {
-            mergedMap.set(k, item);
-          }
-        }
-      });
-    }
-  }
-
-  return Array.from(mergedMap.values());
+  return smartMergeRecords(local, cloud, [], keyFields);
 }
 
 export const loadStateFromFirestore = async (): Promise<Partial<FleetState> & { _isQuotaExceeded?: boolean }> => {
@@ -203,6 +228,7 @@ export const loadStateFromFirestore = async (): Promise<Partial<FleetState> & { 
     'payments',
     'expenses',
     'enquiries',
+    'deletedVehicles',
   ];
   
   const state: Partial<FleetState> & { _isQuotaExceeded?: boolean } = {};
@@ -213,7 +239,9 @@ export const loadStateFromFirestore = async (): Promise<Partial<FleetState> & { 
       const docRef = doc(db, FLEET_COLLECTION, key);
       const snapshot = await getDoc(docRef);
       if (snapshot.exists()) {
-        state[key] = snapshot.data().data;
+        const loadedData = snapshot.data().data;
+        state[key] = loadedData;
+        setLastSavedHash(key, loadedData);
       }
     } catch (error) {
       if (isQuotaError(error)) {

@@ -311,7 +311,7 @@ export default function PrintJoiningForm({ enquiry, onClose }: PrintJoiningFormP
                     value={formData.fuelType || ''}
                     onChange={(e) => setFormData({ ...formData, fuelType: e.target.value })}
                     className="w-full px-2 py-1 text-xs border border-slate-200 rounded"
-                    placeholder="Diesel / CNG / Petrol"
+                    placeholder="Diesel / CNG / Petrol / EV"
                   />
                 </div>
                 <div>

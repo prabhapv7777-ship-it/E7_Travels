@@ -3,13 +3,33 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+export interface DeletedVehicle {
+  id: string; // Unique ID for deleted record
+  originalVehicleId: string;
+  registrationNumber: string;
+  model: string;
+  manufacturer: string;
+  year: number;
+  fuelType: 'CNG' | 'Diesel' | 'Petrol' | 'EV';
+  vehicleType: 'Sedan' | 'SUV' | 'Hatchback' | 'Bus' | 'Tempo Traveler';
+  ownerName: string;
+  driverName: string;
+  company: string;
+  site: string;
+  joiningDate: string;
+  deletedAt: string; // Formatted date & time
+  deletedBy?: string;
+  deletionReason?: string;
+  originalVehicle: Vehicle; // Complete Vehicle object preserved for restore
+}
+
 export interface Vehicle {
   id: string; // Vehicle ID
   registrationNumber: string; // Unique Reg Number
   model: string;
   manufacturer: string;
   year: number;
-  fuelType: 'CNG' | 'Diesel' | 'Petrol';
+  fuelType: 'CNG' | 'Diesel' | 'Petrol' | 'EV';
   transmission: 'Manual' | 'Automatic';
   vehicleType: 'Sedan' | 'SUV' | 'Hatchback' | 'Bus' | 'Tempo Traveler';
   ownerId: string;
@@ -184,7 +204,7 @@ export const EXPENSE_TYPES: ExpenseType[] = [
   'Miscellaneous',
 ];
 
-export const FUEL_TYPES = ['CNG', 'Diesel', 'Petrol'] as const;
+export const FUEL_TYPES = ['CNG', 'Diesel', 'Petrol', 'EV'] as const;
 export const TRANSMISSION_TYPES = ['Manual', 'Automatic'] as const;
 export const VEHICLE_TYPES = ['Sedan', 'SUV', 'Hatchback', 'Bus', 'Tempo Traveler'] as const;
 export const VEHICLE_STATUSES = ['Active', 'Inactive'] as const;
@@ -311,4 +331,31 @@ export interface SlabRate {
   createdDate: string; // YYYY-MM-DD
   updatedDate?: string;
   description?: string;
+}
+
+export function detectManufacturer(modelStr?: string): string {
+  if (!modelStr) return 'Toyota';
+  const str = modelStr.toLowerCase();
+  if (str.includes('toyota') || str.includes('innova') || str.includes('crysta') || str.includes('hycross') || str.includes('etios') || str.includes('fortuner') || str.includes('glanza') || str.includes('rumion') || str.includes('urban cruiser')) return 'Toyota';
+  if (str.includes('maruti') || str.includes('suzuki') || str.includes('dzire') || str.includes('ertiga') || str.includes('swift') || str.includes('baleno') || str.includes('wagon') || str.includes('eeco') || str.includes('tour s') || str.includes('ciaz') || str.includes('xl6') || str.includes('brezza') || str.includes('invicto')) return 'Maruti Suzuki';
+  if (str.includes('hyundai') || str.includes('aura') || str.includes('verna') || str.includes('creta') || str.includes('i10') || str.includes('i20') || str.includes('venue') || str.includes('alcazar')) return 'Hyundai';
+  if (str.includes('mahindra') || str.includes('bolero') || str.includes('scorpio') || str.includes('xuv') || str.includes('thar') || str.includes('marazzo')) return 'Mahindra';
+  if (str.includes('tata') || str.includes('tigor') || str.includes('tiago') || str.includes('nexon') || str.includes('harrier') || str.includes('safari') || str.includes('express') || str.includes('altroz') || str.includes('punch')) return 'Tata Motors';
+  if (str.includes('force') || str.includes('traveller') || str.includes('traveler') || str.includes('urbania') || str.includes('trax')) return 'Force Motors';
+  if (str.includes('honda') || str.includes('city') || str.includes('amaze') || str.includes('elevate')) return 'Honda';
+  if (str.includes('kia') || str.includes('carens') || str.includes('seltos') || str.includes('sonet') || str.includes('carnival')) return 'Kia';
+  if (str.includes('mg') || str.includes('hector') || str.includes('comet')) return 'MG Motors';
+  if (str.includes('chevrolet') || str.includes('tavera') || str.includes('beat')) return 'Chevrolet';
+  if (str.includes('ford') || str.includes('aspire') || str.includes('figo') || str.includes('endeavour')) return 'Ford';
+  if (str.includes('nissan') || str.includes('sunny') || str.includes('magnite')) return 'Nissan';
+  if (str.includes('renault') || str.includes('triber') || str.includes('kiger') || str.includes('kwid')) return 'Renault';
+  if (str.includes('volkswagen') || str.includes('vento') || str.includes('virtus')) return 'Volkswagen';
+  if (str.includes('skoda') || str.includes('slavia') || str.includes('kushaq')) return 'Skoda';
+
+  const clean = modelStr.trim();
+  const firstWord = clean.split(/\s+/)[0];
+  if (firstWord && firstWord.length > 2 && !/\d/.test(firstWord)) {
+    return firstWord.charAt(0).toUpperCase() + firstWord.slice(1);
+  }
+  return 'Toyota';
 }

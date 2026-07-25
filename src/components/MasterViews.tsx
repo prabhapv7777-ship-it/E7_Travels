@@ -24,6 +24,13 @@ import {
   FileCheck,
   CheckCircle2,
   Radio,
+  RotateCcw,
+  Eye,
+  Archive,
+  RefreshCw,
+  Zap,
+  X,
+  FileSpreadsheet,
 } from 'lucide-react';
 import {
   Vehicle,
@@ -36,8 +43,10 @@ import {
   VEHICLE_TYPES,
   VEHICLE_STATUSES,
   Enquiry,
+  DeletedVehicle,
 } from '../types';
 import { formatDate, toInputDateFormat } from '../lib/dateUtils';
+import { generateUniqueOwnerId, generateUniqueDriverId, generateUniqueVehicleId } from '../lib/idUtils';
 import PrintJoiningForm from './PrintJoiningForm';
 import PrintVehicleReport from './PrintVehicleReport';
 import PrintLetterpadSubmissionSlip from './PrintLetterpadSubmissionSlip';
@@ -49,7 +58,7 @@ interface MasterViewsProps {
   drivers: Driver[];
   companies: Company[];
   sites: Site[];
-  activeSubView: 'Vehicle Master' | 'Owner Master' | 'Driver Master' | 'Company Master' | 'Site Master' | 'Vendor Register';
+  activeSubView: 'Vehicle Master' | 'Owner Master' | 'Driver Master' | 'Company Master' | 'Site Master' | 'Vendor Register' | 'Deleted Vehicles';
   vehicleFilter?: 'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted' | 'gps_hold';
   onSetVehicleFilter?: (filter: 'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted' | 'gps_hold') => void;
   onUpdateVehicles: (v: Vehicle[]) => void;
@@ -57,6 +66,9 @@ interface MasterViewsProps {
   onUpdateDrivers: (d: Driver[]) => void;
   onUpdateCompanies: (c: Company[]) => void;
   onUpdateSites: (s: Site[]) => void;
+  deletedVehicles?: DeletedVehicle[];
+  onUpdateDeletedVehicles?: (dv: DeletedVehicle[]) => void;
+  onRestoreVehicle?: (dv: DeletedVehicle, target?: 'master' | 'enquiry') => void;
 }
 
 export default function MasterViews({
@@ -73,6 +85,9 @@ export default function MasterViews({
   onUpdateDrivers,
   onUpdateCompanies,
   onUpdateSites,
+  deletedVehicles = [],
+  onUpdateDeletedVehicles = () => {},
+  onRestoreVehicle = () => {},
 }: MasterViewsProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -82,6 +97,11 @@ export default function MasterViews({
   const [showPrintVehicleReport, setShowPrintVehicleReport] = useState(false);
   const [selectedVendorForFleet, setSelectedVendorForFleet] = useState<string | null>(null);
   const [vendorModalSearch, setVendorModalSearch] = useState('');
+  
+  // Deleted Vehicles view modal states
+  const [viewDeletedVehicle, setViewDeletedVehicle] = useState<DeletedVehicle | null>(null);
+  const [permanentDeleteCandidate, setPermanentDeleteCandidate] = useState<DeletedVehicle | null>(null);
+  const [restoreCandidate, setRestoreCandidate] = useState<DeletedVehicle | null>(null);
   
   // Office Document Submission & Letterpad Modal States
   const [docModalVehicle, setDocModalVehicle] = useState<Vehicle | null>(null);
@@ -121,6 +141,36 @@ export default function MasterViews({
     comments: Array<{ date: string; text: string; author: string }>;
   } | null>(null);
   const [newCommentText, setNewCommentText] = useState('');
+
+  const getFuelTypeBadge = (fuelType?: string) => {
+    const fuel = (fuelType || 'Diesel').trim().toUpperCase();
+    if (fuel === 'EV' || fuel === 'ELECTRIC') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-purple-100 text-purple-900 border border-purple-200/80 shadow-3xs">
+          <span className="text-[11px]">⚡</span> EV
+        </span>
+      );
+    }
+    if (fuel === 'CNG') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-cyan-100 text-cyan-900 border border-cyan-200/80 shadow-3xs">
+          <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></span> CNG
+        </span>
+      );
+    }
+    if (fuel === 'PETROL') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-900 border border-emerald-200/80 shadow-3xs">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> PETROL
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-200/80 shadow-3xs">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> DIESEL
+      </span>
+    );
+  };
 
   const handleAddComment = (e: React.FormEvent) => {
     e.preventDefault();
@@ -299,7 +349,7 @@ export default function MasterViews({
     setFormError(null);
 
     // Mandatories check
-    if (!vehicleForm.registrationNumber || !vehicleForm.model || !vehicleForm.ownerId || !vehicleForm.driverId) {
+    if (!vehicleForm.registrationNumber || !vehicleForm.model || (!vehicleForm.ownerId && !vehicleForm.ownerName) || (!vehicleForm.driverId && !vehicleForm.driverName)) {
       setFormError('Registration Number, Model, Owner, and Driver are mandatory fields.');
       return;
     }
@@ -315,11 +365,14 @@ export default function MasterViews({
       return;
     }
 
-    const matchedOwner = owners.find((o) => o.id === vehicleForm.ownerId);
-    const matchedDriver = drivers.find((d) => d.id === vehicleForm.driverId);
+    const matchedOwner = (vehicleForm.ownerId ? owners.find((o) => o.id === vehicleForm.ownerId) : null) ||
+                         (vehicleForm.ownerName && vehicleForm.ownerName.trim() ? owners.find((o) => o.name && o.name.trim().toLowerCase() === vehicleForm.ownerName.trim().toLowerCase()) : null);
+    const matchedDriver = (vehicleForm.driverId ? drivers.find((d) => d.id === vehicleForm.driverId) : null) ||
+                          (vehicleForm.driverName && vehicleForm.driverName.trim() ? drivers.find((d) => d.name && d.name.trim().toLowerCase() === vehicleForm.driverName.trim().toLowerCase()) : null);
 
     const vehicleRecord: Vehicle = {
-      id: vehicleForm.id || `VEH${(vehicles.length + 1).toString().padStart(3, '0')}`,
+      ...vehicleForm,
+      id: vehicleForm.id || generateUniqueVehicleId(vehicles),
       registrationNumber: cleanReg,
       model: vehicleForm.model,
       manufacturer: vehicleForm.manufacturer || 'Toyota',
@@ -327,15 +380,15 @@ export default function MasterViews({
       fuelType: vehicleForm.fuelType || 'Diesel',
       transmission: vehicleForm.transmission || 'Manual',
       vehicleType: vehicleForm.vehicleType || 'Sedan',
-      ownerId: vehicleForm.ownerId,
-      ownerName: matchedOwner ? matchedOwner.name : 'Unknown Owner',
-      driverId: vehicleForm.driverId,
-      driverName: matchedDriver ? matchedDriver.name : 'Unknown Driver',
+      ownerId: matchedOwner ? matchedOwner.id : (vehicleForm.ownerId || 'new'),
+      ownerName: matchedOwner ? matchedOwner.name : (vehicleForm.ownerName || 'Unknown Owner'),
+      driverId: matchedDriver ? matchedDriver.id : (vehicleForm.driverId || 'new'),
+      driverName: matchedDriver ? matchedDriver.name : (vehicleForm.driverName || 'Unknown Driver'),
       company: vehicleForm.company || '',
       site: vehicleForm.site || '',
       company2: vehicleForm.company2 || '',
       site2: vehicleForm.site2 || '',
-      joiningDate: vehicleForm.joiningDate || '2026-07-08',
+      joiningDate: vehicleForm.joiningDate || new Date().toISOString().substring(0, 10),
       status: vehicleForm.status || 'Active',
       emiAmount: Number(vehicleForm.emiAmount) || 0,
       emiDueDate: vehicleForm.emiDueDate || '',
@@ -379,7 +432,7 @@ export default function MasterViews({
     }
 
     const ownerRecord: Owner = {
-      id: ownerForm.id || `OWN${(owners.length + 1).toString().padStart(2, '0')}`,
+      id: ownerForm.id || generateUniqueOwnerId(owners),
       name: ownerForm.name,
       phone: ownerForm.phone,
       email: ownerForm.email || '',
@@ -413,7 +466,7 @@ export default function MasterViews({
     }
 
     const driverRecord: Driver = {
-      id: driverForm.id || `DRV${(drivers.length + 1).toString().padStart(2, '0')}`,
+      id: driverForm.id || generateUniqueDriverId(drivers),
       name: driverForm.name,
       phone: driverForm.phone,
       address: driverForm.address || '',
@@ -764,7 +817,8 @@ export default function MasterViews({
             {activeSubView === 'Company Master' && <Building className="text-blue-600" />}
             {activeSubView === 'Site Master' && <MapPin className="text-blue-600" />}
             {activeSubView === 'Vendor Register' && <Building className="text-amber-600" />}
-            {activeSubView === 'Vendor Register' ? 'Vendor Register' : `${activeSubView} Register`}
+            {activeSubView === 'Deleted Vehicles' && <Trash2 className="text-rose-600" />}
+            {activeSubView === 'Vendor Register' ? 'Vendor Register' : activeSubView === 'Deleted Vehicles' ? 'Deleted Vehicles Archive' : `${activeSubView} Register`}
           </h2>
           <p className="text-xs text-slate-500">Manage data, configure parameters, and review system settings</p>
         </div>
@@ -801,16 +855,18 @@ export default function MasterViews({
               </button>
             </>
           )}
-          <button
-            id="add-record-btn"
-            onClick={() => {
-              setIsAdding(true);
-              setFormError(null);
-            }}
-            className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-          >
-            <Plus className="h-4 w-4" /> {activeSubView === 'Site Master' ? 'Add Campus Site / Hub' : 'Add Record'}
-          </button>
+          {activeSubView !== 'Deleted Vehicles' && (
+            <button
+              id="add-record-btn"
+              onClick={() => {
+                setIsAdding(true);
+                setFormError(null);
+              }}
+              className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+            >
+              <Plus className="h-4 w-4" /> {activeSubView === 'Site Master' ? 'Add Campus Site / Hub' : 'Add Record'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -980,32 +1036,66 @@ export default function MasterViews({
                 <label className="block text-xs font-medium text-slate-600 mb-1">Associated Owner *</label>
                 <select
                   id="field-ownerId"
-                  value={vehicleForm.ownerId || ''}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, ownerId: e.target.value })}
+                  value={
+                    owners.some((o) => o.id === vehicleForm.ownerId)
+                      ? vehicleForm.ownerId
+                      : (vehicleForm.ownerName && vehicleForm.ownerName.trim() ? owners.find((o) => o.name && o.name.trim().toLowerCase() === vehicleForm.ownerName.trim().toLowerCase())?.id : '') || vehicleForm.ownerId || ''
+                  }
+                  onChange={(e) => {
+                    const selId = e.target.value;
+                    const matched = owners.find((o) => o.id === selId);
+                    setVehicleForm({
+                      ...vehicleForm,
+                      ownerId: selId,
+                      ownerName: matched ? matched.name : vehicleForm.ownerName,
+                    });
+                  }}
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                 >
                   <option value="">-- Choose Owner --</option>
                   {owners.map((o, index) => (
                     <option key={`${o.id}-${index}`} value={o.id}>
-                      {o.name} ({o.id})
+                      {o.name} ({o.id}) {o.phone ? `- ${o.phone}` : ''}
                     </option>
                   ))}
+                  {vehicleForm.ownerName && !owners.some((o) => o.id === vehicleForm.ownerId || (o.name && o.name.toLowerCase() === vehicleForm.ownerName.toLowerCase())) && (
+                    <option value={vehicleForm.ownerId || vehicleForm.ownerName}>
+                      {vehicleForm.ownerName} (Current Owner)
+                    </option>
+                  )}
                 </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Assigned Driver *</label>
                 <select
                   id="field-driverId"
-                  value={vehicleForm.driverId || ''}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, driverId: e.target.value })}
+                  value={
+                    drivers.some((d) => d.id === vehicleForm.driverId)
+                      ? vehicleForm.driverId
+                      : (vehicleForm.driverName && vehicleForm.driverName.trim() ? drivers.find((d) => d.name && d.name.trim().toLowerCase() === vehicleForm.driverName.trim().toLowerCase())?.id : '') || vehicleForm.driverId || ''
+                  }
+                  onChange={(e) => {
+                    const selId = e.target.value;
+                    const matched = drivers.find((d) => d.id === selId);
+                    setVehicleForm({
+                      ...vehicleForm,
+                      driverId: selId,
+                      driverName: matched ? matched.name : vehicleForm.driverName,
+                    });
+                  }}
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                 >
                   <option value="">-- Choose Driver --</option>
                   {drivers.map((d, index) => (
                     <option key={`${d.id}-${index}`} value={d.id}>
-                      {d.name} ({d.id})
+                      {d.name} ({d.id}) {d.phone ? `- ${d.phone}` : ''}
                     </option>
                   ))}
+                  {vehicleForm.driverName && !drivers.some((d) => d.id === vehicleForm.driverId || (d.name && d.name.toLowerCase() === vehicleForm.driverName.toLowerCase())) && (
+                    <option value={vehicleForm.driverId || vehicleForm.driverName}>
+                      {vehicleForm.driverName} (Current Assigned Driver)
+                    </option>
+                  )}
                 </select>
               </div>
               <div>
@@ -1838,7 +1928,7 @@ export default function MasterViews({
                       {v.manufacturer} {v.model}
                     </td>
                     <td className="py-3 px-4 text-xs text-slate-600">{v.vehicleType}</td>
-                    <td className="py-3 px-4 text-xs font-mono">{v.fuelType}</td>
+                    <td className="py-3 px-4 text-xs">{getFuelTypeBadge(v.fuelType)}</td>
                     <td className="py-3 px-4 text-slate-700">{v.driverName}</td>
                     <td className="py-3 px-4 text-slate-700">{v.ownerName}</td>
                     <td className="py-3 px-4 text-xs text-slate-600 max-w-[180px]">
@@ -2022,16 +2112,22 @@ export default function MasterViews({
                         <button
                           id={`btn-edit-vehicle-${v.id}`}
                           onClick={() => {
+                            setIsAdding(true);
                             setEditingId(v.id);
-                            const currentOwner = owners.find(o => o.id === v.ownerId);
-                            const currentDriver = drivers.find(d => d.id === v.driverId);
+                            const currentOwner = (v.ownerId ? owners.find(o => o.id === v.ownerId) : null) ||
+                                                 (v.ownerName && v.ownerName.trim() ? owners.find(o => o.name && o.name.trim().toLowerCase() === v.ownerName.trim().toLowerCase()) : null);
+                            const currentDriver = (v.driverId ? drivers.find(d => d.id === v.driverId) : null) ||
+                                                  (v.driverName && v.driverName.trim() ? drivers.find(d => d.name && d.name.trim().toLowerCase() === v.driverName.trim().toLowerCase()) : null);
                             setVehicleForm({
                               ...v,
+                              ownerId: currentOwner ? currentOwner.id : v.ownerId,
                               ownerName: currentOwner ? currentOwner.name : v.ownerName,
+                              driverId: currentDriver ? currentDriver.id : v.driverId,
                               driverName: currentDriver ? currentDriver.name : v.driverName
                             });
                           }}
-                          className="p-1 hover:bg-slate-100 text-slate-600 rounded"
+                          className="p-1 hover:bg-slate-100 text-slate-600 rounded cursor-pointer"
+                          title="Edit Vehicle record"
                         >
                           <Edit2 className="h-4 w-4" />
                         </button>
@@ -2527,6 +2623,188 @@ export default function MasterViews({
             </div>
           </div>
         )}
+
+        {/* DELETED VEHICLES ARCHIVE VIEW */}
+        {activeSubView === 'Deleted Vehicles' && (
+          <div className="p-6 space-y-6">
+            {/* KPI Summary Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-gradient-to-br from-rose-950 to-slate-900 text-white p-4 rounded-xl shadow-xs border border-rose-800/50">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-300">Deleted Fleet Archive</span>
+                  <div className="p-2 bg-rose-500/20 text-rose-400 rounded-lg">
+                    <Trash2 className="h-5 w-5" />
+                  </div>
+                </div>
+                <div className="text-2xl font-black tracking-tight">{deletedVehicles.length}</div>
+                <div className="text-[10px] text-rose-200 mt-1 flex items-center gap-1 font-semibold">
+                  <Archive className="h-3 w-3 text-rose-400" /> Preserved in System Archive
+                </div>
+              </div>
+
+              <div className="bg-purple-50 text-purple-950 p-4 rounded-xl shadow-xs border border-purple-200/80">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-purple-700">Deleted EV Vehicles</span>
+                  <div className="p-2 bg-purple-100 text-purple-700 rounded-lg">
+                    <Zap className="h-5 w-5 text-purple-600" />
+                  </div>
+                </div>
+                <div className="text-2xl font-black text-purple-900 tracking-tight">
+                  {deletedVehicles.filter((dv) => dv.fuelType === 'EV').length}
+                </div>
+                <div className="text-[10px] text-purple-700 font-bold mt-1">
+                  ⚡ Electric Fleet Archive Records
+                </div>
+              </div>
+
+              <div className="bg-cyan-50 text-cyan-950 p-4 rounded-xl shadow-xs border border-cyan-200/80">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-cyan-700">Deleted CNG Fleet</span>
+                  <div className="p-2 bg-cyan-100 text-cyan-700 rounded-lg">
+                    <Car className="h-5 w-5 text-cyan-600" />
+                  </div>
+                </div>
+                <div className="text-2xl font-black text-cyan-900 tracking-tight">
+                  {deletedVehicles.filter((dv) => dv.fuelType === 'CNG').length}
+                </div>
+                <div className="text-[10px] text-cyan-700 font-bold mt-1">
+                  CNG Fuel Type Vehicles
+                </div>
+              </div>
+
+              <div className="bg-amber-50 text-amber-950 p-4 rounded-xl shadow-xs border border-amber-200/80">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-700">Diesel / Petrol Deleted</span>
+                  <div className="p-2 bg-amber-100 text-amber-700 rounded-lg">
+                    <Car className="h-5 w-5 text-amber-600" />
+                  </div>
+                </div>
+                <div className="text-2xl font-black text-amber-900 tracking-tight">
+                  {deletedVehicles.filter((dv) => dv.fuelType === 'Diesel' || dv.fuelType === 'Petrol').length}
+                </div>
+                <div className="text-[10px] text-amber-700 font-bold mt-1">
+                  Diesel & Petrol Fleet Records
+                </div>
+              </div>
+            </div>
+
+            {/* Main Table Card */}
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+              <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center gap-2">
+                  <Archive className="h-4 w-4 text-rose-600" />
+                  <h3 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider">
+                    Deleted Vehicles Master Register ({deletedVehicles.length})
+                  </h3>
+                </div>
+                <div className="text-2xs text-slate-500 font-medium">
+                  Vehicles deleted from any screen are safely preserved here with full details.
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-600">
+                  <thead className="bg-slate-100/70 border-b border-slate-200 text-slate-700 uppercase font-extrabold text-[10px] tracking-wider">
+                    <tr>
+                      <th className="py-3 px-4">Reg Number</th>
+                      <th className="py-3 px-4">Model & Make</th>
+                      <th className="py-3 px-4">Fuel Type</th>
+                      <th className="py-3 px-4">Owner & Driver</th>
+                      <th className="py-3 px-4">Company & Site</th>
+                      <th className="py-3 px-4">Deletion Time & Reason</th>
+                      <th className="py-3 px-4 text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200/80 bg-white">
+                    {deletedVehicles
+                      .filter((dv) => {
+                        const q = searchQuery.toLowerCase();
+                        return (
+                          !q ||
+                          dv.registrationNumber.toLowerCase().includes(q) ||
+                          (dv.model && dv.model.toLowerCase().includes(q)) ||
+                          (dv.manufacturer && dv.manufacturer.toLowerCase().includes(q)) ||
+                          (dv.ownerName && dv.ownerName.toLowerCase().includes(q)) ||
+                          (dv.driverName && dv.driverName.toLowerCase().includes(q)) ||
+                          (dv.company && dv.company.toLowerCase().includes(q)) ||
+                          (dv.deletionReason && dv.deletionReason.toLowerCase().includes(q)) ||
+                          (dv.fuelType && dv.fuelType.toLowerCase().includes(q))
+                        );
+                      })
+                      .map((dv) => (
+                        <tr key={dv.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3 px-4 font-black text-slate-900 tracking-wide whitespace-nowrap">
+                            <span className="px-2 py-1 bg-slate-100 border border-slate-300 rounded-md font-mono text-slate-800 shadow-3xs">
+                              {dv.registrationNumber}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="font-bold text-slate-800">{dv.model || 'N/A'}</div>
+                            <div className="text-2xs text-slate-500">{dv.manufacturer || 'N/A'} • {dv.vehicleType || 'Sedan'} ({dv.year || '2024'})</div>
+                          </td>
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            {getFuelTypeBadge(dv.fuelType)}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="font-semibold text-slate-800">{dv.ownerName || 'N/A'}</div>
+                            <div className="text-2xs text-slate-500">Driver: {dv.driverName || 'N/A'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="font-bold text-slate-700">{dv.company || 'N/A'}</div>
+                            <div className="text-2xs text-slate-500">{dv.site || 'N/A'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="font-bold text-rose-700 text-[11px]">{dv.deletedAt}</div>
+                            <div className="text-2xs text-slate-500">{dv.deletionReason || 'Deleted'}</div>
+                          </td>
+                          <td className="py-3 px-4 text-center whitespace-nowrap">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                id={`btn-restore-veh-${dv.id}`}
+                                onClick={() => setRestoreCandidate(dv)}
+                                className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 text-2xs font-bold rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                                title="Restore vehicle options"
+                              >
+                                <RotateCcw className="h-3.5 w-3.5" /> Restore
+                              </button>
+                              <button
+                                id={`btn-view-deleted-veh-${dv.id}`}
+                                onClick={() => setViewDeletedVehicle(dv)}
+                                className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-300 text-2xs font-bold rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                                title="View full details"
+                              >
+                                <Eye className="h-3.5 w-3.5" /> Details
+                              </button>
+                              <button
+                                id={`btn-purge-deleted-veh-${dv.id}`}
+                                onClick={() => setPermanentDeleteCandidate(dv)}
+                                className="p-1.5 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                title="Permanently delete from archive"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+
+                    {deletedVehicles.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="text-center py-16 text-slate-400">
+                          <Archive className="h-10 w-10 mx-auto text-slate-300 mb-2" />
+                          <p className="font-bold text-slate-700 text-sm">No Deleted Vehicles in Archive</p>
+                          <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1">
+                            When vehicle details are deleted from any screen or register, they will be preserved here automatically for your record and restore options.
+                          </p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
       {deleteCandidate && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
@@ -2556,6 +2834,28 @@ export default function MasterViews({
                   if (activeSubView === 'Vehicle Master') {
                     const vehicleToDelete = vehicles.find((v) => v.id === id);
                     if (vehicleToDelete) {
+                      const deletedRecord: DeletedVehicle = {
+                        id: `DEL-VEH-${Date.now()}`,
+                        originalVehicleId: vehicleToDelete.id,
+                        registrationNumber: vehicleToDelete.registrationNumber,
+                        model: vehicleToDelete.model,
+                        manufacturer: vehicleToDelete.manufacturer,
+                        year: vehicleToDelete.year,
+                        fuelType: vehicleToDelete.fuelType,
+                        vehicleType: vehicleToDelete.vehicleType,
+                        ownerName: vehicleToDelete.ownerName || 'N/A',
+                        driverName: vehicleToDelete.driverName || 'N/A',
+                        company: vehicleToDelete.company || 'N/A',
+                        site: vehicleToDelete.site || 'N/A',
+                        joiningDate: vehicleToDelete.joiningDate || '',
+                        deletedAt: new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }),
+                        deletedBy: 'Admin / System',
+                        deletionReason: 'Deleted from Master Registers',
+                        originalVehicle: vehicleToDelete,
+                      };
+                      if (onUpdateDeletedVehicles) {
+                        onUpdateDeletedVehicles([deletedRecord, ...(deletedVehicles || [])]);
+                      }
                       // Automatically delete the associated owner and driver
                       if (vehicleToDelete.ownerId) {
                         onUpdateOwners(owners.filter((o) => o.id !== vehicleToDelete.ownerId));
@@ -2766,7 +3066,11 @@ export default function MasterViews({
                               </td>
                               <td className="py-2.5 px-3">
                                 <span className="font-bold text-slate-800 block">{veh.model || veh.vehicleType}</span>
-                                <span className="text-[10px] text-slate-500 font-semibold">{veh.vehicleType} &bull; {veh.fuelType}</span>
+                                <div className="flex items-center gap-1.5 mt-1">
+                                  <span className="text-[10px] text-slate-500 font-semibold">{veh.vehicleType}</span>
+                                  <span className="text-slate-300 text-[10px]">&bull;</span>
+                                  {getFuelTypeBadge(veh.fuelType)}
+                                </div>
                               </td>
                               <td className="py-2.5 px-3">
                                 <span className="font-extrabold text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 text-[11px] block max-w-max">
@@ -3212,6 +3516,274 @@ export default function MasterViews({
           onClose={() => setShowPrintVehicleReport(false)}
           initialFilter={vehicleFilter}
         />
+      )}
+
+      {/* VIEW DELETED VEHICLE DETAILS MODAL */}
+      {viewDeletedVehicle && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-2xl w-full border border-slate-200 shadow-2xl overflow-hidden my-8">
+            <div className="p-6 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-rose-500/20 text-rose-400 rounded-xl">
+                  <Archive className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base tracking-tight flex items-center gap-2">
+                    Deleted Vehicle Archive Record
+                  </h3>
+                  <p className="text-2xs text-slate-400 font-mono mt-0.5">
+                    Reg: {viewDeletedVehicle.registrationNumber} • Deleted At: {viewDeletedVehicle.deletedAt}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewDeletedVehicle(null)}
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+              >
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+              {/* Top Banner */}
+              <div className="p-4 rounded-xl bg-rose-50 border border-rose-200/80 flex items-start justify-between gap-4">
+                <div>
+                  <span className="text-2xs font-extrabold text-rose-700 uppercase tracking-wider block mb-1">
+                    Deletion Metadata
+                  </span>
+                  <p className="text-xs text-slate-700 font-semibold">
+                    Reason: <span className="text-slate-900 font-bold">{viewDeletedVehicle.deletionReason || 'Deleted from System'}</span>
+                  </p>
+                  <p className="text-2xs text-slate-500 mt-1">
+                    Deleted By: {viewDeletedVehicle.deletedBy || 'Admin'} • Time: {viewDeletedVehicle.deletedAt}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRestoreCandidate(viewDeletedVehicle)}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  <RotateCcw className="h-4 w-4" /> Restore Vehicle
+                </button>
+              </div>
+
+              {/* Grid Details */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs">
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] font-extrabold uppercase text-slate-400 block mb-0.5">Registration</span>
+                  <span className="font-mono font-black text-slate-900 text-sm">{viewDeletedVehicle.registrationNumber}</span>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] font-extrabold uppercase text-slate-400 block mb-0.5">Fuel Type</span>
+                  <div>{getFuelTypeBadge(viewDeletedVehicle.fuelType)}</div>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] font-extrabold uppercase text-slate-400 block mb-0.5">Model / Make</span>
+                  <span className="font-bold text-slate-800">{viewDeletedVehicle.model}</span>
+                  <div className="text-2xs text-slate-500">{viewDeletedVehicle.manufacturer} ({viewDeletedVehicle.year})</div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] font-extrabold uppercase text-slate-400 block mb-0.5">Owner Name</span>
+                  <span className="font-bold text-slate-800">{viewDeletedVehicle.ownerName || 'N/A'}</span>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] font-extrabold uppercase text-slate-400 block mb-0.5">Driver Name</span>
+                  <span className="font-bold text-slate-800">{viewDeletedVehicle.driverName || 'N/A'}</span>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] font-extrabold uppercase text-slate-400 block mb-0.5">Vehicle Type</span>
+                  <span className="font-bold text-slate-800">{viewDeletedVehicle.vehicleType}</span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] font-extrabold uppercase text-slate-400 block mb-0.5">Assigned Company</span>
+                  <span className="font-bold text-slate-800">{viewDeletedVehicle.company || 'N/A'}</span>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] font-extrabold uppercase text-slate-400 block mb-0.5">Assigned Site</span>
+                  <span className="font-bold text-slate-800">{viewDeletedVehicle.site || 'N/A'}</span>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] font-extrabold uppercase text-slate-400 block mb-0.5">Joining Date</span>
+                  <span className="font-bold text-slate-800">{viewDeletedVehicle.joiningDate || 'N/A'}</span>
+                </div>
+              </div>
+
+              {/* Full Original Object Preview */}
+              {viewDeletedVehicle.originalVehicle && (
+                <div className="p-4 rounded-xl bg-slate-100 border border-slate-200 text-2xs space-y-2">
+                  <span className="font-extrabold text-slate-700 uppercase tracking-wider block">Preserved Original Vehicle Fields:</span>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-slate-600 font-mono">
+                    <div>Insurance Expiry: {viewDeletedVehicle.originalVehicle.insuranceExpiry || 'N/A'}</div>
+                    <div>FC Expiry: {viewDeletedVehicle.originalVehicle.fcExpiry || 'N/A'}</div>
+                    <div>Permit Expiry: {viewDeletedVehicle.originalVehicle.permitExpiry || 'N/A'}</div>
+                    <div>EMI Amount: ₹{viewDeletedVehicle.originalVehicle.emiAmount || 0}</div>
+                    <div>EMI Due Date: {viewDeletedVehicle.originalVehicle.emiDueDate || 'N/A'}</div>
+                    <div>Fastag: {viewDeletedVehicle.originalVehicle.fastagNumber || 'N/A'}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setViewDeletedVehicle(null)}
+                className="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+              >
+                Close Window
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PERMANENT PURGE CONFIRMATION MODAL */}
+      {permanentDeleteCandidate && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl p-6 space-y-4">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="p-3 bg-rose-100 rounded-full">
+                <AlertTriangle className="h-6 w-6 text-rose-600" />
+              </div>
+              <h3 className="font-extrabold text-base text-slate-900">Permanently Delete Record</h3>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Are you sure you want to permanently purge vehicle <span className="font-extrabold text-slate-900 font-mono bg-slate-100 px-1.5 py-0.5 rounded border border-slate-300">{permanentDeleteCandidate.registrationNumber}</span> from the deleted vehicle archive?
+            </p>
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-2xs text-rose-800 font-semibold">
+              ⚠️ Warning: This operation will permanently remove the archived record from Firestore and browser persistence.
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setPermanentDeleteCandidate(null)}
+                className="px-4 py-2 text-xs font-bold bg-white border border-slate-250 text-slate-700 hover:bg-slate-50 rounded-xl transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (permanentDeleteCandidate) {
+                    onUpdateDeletedVehicles(deletedVehicles.filter((dv) => dv.id !== permanentDeleteCandidate.id));
+                    setPermanentDeleteCandidate(null);
+                  }
+                }}
+                className="px-5 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-xs transition-colors cursor-pointer"
+              >
+                Yes, Purge Permanently
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restore Destination Choice Modal */}
+      {restoreCandidate && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 space-y-5">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-emerald-100 text-emerald-700 rounded-xl">
+                  <RotateCcw className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Restore Deleted Vehicle</h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Choose where you want to restore <span className="font-extrabold text-slate-900 font-mono bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">{restoreCandidate.registrationNumber}</span> ({restoreCandidate.model || 'Vehicle'})
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setRestoreCandidate(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <span className="font-bold text-slate-700">Archived Record Info:</span> Owner: <span className="font-semibold text-slate-900">{restoreCandidate.ownerName || 'N/A'}</span> • Driver: <span className="font-semibold text-slate-900">{restoreCandidate.driverName || 'N/A'}</span> • Reason: <span className="font-semibold text-rose-700">{restoreCandidate.deletionReason || 'Deleted'}</span>
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
+              {/* Option 1: Enquiry Desk */}
+              <button
+                type="button"
+                onClick={() => {
+                  onRestoreVehicle(restoreCandidate, 'enquiry');
+                  setRestoreCandidate(null);
+                  setViewDeletedVehicle(null);
+                }}
+                className="p-4 rounded-xl border-2 border-indigo-200 hover:border-indigo-600 bg-indigo-50/40 hover:bg-indigo-50 text-left transition-all group flex flex-col justify-between cursor-pointer shadow-xs hover:shadow-md"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="p-2 bg-indigo-100 text-indigo-700 rounded-lg group-hover:scale-105 transition-transform">
+                      <FileSpreadsheet className="h-5 w-5" />
+                    </span>
+                    <span className="text-[10px] font-black uppercase text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full">
+                      Desk Review
+                    </span>
+                  </div>
+                  <h4 className="text-xs font-black text-slate-900 group-hover:text-indigo-900 mb-1">
+                    Move to Enquiry Desk
+                  </h4>
+                  <p className="text-[11px] text-slate-500 leading-snug">
+                    Creates a new Enquiry entry in the Enquiry Register to re-evaluate or re-induct this vehicle.
+                  </p>
+                </div>
+                <div className="mt-3 text-2xs font-extrabold text-indigo-700 flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+                  Restore to Enquiry &rarr;
+                </div>
+              </button>
+
+              {/* Option 2: Master Register */}
+              <button
+                type="button"
+                onClick={() => {
+                  onRestoreVehicle(restoreCandidate, 'master');
+                  setRestoreCandidate(null);
+                  setViewDeletedVehicle(null);
+                }}
+                className="p-4 rounded-xl border-2 border-emerald-200 hover:border-emerald-600 bg-emerald-50/40 hover:bg-emerald-50 text-left transition-all group flex flex-col justify-between cursor-pointer shadow-xs hover:shadow-md"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="p-2 bg-emerald-100 text-emerald-700 rounded-lg group-hover:scale-105 transition-transform">
+                      <Car className="h-5 w-5" />
+                    </span>
+                    <span className="text-[10px] font-black uppercase text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                      Active Fleet
+                    </span>
+                  </div>
+                  <h4 className="text-xs font-black text-slate-900 group-hover:text-emerald-900 mb-1">
+                    Move to Master Register
+                  </h4>
+                  <p className="text-[11px] text-slate-500 leading-snug">
+                    Restores directly as an active vehicle record in the Vehicle Master Fleet Register.
+                  </p>
+                </div>
+                <div className="mt-3 text-2xs font-extrabold text-emerald-700 flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+                  Restore to Master &rarr;
+                </div>
+              </button>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setRestoreCandidate(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

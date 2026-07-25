@@ -636,7 +636,7 @@ export default function PrintVehicleReport({
                               <div className="font-bold text-slate-900">{v.manufacturer} {v.model}</div>
                               <div className="text-slate-500 text-[0.9em] mt-0.5 space-y-0.5">
                                 <div><span className="font-bold">Type:</span> {v.vehicleType}</div>
-                                <div><span className="font-bold">Year:</span> {v.year} • <span className="font-bold text-slate-700">{v.fuelType}</span></div>
+                                <div><span className="font-bold">Year:</span> {v.year} • <span className="font-extrabold uppercase text-[0.85em] px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-300 inline-block">{v.fuelType}</span></div>
                                 <div><span className="font-bold">Trans:</span> {v.transmission}</div>
                               </div>
                             </td>
