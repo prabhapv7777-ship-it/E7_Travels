@@ -27,6 +27,9 @@ import {
   SlidersHorizontal,
   CheckCircle2,
   X,
+  ChevronLeft,
+  ChevronRight,
+  ArrowLeftRight,
 } from 'lucide-react';
 
 interface InductionViewsProps {
@@ -169,6 +172,15 @@ export default function InductionViews({
   const [formError, setFormError] = useState<string | null>(null);
   const [deletingEnqId, setDeletingEnqId] = useState<string | null>(null);
   const [restoringEnqId, setRestoringEnqId] = useState<string | null>(null);
+
+  // Active Induction Table Scroll Reference & Handler
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const scrollTable = (direction: 'left' | 'right') => {
+    if (tableScrollRef.current) {
+      const scrollAmount = direction === 'left' ? -350 : 350;
+      tableScrollRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+    }
+  };
 
   // Comments State
   const [activeCommentTarget, setActiveCommentTarget] = useState<Enquiry | null>(null);
@@ -1279,7 +1291,30 @@ export default function InductionViews({
               Tabular view of all active vehicle induction records with ENQ ID, Car No, Owner Name & Number, Driver & Number, Site Preference, Induction Date, Status, Comments
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Quick Horizontal Scroll Controls */}
+            <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-slate-200 shadow-3xs">
+              <button
+                type="button"
+                onClick={() => scrollTable('left')}
+                className="p-1.5 hover:bg-slate-100 text-slate-600 hover:text-indigo-600 rounded transition-all cursor-pointer"
+                title="Scroll Table Left"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              <span className="text-[10px] font-extrabold uppercase text-slate-500 px-1 select-none flex items-center gap-1">
+                <ArrowLeftRight className="h-3 w-3 text-indigo-500" /> Scroll
+              </span>
+              <button
+                type="button"
+                onClick={() => scrollTable('right')}
+                className="p-1.5 hover:bg-slate-100 text-slate-600 hover:text-indigo-600 rounded transition-all cursor-pointer"
+                title="Scroll Table Right"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
             <button
               onClick={handlePrintActiveInductionTable}
               className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-3xs font-extrabold uppercase tracking-wider rounded-lg shadow-xs flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
@@ -1294,8 +1329,8 @@ export default function InductionViews({
           </div>
         </div>
 
-        <div className="overflow-x-auto w-full max-w-full">
-          <table className="w-full min-w-[1200px] text-left border-collapse">
+        <div ref={tableScrollRef} className="overflow-x-auto scrollbar-visible w-full max-w-full touch-pan-x pb-2">
+          <table className="w-full min-w-[1600px] text-left border-collapse">
             <thead className="bg-slate-50 border-b border-slate-200 text-3xs font-extrabold uppercase tracking-wider text-slate-500 font-mono whitespace-nowrap">
               <tr>
                 <th className="py-3 px-3">ENQ ID</th>

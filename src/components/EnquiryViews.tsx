@@ -115,6 +115,8 @@ import {
   Copy,
   Check,
   Send,
+  AlertTriangle,
+  ShieldAlert,
 } from 'lucide-react';
 import PrintJoiningForm from './PrintJoiningForm';
 import PrintEnquiryReport from './PrintEnquiryReport';
@@ -674,22 +676,51 @@ AREA: ${areaStr}`;
     return e.status || 'New';
   };
 
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
+  // Duplicate Vehicle Modal State & Helper
+  const [duplicateModalMatch, setDuplicateModalMatch] = useState<{
+    type: 'Enquiry' | 'MasterVehicle';
+    enquiry?: Enquiry;
+    vehicle?: Vehicle;
+    vehicleNumber: string;
+  } | null>(null);
 
-    if (!formState.vehicleNumber?.trim()) {
-      setFormError('Vehicle registration/temporary number is required.');
-      return;
-    }
-    if (!formState.ownerNamePhone?.trim()) {
-      setFormError('Owner Name & Phone details are required.');
-      return;
-    }
-    if (!formState.driverName?.trim()) {
-      setFormError('Driver Name is required.');
-      return;
+  const normalizeCarNo = (val: string | undefined | null): string => {
+    if (!val) return '';
+    return val.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  };
+
+  const getExistingVehicleMatch = (vNo: string | undefined | null, currentEditingId?: string | null) => {
+    const norm = normalizeCarNo(vNo);
+    if (!norm || norm.length < 3) return null;
+
+    const existingEnq = enquiries.find(
+      (e) => e.id !== currentEditingId && normalizeCarNo(e.vehicleNumber) === norm
+    );
+    if (existingEnq) {
+      return {
+        type: 'Enquiry' as const,
+        enquiry: existingEnq,
+        vehicleNumber: existingEnq.vehicleNumber || norm,
+      };
     }
 
+    const existingVeh = vehicles.find(
+      (v) => normalizeCarNo(v.registrationNumber || (v as any).vehicleNumber) === norm
+    );
+    if (existingVeh) {
+      return {
+        type: 'MasterVehicle' as const,
+        vehicle: existingVeh,
+        vehicleNumber: existingVeh.registrationNumber || norm,
+      };
+    }
+
+    return null;
+  };
+
+  const liveMatch = getExistingVehicleMatch(formState.vehicleNumber, editingId);
+
+  const executeForceSave = () => {
     let nextStatus = formState.status || 'New';
     if (hasSitePref(formState) && (nextStatus === 'New' || nextStatus === 'Interested')) {
       nextStatus = 'Site Offered';
@@ -728,6 +759,33 @@ AREA: ${areaStr}`;
     }
 
     handleCloseForm();
+    setDuplicateModalMatch(null);
+  };
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!formState.vehicleNumber?.trim()) {
+      setFormError('Vehicle registration/temporary number is required.');
+      return;
+    }
+    if (!formState.ownerNamePhone?.trim()) {
+      setFormError('Owner Name & Phone details are required.');
+      return;
+    }
+    if (!formState.driverName?.trim()) {
+      setFormError('Driver Name is required.');
+      return;
+    }
+
+    // Check if vehicle is already registered in Enquiry Desk or Master Fleet
+    const duplicateMatch = getExistingVehicleMatch(formState.vehicleNumber, editingId);
+    if (duplicateMatch) {
+      setDuplicateModalMatch(duplicateMatch);
+      return;
+    }
+
+    executeForceSave();
   };
 
   const handleDelete = (idOrEnq: string | Enquiry) => {
@@ -1757,8 +1815,32 @@ AREA: ${areaStr}`;
                     placeholder="e.g. TN-07-BY-1234 or TEMP-5541"
                     value={formState.vehicleNumber || ''}
                     onChange={(e) => setFormState({ ...formState, vehicleNumber: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    className={`w-full px-3 py-2 text-xs border rounded-lg bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-mono font-bold ${
+                      liveMatch ? 'border-amber-400 bg-amber-50/20' : 'border-slate-200'
+                    }`}
                   />
+                  {liveMatch && (
+                    <div className="mt-2 p-2.5 bg-amber-50 border border-amber-300 rounded-xl text-2xs text-amber-900 flex items-start justify-between gap-2 shadow-2xs animate-fade-in">
+                      <div className="flex items-start gap-1.5">
+                        <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-black uppercase tracking-wide block text-amber-800 text-[10px]">
+                            Vehicle Already Registered!
+                          </span>
+                          <p className="mt-0.5 font-medium text-slate-700 leading-tight">
+                            Tracked under <strong className="font-mono text-slate-900 font-bold">{liveMatch.type === 'Enquiry' ? liveMatch.enquiry?.id : liveMatch.vehicle?.id}</strong> ({liveMatch.type === 'Enquiry' ? liveMatch.enquiry?.driverName : liveMatch.vehicle?.driverName || 'N/A'}).
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setDuplicateModalMatch(liveMatch)}
+                        className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[9px] font-black uppercase shrink-0 transition-all cursor-pointer shadow-2xs"
+                      >
+                        Track Data
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -3721,6 +3803,189 @@ AREA: ${areaStr}`;
               >
                 <Trash2 className="h-4 w-4" />
                 Yes, Delete Record
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate Vehicle Popup Message Modal */}
+      {duplicateModalMatch && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-amber-200 space-y-5 relative">
+            {/* Header */}
+            <div className="flex items-start gap-3">
+              <div className="p-3 bg-amber-100 text-amber-700 rounded-2xl shrink-0">
+                <ShieldAlert className="h-7 w-7" />
+              </div>
+              <div className="flex-1">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-amber-100 text-amber-900 border border-amber-200 rounded-full text-[10px] font-extrabold uppercase tracking-wider mb-1">
+                  <AlertTriangle className="h-3 w-3 text-amber-700" /> Duplicate Car Number Alert
+                </div>
+                <h3 className="text-base font-black text-slate-900 uppercase tracking-wide">
+                  Vehicle Already Registered!
+                </h3>
+                <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                  Car Number <strong className="font-mono text-slate-900 font-bold">{duplicateModalMatch.vehicleNumber}</strong> is already tracked in the <strong className="text-slate-800 font-bold">{duplicateModalMatch.type === 'Enquiry' ? 'Enquiry Register' : 'Master Fleet Register'}</strong>.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDuplicateModalMatch(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+              >
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Tracked Data Card for Enquiry */}
+            {duplicateModalMatch.type === 'Enquiry' && duplicateModalMatch.enquiry && (
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3 text-xs">
+                <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Tracked Enquiry ID</span>
+                    <span className="font-mono font-black text-indigo-700 text-sm">{duplicateModalMatch.enquiry.id}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Enquiry Date</span>
+                    <span className="font-mono font-bold text-slate-700">{formatDate(duplicateModalMatch.enquiry.enquiryDate)}</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-slate-700">
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Vehicle Type & Fuel</span>
+                    <span className="font-bold text-slate-900">{duplicateModalMatch.enquiry.vehicleType || 'Vehicle'} ({duplicateModalMatch.enquiry.fuelType || 'Fuel'})</span>
+                    <span className="block text-2xs text-slate-500">{duplicateModalMatch.enquiry.vehicleModelYear || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Current Status</span>
+                    <span className="inline-block px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded font-black text-[10px] uppercase mt-0.5">
+                      {duplicateModalMatch.enquiry.status}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Owner Name & Mobile</span>
+                    <span className="font-bold text-slate-900 block">{duplicateModalMatch.enquiry.ownerName || duplicateModalMatch.enquiry.ownerNamePhone || 'N/A'}</span>
+                    <span className="text-2xs font-mono text-slate-500">{duplicateModalMatch.enquiry.ownerMobile || ''}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Driver Name & Mobile</span>
+                    <span className="font-bold text-slate-900 block">{duplicateModalMatch.enquiry.driverName || 'N/A'}</span>
+                    <span className="text-2xs font-mono text-slate-500">{duplicateModalMatch.enquiry.driverPhone || ''}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Driver Area / Location</span>
+                    <span className="font-bold text-slate-900 block">{duplicateModalMatch.enquiry.driverArea || duplicateModalMatch.enquiry.driverAddress || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Company Preference</span>
+                    <span className="font-bold text-slate-900 block">{duplicateModalMatch.enquiry.inductionCompany || duplicateModalMatch.enquiry.sitePreference1 || 'Open Preference'}</span>
+                  </div>
+                </div>
+
+                {(duplicateModalMatch.enquiry.remarks || (duplicateModalMatch.enquiry.comments && duplicateModalMatch.enquiry.comments.length > 0)) && (
+                  <div className="pt-2 border-t border-slate-200/80">
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Latest Remarks / Comment</span>
+                    <p className="text-2xs text-slate-600 font-medium italic mt-0.5">
+                      "{duplicateModalMatch.enquiry.comments && duplicateModalMatch.enquiry.comments.length > 0
+                        ? duplicateModalMatch.enquiry.comments[duplicateModalMatch.enquiry.comments.length - 1].text
+                        : duplicateModalMatch.enquiry.remarks}"
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tracked Data Card for Master Vehicle */}
+            {duplicateModalMatch.type === 'MasterVehicle' && duplicateModalMatch.vehicle && (
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3 text-xs">
+                <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Master Vehicle ID</span>
+                    <span className="font-mono font-black text-emerald-700 text-sm">{duplicateModalMatch.vehicle.id}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Joining Date</span>
+                    <span className="font-mono font-bold text-slate-700">{formatDate(duplicateModalMatch.vehicle.joiningDate)}</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-slate-700">
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Vehicle Type & Fuel</span>
+                    <span className="font-bold text-slate-900">{duplicateModalMatch.vehicle.vehicleType} ({duplicateModalMatch.vehicle.fuelType})</span>
+                    <span className="block text-2xs text-slate-500">{duplicateModalMatch.vehicle.manufacturer} {duplicateModalMatch.vehicle.model}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Fleet Status</span>
+                    <span className="inline-block px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-black text-[10px] uppercase mt-0.5">
+                      {duplicateModalMatch.vehicle.status} MASTER FLEET
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Owner Name</span>
+                    <span className="font-bold text-slate-900 block">{duplicateModalMatch.vehicle.ownerName || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Driver Name</span>
+                    <span className="font-bold text-slate-900 block">{duplicateModalMatch.vehicle.driverName || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Assigned Company & Site</span>
+                    <span className="font-bold text-slate-900 block">{duplicateModalMatch.vehicle.company} - {duplicateModalMatch.vehicle.site}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDuplicateModalMatch(null)}
+                className="w-full sm:w-auto px-4 py-2 text-xs font-semibold border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-600 bg-white cursor-pointer"
+              >
+                Cancel & Fix Car No
+              </button>
+
+              {duplicateModalMatch.type === 'Enquiry' && duplicateModalMatch.enquiry && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetEnq = duplicateModalMatch.enquiry!;
+                    setDuplicateModalMatch(null);
+                    handleOpenEdit(targetEnq);
+                  }}
+                  className="w-full sm:w-auto px-4 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Edit className="h-3.5 w-3.5" />
+                  <span>Open Tracked Record</span>
+                </button>
+              )}
+
+              {duplicateModalMatch.type === 'MasterVehicle' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDuplicateModalMatch(null);
+                    handleCloseForm();
+                    if (onNavigate) onNavigate('Master Fleet');
+                  }}
+                  className="w-full sm:w-auto px-4 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span>Go to Master Fleet</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={executeForceSave}
+                className="w-full sm:w-auto px-3 py-2 text-2xs font-extrabold text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl cursor-pointer"
+                title="Save duplicate entry anyway if required"
+              >
+                Proceed & Save Duplicate
               </button>
             </div>
           </div>
