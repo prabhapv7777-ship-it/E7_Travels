@@ -6,6 +6,7 @@
 import { db, auth } from './firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { Vehicle, Owner, Driver, Company, Site, CompanyPayment, Expense, Enquiry, DeletedVehicle } from '../types';
+import { sanitizeUniqueEntities, deduplicateDeletedVehicles, getKeyFieldsForCollection } from './idUtils';
 
 export enum OperationType {
   CREATE = 'create',
@@ -65,6 +66,7 @@ export interface FleetState {
   expenses: Expense[];
   enquiries: Enquiry[];
   deletedVehicles?: DeletedVehicle[];
+  slabRates?: any[];
 }
 
 export interface FleetStateResult {
@@ -97,8 +99,20 @@ export const saveStateToFirestore = async (key: keyof FleetState, data: any) => 
   try {
     const docRef = doc(db, FLEET_COLLECTION, key);
     // Sanitize data: convert undefined values/properties into clean JSON without undefined fields
-    const sanitizedData = data === undefined ? [] : JSON.parse(JSON.stringify(data));
-    const serialized = JSON.stringify(sanitizedData);
+    const sanitizedLocal = data === undefined ? [] : JSON.parse(JSON.stringify(data));
+
+    let finalData = sanitizedLocal;
+    if (Array.isArray(sanitizedLocal)) {
+      if (key === 'vehicles' || key === 'owners' || key === 'drivers') {
+        const prefix = key === 'vehicles' ? 'VEH' : key === 'owners' ? 'OWN' : 'DRV';
+        const pad = key === 'vehicles' ? 3 : 2;
+        finalData = sanitizeUniqueEntities(finalData, prefix, pad);
+      } else if (key === 'deletedVehicles') {
+        finalData = deduplicateDeletedVehicles(finalData);
+      }
+    }
+
+    const serialized = JSON.stringify(finalData);
 
     // Read/Write Optimization: Skip network write if current data is identical to last known cloud state
     if (lastSavedHashes[key] === serialized) {
@@ -106,7 +120,7 @@ export const saveStateToFirestore = async (key: keyof FleetState, data: any) => 
     }
 
     lastSavedHashes[key] = serialized;
-    await setDoc(docRef, { data: sanitizedData }, { merge: false });
+    await setDoc(docRef, { data: finalData }, { merge: false });
   } catch (error) {
     delete lastSavedHashes[key];
     if (isQuotaError(error)) {
@@ -129,6 +143,7 @@ export const saveAllStateToFirestore = async (state: FleetState) => {
     'expenses',
     'enquiries',
     'deletedVehicles',
+    'slabRates',
   ];
   for (const key of keys) {
     if (state[key]) {
@@ -229,6 +244,7 @@ export const loadStateFromFirestore = async (): Promise<Partial<FleetState> & { 
     'expenses',
     'enquiries',
     'deletedVehicles',
+    'slabRates',
   ];
   
   const state: Partial<FleetState> & { _isQuotaExceeded?: boolean } = {};

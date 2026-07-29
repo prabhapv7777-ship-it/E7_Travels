@@ -5,23 +5,19 @@
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User, Auth } from 'firebase/auth';
-import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
+import { getFirestore, enableMultiTabIndexedDbPersistence, enableIndexedDbPersistence } from 'firebase/firestore';
 import firebaseConfig from '@/firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 export const auth: Auth = getAuth(app);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
-// Enable offline persistence to support local caching when offline
+// Enable offline multi-tab persistence to support seamless real-time caching across tabs
 if (typeof window !== 'undefined') {
-  enableIndexedDbPersistence(db).catch((err) => {
-    if (err.code === 'failed-precondition') {
-      console.warn('Firestore persistence failed: Multiple tabs open');
-    } else if (err.code === 'unimplemented') {
-      console.warn('Firestore persistence is not supported by this browser');
-    } else {
-      console.warn('Firestore persistence error:', err);
-    }
+  enableMultiTabIndexedDbPersistence(db).catch(() => {
+    enableIndexedDbPersistence(db).catch((err) => {
+      console.warn('Firestore persistence fallback warning:', err);
+    });
   });
 }
 

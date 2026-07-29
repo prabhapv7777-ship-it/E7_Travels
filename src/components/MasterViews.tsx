@@ -44,6 +44,7 @@ import {
   VEHICLE_STATUSES,
   Enquiry,
   DeletedVehicle,
+  isGpsRequiredForVehicle,
 } from '../types';
 import { formatDate, toInputDateFormat } from '../lib/dateUtils';
 import { generateUniqueOwnerId, generateUniqueDriverId, generateUniqueVehicleId } from '../lib/idUtils';
@@ -265,7 +266,7 @@ export default function MasterViews({
     const fcDiff = getDaysDiff(v.fcExpiry);
 
     if (v.status === 'Inactive') {
-      const hasGps = !!(v.gpsVendor || v.gpsImei || v.gpsFittingDate);
+      const hasGps = isGpsRequiredForVehicle(v);
       if (hasGps && !v.gpsReturned) {
         return { label: '🚨 Payment Held (GPS Pending Return)', color: 'bg-rose-100 text-rose-900 border-rose-400 font-extrabold animate-pulse' };
       }
@@ -405,10 +406,13 @@ export default function MasterViews({
       officeDocLetterpadRef: vehicleForm.officeDocLetterpadRef || '',
       officeDocRemarks: vehicleForm.officeDocRemarks || '',
       officeDocChecklist: vehicleForm.officeDocChecklist,
+      gpsRequired: vehicleForm.gpsRequired || (isGpsRequiredForVehicle(vehicleForm) ? 'Yes' : 'No'),
       gpsVendor: vehicleForm.gpsVendor || '',
       gpsImei: vehicleForm.gpsImei || '',
       gpsFittingDate: vehicleForm.gpsFittingDate || '',
-      gpsReturned: vehicleForm.status === 'Inactive' ? (vehicleForm.gpsReturned ?? false) : (vehicleForm.gpsReturned ?? true),
+      gpsReturned: (vehicleForm.gpsRequired === 'No' || vehicleForm.gpsRequired === false)
+        ? true
+        : vehicleForm.status === 'Inactive' ? (vehicleForm.gpsReturned ?? false) : (vehicleForm.gpsReturned ?? true),
       gpsReturnDate: vehicleForm.gpsReturnDate || '',
       gpsReturnRemarks: vehicleForm.gpsReturnRemarks || '',
       gpsReturnedBy: vehicleForm.gpsReturnedBy || '',
@@ -578,7 +582,7 @@ export default function MasterViews({
       return v.status !== 'Active';
     }
     if (vehicleFilter === 'new') {
-      const currentMonth = '2026-07';
+      const currentMonth = new Date().toISOString().substring(0, 7);
       return v.joiningDate && v.joiningDate.startsWith(currentMonth);
     }
     if (vehicleFilter === 'doc_pending') {
@@ -588,7 +592,7 @@ export default function MasterViews({
       return !!v.officeDocSubmitted;
     }
     if (vehicleFilter === 'gps_hold') {
-      return v.status === 'Inactive' && (!!v.gpsVendor || !!v.gpsImei || !!v.gpsFittingDate) && !v.gpsReturned;
+      return v.status === 'Inactive' && isGpsRequiredForVehicle(v) && !v.gpsReturned;
     }
     return true;
   });
@@ -777,36 +781,6 @@ export default function MasterViews({
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-      {/* Database Reconciliation Banner for Orphan Owners/Drivers */}
-      {(owners.filter(o => !vehicles.some(v => v.ownerId === o.id)).length > 0 || 
-        drivers.filter(d => !vehicles.some(v => v.driverId === d.id)).length > 0) && (
-        <div className="bg-amber-50 border-b border-amber-200 p-4 px-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in fade-in duration-300">
-          <div className="flex items-start gap-3">
-            <div className="p-1.5 bg-amber-100 rounded-lg text-amber-700 mt-0.5 sm:mt-0">
-              <AlertTriangle className="h-5 w-5" />
-            </div>
-            <div>
-              <h4 className="text-xs font-bold text-amber-850 uppercase tracking-wider">Unlinked Master Records Detected</h4>
-              <p className="text-xs text-slate-600 mt-1">
-                We found <span className="font-semibold text-amber-800">{owners.filter(o => !vehicles.some(v => v.ownerId === o.id)).length} Owner(s)</span> and <span className="font-semibold text-amber-800">{drivers.filter(d => !vehicles.some(v => v.driverId === d.id)).length} Driver(s)</span> with no active vehicles (from previously deleted vehicle records).
-              </p>
-            </div>
-          </div>
-          <button
-            id="btn-reconcile-orphans"
-            onClick={() => {
-              const activeOwnerIds = new Set(vehicles.map((v) => v.ownerId).filter(Boolean));
-              const activeDriverIds = new Set(vehicles.map((v) => v.driverId).filter(Boolean));
-              onUpdateOwners(owners.filter((o) => activeOwnerIds.has(o.id)));
-              onUpdateDrivers(drivers.filter((d) => activeDriverIds.has(d.id)));
-            }}
-            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5 shrink-0 self-stretch sm:self-auto justify-center cursor-pointer"
-          >
-            <CheckCircle className="h-4 w-4" /> Clean Up & Sync Master Registers
-          </button>
-        </div>
-      )}
-
       {/* View Header with Search and Insert button */}
       <div className="p-6 border-b border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -897,7 +871,7 @@ export default function MasterViews({
                   : f === 'doc_submitted'
                     ? vehicles.filter(v => !!v.officeDocSubmitted).length
                     : f === 'gps_hold'
-                      ? vehicles.filter(v => v.status === 'Inactive' && (!!v.gpsVendor || !!v.gpsImei || !!v.gpsFittingDate) && !v.gpsReturned).length
+                      ? vehicles.filter(v => v.status === 'Inactive' && isGpsRequiredForVehicle(v) && !v.gpsReturned).length
                       : f === 'idle' 
                         ? vehicles.filter(v => v.status !== 'Active').length 
                         : vehicles.filter(v => v.joiningDate && v.joiningDate.startsWith('2026-07')).length;
@@ -1302,126 +1276,177 @@ export default function MasterViews({
 
               {/* GPS DEVICE CONFIGURATION & REMOVAL TRACKING */}
               <div className="md:col-span-3 p-3 bg-indigo-50/60 border border-indigo-200 rounded-xl space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-100 pb-2">
                   <span className="text-2xs font-extrabold text-indigo-900 uppercase tracking-wider flex items-center gap-1.5">
                     <Radio className="h-4 w-4 text-indigo-600" />
                     GPS Tracking Hardware Details
                   </span>
-                  {vehicleForm.gpsVendor && (
-                    <span className="text-[10px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded-md border border-indigo-200">
-                      GPS Installed ({vehicleForm.gpsVendor})
+                  
+                  {/* ENABLE / DISABLE GPS TOGGLE */}
+                  <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-indigo-200 shadow-3xs">
+                    <span className="text-[10px] font-bold text-slate-600 uppercase px-1.5">
+                      GPS Mandatory?
                     </span>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-2xs font-bold text-slate-700 mb-1">GPS Vendor / Provider</label>
-                    <input
-                      id="field-gpsVendor"
-                      type="text"
-                      placeholder="e.g. Autoplant GPS, Fiesta GPS, Fleetx"
-                      value={vehicleForm.gpsVendor || ''}
-                      onChange={(e) => setVehicleForm({ ...vehicleForm, gpsVendor: e.target.value })}
-                      className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-2xs font-bold text-slate-700 mb-1">GPS Device IMEI No.</label>
-                    <input
-                      id="field-gpsImei"
-                      type="text"
-                      placeholder="15-digit IMEI number"
-                      value={vehicleForm.gpsImei || ''}
-                      onChange={(e) => setVehicleForm({ ...vehicleForm, gpsImei: e.target.value })}
-                      className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-2xs font-bold text-slate-700 mb-1">GPS Fitting Date</label>
-                    <input
-                      id="field-gpsFittingDate"
-                      type="date"
-                      value={vehicleForm.gpsFittingDate || ''}
-                      onChange={(e) => setVehicleForm({ ...vehicleForm, gpsFittingDate: e.target.value })}
-                      className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white"
-                    />
+                    <button
+                      type="button"
+                      id="gps-toggle-yes"
+                      onClick={() => setVehicleForm({ ...vehicleForm, gpsRequired: 'Yes' })}
+                      className={`px-2.5 py-0.5 rounded text-[10px] font-black uppercase transition-all cursor-pointer ${
+                        (vehicleForm.gpsRequired === 'Yes' || vehicleForm.gpsRequired === true || (!vehicleForm.gpsRequired && isGpsRequiredForVehicle(vehicleForm)))
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                      }`}
+                    >
+                      Enabled (Yes)
+                    </button>
+                    <button
+                      type="button"
+                      id="gps-toggle-no"
+                      onClick={() => setVehicleForm({
+                        ...vehicleForm,
+                        gpsRequired: 'No',
+                        gpsReturned: true
+                      })}
+                      className={`px-2.5 py-0.5 rounded text-[10px] font-black uppercase transition-all cursor-pointer ${
+                        (vehicleForm.gpsRequired === 'No' || vehicleForm.gpsRequired === false || (!vehicleForm.gpsRequired && !isGpsRequiredForVehicle(vehicleForm)))
+                          ? 'bg-slate-700 text-white shadow-xs'
+                          : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                      }`}
+                    >
+                      Disabled (Not Mandatory)
+                    </button>
                   </div>
                 </div>
 
-                {/* INACTIVE VEHICLE GPS REMOVAL PROTOCOL */}
-                {vehicleForm.status === 'Inactive' && (
-                  <div className={`p-3 rounded-lg border text-xs space-y-2.5 transition-all ${
-                    !vehicleForm.gpsReturned && (vehicleForm.gpsVendor || vehicleForm.gpsImei)
-                      ? 'bg-rose-50 border-rose-300 text-rose-900'
-                      : 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                  }`}>
-                    <div className="flex items-start gap-2">
-                      <AlertTriangle className={`h-4 w-4 shrink-0 mt-0.5 ${!vehicleForm.gpsReturned ? 'text-rose-600 animate-bounce' : 'text-emerald-600'}`} />
-                      <div className="flex-1">
-                        <p className="font-extrabold uppercase tracking-wide text-2xs">
-                          {!vehicleForm.gpsReturned ? '🚨 Payment Held - GPS Device Removal & Return Required' : '✅ GPS Device Returned & Payment Unblocked'}
-                        </p>
-                        <p className="text-[11px] opacity-90 mt-0.5">
-                          {!vehicleForm.gpsReturned
-                            ? 'Vehicle is set to Inactive. As per company rules, the installed GPS unit must be removed and returned to the office. Payments will remain ON HOLD until GPS return is recorded.'
-                            : 'GPS device removal has been verified and recorded. Vehicle payments can proceed as per policy.'}
-                        </p>
+                {/* IF GPS IS DISABLED / NOT MANDATORY */}
+                {(vehicleForm.gpsRequired === 'No' || vehicleForm.gpsRequired === false || (!vehicleForm.gpsRequired && !isGpsRequiredForVehicle(vehicleForm))) ? (
+                  <div className="p-2.5 bg-slate-100 border border-slate-200 rounded-lg text-xs text-slate-700 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-slate-400 shrink-0"></span>
+                      <p className="text-2xs font-medium text-slate-600">
+                        GPS tracking is <strong className="font-extrabold text-slate-800 uppercase">Disabled / Not Mandatory</strong> for this vehicle. Changing status to Inactive will <strong className="text-slate-900">NOT hold payments</strong> or require device removal.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setVehicleForm({ ...vehicleForm, gpsRequired: 'Yes' })}
+                      className="px-2 py-1 text-[10px] font-bold text-indigo-700 bg-white border border-indigo-200 hover:bg-indigo-50 rounded-md transition-colors cursor-pointer shrink-0"
+                    >
+                      Enable GPS
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-2xs font-bold text-slate-700 mb-1">GPS Vendor / Provider</label>
+                        <input
+                          id="field-gpsVendor"
+                          type="text"
+                          placeholder="e.g. Autoplant GPS, Fiesta GPS, Fleetx"
+                          value={vehicleForm.gpsVendor || ''}
+                          onChange={(e) => setVehicleForm({ ...vehicleForm, gpsVendor: e.target.value })}
+                          className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-2xs font-bold text-slate-700 mb-1">GPS Device IMEI No.</label>
+                        <input
+                          id="field-gpsImei"
+                          type="text"
+                          placeholder="15-digit IMEI number"
+                          value={vehicleForm.gpsImei || ''}
+                          onChange={(e) => setVehicleForm({ ...vehicleForm, gpsImei: e.target.value })}
+                          className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-2xs font-bold text-slate-700 mb-1">GPS Fitting Date</label>
+                        <input
+                          id="field-gpsFittingDate"
+                          type="date"
+                          value={vehicleForm.gpsFittingDate || ''}
+                          onChange={(e) => setVehicleForm({ ...vehicleForm, gpsFittingDate: e.target.value })}
+                          className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white"
+                        />
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200/60">
-                      <label className="sm:col-span-3 flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-300 cursor-pointer hover:bg-slate-50">
-                        <input
-                          type="checkbox"
-                          checked={!!vehicleForm.gpsReturned}
-                          onChange={(e) => setVehicleForm({
-                            ...vehicleForm,
-                            gpsReturned: e.target.checked,
-                            gpsReturnDate: e.target.checked ? (vehicleForm.gpsReturnDate || new Date().toISOString().substring(0, 10)) : ''
-                          })}
-                          className="h-4 w-4 text-indigo-600 rounded cursor-pointer"
-                        />
-                        <span className="font-bold text-slate-800 text-2xs uppercase">
-                          Confirm: GPS Hardware Unit Removed and Handed Over to Office
-                        </span>
-                      </label>
+                    {/* INACTIVE VEHICLE GPS REMOVAL PROTOCOL */}
+                    {vehicleForm.status === 'Inactive' && (
+                      <div className={`p-3 rounded-lg border text-xs space-y-2.5 transition-all ${
+                        !vehicleForm.gpsReturned
+                          ? 'bg-rose-50 border-rose-300 text-rose-900'
+                          : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                      }`}>
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className={`h-4 w-4 shrink-0 mt-0.5 ${!vehicleForm.gpsReturned ? 'text-rose-600 animate-bounce' : 'text-emerald-600'}`} />
+                          <div className="flex-1">
+                            <p className="font-extrabold uppercase tracking-wide text-2xs">
+                              {!vehicleForm.gpsReturned ? '🚨 Payment Held - GPS Device Removal & Return Required' : '✅ GPS Device Returned & Payment Unblocked'}
+                            </p>
+                            <p className="text-[11px] opacity-90 mt-0.5">
+                              {!vehicleForm.gpsReturned
+                                ? 'Vehicle is set to Inactive and has GPS enabled. The installed GPS unit must be removed and returned to the office. Payments will remain ON HOLD until GPS return is recorded.'
+                                : 'GPS device removal has been verified and recorded. Vehicle payments can proceed as per policy.'}
+                            </p>
+                          </div>
+                        </div>
 
-                      {vehicleForm.gpsReturned && (
-                        <>
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">GPS Return Date</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200/60">
+                          <label className="sm:col-span-3 flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-300 cursor-pointer hover:bg-slate-50">
                             <input
-                              type="date"
-                              value={vehicleForm.gpsReturnDate || ''}
-                              onChange={(e) => setVehicleForm({ ...vehicleForm, gpsReturnDate: e.target.value })}
-                              className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-md bg-white font-mono"
+                              type="checkbox"
+                              checked={!!vehicleForm.gpsReturned}
+                              onChange={(e) => setVehicleForm({
+                                ...vehicleForm,
+                                gpsReturned: e.target.checked,
+                                gpsReturnDate: e.target.checked ? (vehicleForm.gpsReturnDate || new Date().toISOString().substring(0, 10)) : ''
+                              })}
+                              className="h-4 w-4 text-indigo-600 rounded cursor-pointer"
                             />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Received / Handled By</label>
-                            <input
-                              type="text"
-                              placeholder="e.g. Office Admin / Garage Manager"
-                              value={vehicleForm.gpsReturnedBy || ''}
-                              onChange={(e) => setVehicleForm({ ...vehicleForm, gpsReturnedBy: e.target.value })}
-                              className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-md bg-white"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Return Remarks</label>
-                            <input
-                              type="text"
-                              placeholder="e.g. Handed over device at Navalur office"
-                              value={vehicleForm.gpsReturnRemarks || ''}
-                              onChange={(e) => setVehicleForm({ ...vehicleForm, gpsReturnRemarks: e.target.value })}
-                              className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-md bg-white"
-                            />
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
+                            <span className="font-bold text-slate-800 text-2xs uppercase">
+                              Confirm: GPS Hardware Unit Removed and Handed Over to Office
+                            </span>
+                          </label>
+
+                          {vehicleForm.gpsReturned && (
+                            <>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-600 mb-0.5">GPS Return Date</label>
+                                <input
+                                  type="date"
+                                  value={vehicleForm.gpsReturnDate || ''}
+                                  onChange={(e) => setVehicleForm({ ...vehicleForm, gpsReturnDate: e.target.value })}
+                                  className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-md bg-white font-mono"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Received / Handled By</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Office Admin / Garage Manager"
+                                  value={vehicleForm.gpsReturnedBy || ''}
+                                  onChange={(e) => setVehicleForm({ ...vehicleForm, gpsReturnedBy: e.target.value })}
+                                  className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-md bg-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Return Remarks</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Handed over device at Navalur office"
+                                  value={vehicleForm.gpsReturnRemarks || ''}
+                                  onChange={(e) => setVehicleForm({ ...vehicleForm, gpsReturnRemarks: e.target.value })}
+                                  className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-md bg-white"
+                                />
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
               <div className="md:col-span-3">
@@ -2043,9 +2068,10 @@ export default function MasterViews({
                         <button
                           type="button"
                           onClick={() => {
-                            if (v.status === 'Inactive' && (v.gpsVendor || v.gpsImei || v.gpsFittingDate)) {
+                            if (v.status === 'Inactive' || isGpsRequiredForVehicle(v)) {
                               setGpsModalVehicle(v);
                               setGpsModalForm({
+                                gpsRequired: (v.gpsRequired === 'No' || v.gpsRequired === false) ? 'No' : (isGpsRequiredForVehicle(v) ? 'Yes' : 'No'),
                                 gpsVendor: v.gpsVendor || '',
                                 gpsImei: v.gpsImei || '',
                                 gpsReturned: !!v.gpsReturned,
@@ -2056,19 +2082,23 @@ export default function MasterViews({
                             }
                           }}
                           className={`inline-flex items-center justify-center px-3 py-1 text-2xs font-bold rounded-full border ${badge.color} leading-none align-middle ${
-                            v.status === 'Inactive' && (v.gpsVendor || v.gpsImei || v.gpsFittingDate) ? 'cursor-pointer hover:scale-105 transition-transform shadow-3xs' : ''
+                            v.status === 'Inactive' || isGpsRequiredForVehicle(v) ? 'cursor-pointer hover:scale-105 transition-transform shadow-3xs' : ''
                           }`}
-                          title={v.status === 'Inactive' && (v.gpsVendor || v.gpsImei || v.gpsFittingDate) ? 'Click to manage GPS Device Return & Payment Release' : undefined}
+                          title="Click to manage GPS Mandatory status & Device Return"
                         >
                           {badge.label}
                         </button>
                         
-                        {(v.gpsVendor || v.gpsImei) && (
+                        {isGpsRequiredForVehicle(v) ? (
                           <span className={`text-[9px] font-mono flex items-center gap-0.5 ${
                             v.status === 'Inactive' && !v.gpsReturned ? 'text-rose-600 font-extrabold' : 'text-slate-500'
                           }`}>
                             <Radio className="h-2.5 w-2.5 text-indigo-500 inline shrink-0" />
                             {v.gpsVendor || 'GPS'} {v.status === 'Inactive' ? (v.gpsReturned ? '(Returned)' : '🚨 HELD') : ''}
+                          </span>
+                        ) : (
+                          <span className="text-[9px] text-slate-400 font-mono italic">
+                            GPS: Not Mandatory
                           </span>
                         )}
                       </div>
@@ -2120,6 +2150,7 @@ export default function MasterViews({
                                                   (v.driverName && v.driverName.trim() ? drivers.find(d => d.name && d.name.trim().toLowerCase() === v.driverName.trim().toLowerCase()) : null);
                             setVehicleForm({
                               ...v,
+                              gpsRequired: v.gpsRequired || (isGpsRequiredForVehicle(v) ? 'Yes' : 'No'),
                               ownerId: currentOwner ? currentOwner.id : v.ownerId,
                               ownerName: currentOwner ? currentOwner.name : v.ownerName,
                               driverId: currentDriver ? currentDriver.id : v.driverId,
@@ -2834,6 +2865,17 @@ export default function MasterViews({
                   if (activeSubView === 'Vehicle Master') {
                     const vehicleToDelete = vehicles.find((v) => v.id === id);
                     if (vehicleToDelete) {
+                      const linkedOwner = owners.find(
+                        (o) =>
+                          (vehicleToDelete.ownerId && o.id === vehicleToDelete.ownerId) ||
+                          (o.name && vehicleToDelete.ownerName && o.name.trim().toLowerCase() === vehicleToDelete.ownerName.trim().toLowerCase())
+                      );
+                      const linkedDriver = drivers.find(
+                        (d) =>
+                          (vehicleToDelete.driverId && d.id === vehicleToDelete.driverId) ||
+                          (d.name && vehicleToDelete.driverName && d.name.trim().toLowerCase() === vehicleToDelete.driverName.trim().toLowerCase())
+                      );
+
                       const deletedRecord: DeletedVehicle = {
                         id: `DEL-VEH-${Date.now()}`,
                         originalVehicleId: vehicleToDelete.id,
@@ -2843,8 +2885,8 @@ export default function MasterViews({
                         year: vehicleToDelete.year,
                         fuelType: vehicleToDelete.fuelType,
                         vehicleType: vehicleToDelete.vehicleType,
-                        ownerName: vehicleToDelete.ownerName || 'N/A',
-                        driverName: vehicleToDelete.driverName || 'N/A',
+                        ownerName: vehicleToDelete.ownerName || linkedOwner?.name || 'N/A',
+                        driverName: vehicleToDelete.driverName || linkedDriver?.name || 'N/A',
                         company: vehicleToDelete.company || 'N/A',
                         site: vehicleToDelete.site || 'N/A',
                         joiningDate: vehicleToDelete.joiningDate || '',
@@ -2852,17 +2894,29 @@ export default function MasterViews({
                         deletedBy: 'Admin / System',
                         deletionReason: 'Deleted from Master Registers',
                         originalVehicle: vehicleToDelete,
+                        associatedOwner: linkedOwner,
+                        associatedDriver: linkedDriver,
                       };
                       if (onUpdateDeletedVehicles) {
                         onUpdateDeletedVehicles([deletedRecord, ...(deletedVehicles || [])]);
                       }
-                      // Automatically delete the associated owner and driver
-                      if (vehicleToDelete.ownerId) {
-                        onUpdateOwners(owners.filter((o) => o.id !== vehicleToDelete.ownerId));
-                      }
-                      if (vehicleToDelete.driverId) {
-                        onUpdateDrivers(drivers.filter((d) => d.id !== vehicleToDelete.driverId));
-                      }
+
+                      // Automatically delete parallel owner and driver
+                      const nextOwners = owners.filter((o) => {
+                        if (vehicleToDelete.ownerId && o.id === vehicleToDelete.ownerId) return false;
+                        if (linkedOwner && o.id === linkedOwner.id) return false;
+                        if (vehicleToDelete.ownerName && o.name && o.name.trim().toLowerCase() === vehicleToDelete.ownerName.trim().toLowerCase()) return false;
+                        return true;
+                      });
+                      onUpdateOwners(nextOwners);
+
+                      const nextDrivers = drivers.filter((d) => {
+                        if (vehicleToDelete.driverId && d.id === vehicleToDelete.driverId) return false;
+                        if (linkedDriver && d.id === linkedDriver.id) return false;
+                        if (vehicleToDelete.driverName && d.name && d.name.trim().toLowerCase() === vehicleToDelete.driverName.trim().toLowerCase()) return false;
+                        return true;
+                      });
+                      onUpdateDrivers(nextDrivers);
                     }
                     onUpdateVehicles(vehicles.filter((v) => v.id !== id));
                   } else if (activeSubView === 'Owner Master') {
@@ -3369,14 +3423,16 @@ export default function MasterViews({
             <form
               onSubmit={(e) => {
                 e.preventDefault();
+                const isReq = (gpsModalForm.gpsRequired ?? (isGpsRequiredForVehicle(gpsModalVehicle) ? 'Yes' : 'No')) === 'Yes';
                 const updatedVehicles = vehicles.map((v) => {
                   if (v.id === gpsModalVehicle.id) {
                     return {
                       ...v,
-                      gpsVendor: gpsModalForm.gpsVendor || v.gpsVendor,
-                      gpsImei: gpsModalForm.gpsImei || v.gpsImei,
-                      gpsReturned: gpsModalForm.gpsReturned,
-                      gpsReturnDate: gpsModalForm.gpsReturned ? gpsModalForm.gpsReturnDate : '',
+                      gpsRequired: (isReq ? 'Yes' : 'No') as 'Yes' | 'No',
+                      gpsVendor: isReq ? (gpsModalForm.gpsVendor || v.gpsVendor) : (v.gpsVendor || 'None'),
+                      gpsImei: isReq ? (gpsModalForm.gpsImei || v.gpsImei) : v.gpsImei,
+                      gpsReturned: !isReq ? true : gpsModalForm.gpsReturned,
+                      gpsReturnDate: (!isReq || !gpsModalForm.gpsReturned) ? '' : gpsModalForm.gpsReturnDate,
                       gpsReturnedBy: gpsModalForm.gpsReturnedBy,
                       gpsReturnRemarks: gpsModalForm.gpsReturnRemarks,
                     };
@@ -3388,94 +3444,156 @@ export default function MasterViews({
               }}
               className="p-6 space-y-4"
             >
-              {/* Rule Banner */}
-              <div className={`p-3.5 rounded-xl border text-xs space-y-1.5 ${
-                !gpsModalForm.gpsReturned
-                  ? 'bg-rose-50 border-rose-200 text-rose-900'
-                  : 'bg-emerald-50 border-emerald-200 text-emerald-900'
-              }`}>
-                <div className="flex items-center gap-2 font-extrabold uppercase text-2xs">
-                  <AlertTriangle className={`h-4 w-4 shrink-0 ${!gpsModalForm.gpsReturned ? 'text-rose-600 animate-bounce' : 'text-emerald-600'}`} />
-                  <span>Company Rule: GPS Return on Vehicle Deactivation</span>
-                </div>
-                <p className="text-[11px] leading-relaxed">
-                  "If any vehicle goes to Inactive state and has an installed GPS unit, the GPS device MUST be removed and returned to the office. Until GPS device return is recorded, vehicle payment payout processing remains ON HOLD."
-                </p>
-              </div>
-
-              {/* Hardware Info Summary */}
-              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700">
+              {/* GPS Mandatory Toggle Option */}
+              <div className="p-3 bg-slate-100 border border-slate-200 rounded-xl flex items-center justify-between gap-3">
                 <div>
-                  <span className="text-[10px] text-slate-400 font-bold block uppercase">Installed GPS Vendor</span>
-                  <span className="font-bold text-slate-900">{gpsModalForm.gpsVendor || gpsModalVehicle.gpsVendor || 'Autoplant GPS'}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-400 font-bold block uppercase">Device IMEI Number</span>
-                  <span className="font-mono font-bold text-slate-900">{gpsModalForm.gpsImei || gpsModalVehicle.gpsImei || 'N/A'}</span>
-                </div>
-              </div>
-
-              {/* Toggle Return Checkbox */}
-              <label className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
-                gpsModalForm.gpsReturned ? 'bg-emerald-50 border-emerald-300 ring-2 ring-emerald-400/20' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-              }`}>
-                <input
-                  type="checkbox"
-                  checked={gpsModalForm.gpsReturned}
-                  onChange={(e) => setGpsModalForm({
-                    ...gpsModalForm,
-                    gpsReturned: e.target.checked,
-                    gpsReturnDate: e.target.checked ? (gpsModalForm.gpsReturnDate || new Date().toISOString().substring(0, 10)) : '',
-                  })}
-                  className="h-5 w-5 text-emerald-600 rounded cursor-pointer mt-0.5"
-                />
-                <div className="flex-1">
-                  <span className="text-xs font-black text-slate-900 block uppercase">
-                    GPS Device Hardware Removed & Handed Over to Office
+                  <span className="text-xs font-black text-slate-800 uppercase block">
+                    GPS Tracking Status
                   </span>
-                  <span className="text-2xs text-slate-600">
-                    Checking this box certifies that the physical GPS device has been removed from {gpsModalVehicle.registrationNumber} and returned to the company office/vendor. Payment processing will be RELEASED.
+                  <span className="text-2xs text-slate-500">
+                    Specify if GPS hardware is mandatory/installed for {gpsModalVehicle.registrationNumber}
                   </span>
                 </div>
-              </label>
+                <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-slate-300">
+                  <button
+                    type="button"
+                    onClick={() => setGpsModalForm({ ...gpsModalForm, gpsRequired: 'Yes' })}
+                    className={`px-2.5 py-1 rounded text-2xs font-extrabold uppercase transition-all cursor-pointer ${
+                      (gpsModalForm.gpsRequired ?? (isGpsRequiredForVehicle(gpsModalVehicle) ? 'Yes' : 'No')) === 'Yes'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    GPS Enabled
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGpsModalForm({ ...gpsModalForm, gpsRequired: 'No', gpsReturned: true })}
+                    className={`px-2.5 py-1 rounded text-2xs font-extrabold uppercase transition-all cursor-pointer ${
+                      (gpsModalForm.gpsRequired ?? (isGpsRequiredForVehicle(gpsModalVehicle) ? 'Yes' : 'No')) === 'No'
+                        ? 'bg-slate-800 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    GPS Not Mandatory
+                  </button>
+                </div>
+              </div>
 
-              {/* Return Form Details */}
-              {gpsModalForm.gpsReturned && (
-                <div className="space-y-3 p-3.5 bg-emerald-50/60 border border-emerald-200 rounded-xl text-left animate-in fade-in duration-200">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Return Received Date *</label>
-                      <input
-                        type="date"
-                        required
-                        value={gpsModalForm.gpsReturnDate}
-                        onChange={(e) => setGpsModalForm({ ...gpsModalForm, gpsReturnDate: e.target.value })}
-                        className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white font-mono"
-                      />
+              {((gpsModalForm.gpsRequired ?? (isGpsRequiredForVehicle(gpsModalVehicle) ? 'Yes' : 'No')) === 'No') ? (
+                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs space-y-2">
+                  <div className="flex items-center gap-2 font-extrabold text-2xs uppercase text-emerald-800">
+                    <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />
+                    GPS Not Mandatory Selected
+                  </div>
+                  <p className="text-[11px] leading-relaxed">
+                    By marking GPS as <strong>Not Mandatory</strong> for this vehicle, any status changes to <strong>Inactive</strong> will <strong>NOT hold payments</strong> or block financial transactions.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* Rule Banner */}
+                  <div className={`p-3.5 rounded-xl border text-xs space-y-1.5 ${
+                    !gpsModalForm.gpsReturned
+                      ? 'bg-rose-50 border-rose-200 text-rose-900'
+                      : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                  }`}>
+                    <div className="flex items-center gap-2 font-extrabold uppercase text-2xs">
+                      <AlertTriangle className={`h-4 w-4 shrink-0 ${!gpsModalForm.gpsReturned ? 'text-rose-600 animate-bounce' : 'text-emerald-600'}`} />
+                      <span>Company Rule: GPS Return on Vehicle Deactivation</span>
                     </div>
+                    <p className="text-[11px] leading-relaxed">
+                      "If any vehicle goes to Inactive state and has an installed GPS unit, the GPS device MUST be removed and returned to the office. Until GPS device return is recorded, vehicle payment payout processing remains ON HOLD."
+                    </p>
+                  </div>
+
+                  {/* Hardware Info Summary */}
+                  <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700">
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Handled / Received By *</label>
+                      <span className="text-[10px] text-slate-400 font-bold block uppercase">Installed GPS Vendor</span>
                       <input
                         type="text"
-                        required
-                        placeholder="e.g. Admin / Office Manager"
-                        value={gpsModalForm.gpsReturnedBy}
-                        onChange={(e) => setGpsModalForm({ ...gpsModalForm, gpsReturnedBy: e.target.value })}
-                        className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white"
+                        placeholder="e.g. Autoplant GPS, Fiesta GPS"
+                        value={gpsModalForm.gpsVendor || gpsModalVehicle.gpsVendor || ''}
+                        onChange={(e) => setGpsModalForm({ ...gpsModalForm, gpsVendor: e.target.value })}
+                        className="w-full px-2 py-1 text-xs font-bold text-slate-900 border border-slate-200 rounded bg-white mt-1"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-bold block uppercase">Device IMEI Number</span>
+                      <input
+                        type="text"
+                        placeholder="15-digit IMEI"
+                        value={gpsModalForm.gpsImei || gpsModalVehicle.gpsImei || ''}
+                        onChange={(e) => setGpsModalForm({ ...gpsModalForm, gpsImei: e.target.value })}
+                        className="w-full px-2 py-1 text-xs font-mono font-bold text-slate-900 border border-slate-200 rounded bg-white mt-1"
                       />
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Return Remarks / Notes</label>
-                    <textarea
-                      rows={2}
-                      placeholder="e.g. GPS unit inspected and placed in office hardware store box #2."
-                      value={gpsModalForm.gpsReturnRemarks}
-                      onChange={(e) => setGpsModalForm({ ...gpsModalForm, gpsReturnRemarks: e.target.value })}
-                      className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white"
+
+                  {/* Toggle Return Checkbox */}
+                  <label className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
+                    gpsModalForm.gpsReturned ? 'bg-emerald-50 border-emerald-300 ring-2 ring-emerald-400/20' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={gpsModalForm.gpsReturned}
+                      onChange={(e) => setGpsModalForm({
+                        ...gpsModalForm,
+                        gpsReturned: e.target.checked,
+                        gpsReturnDate: e.target.checked ? (gpsModalForm.gpsReturnDate || new Date().toISOString().substring(0, 10)) : '',
+                      })}
+                      className="h-5 w-5 text-emerald-600 rounded cursor-pointer mt-0.5"
                     />
-                  </div>
-                </div>
+                    <div className="flex-1">
+                      <span className="text-xs font-black text-slate-900 block uppercase">
+                        GPS Device Hardware Removed & Handed Over to Office
+                      </span>
+                      <span className="text-2xs text-slate-600">
+                        Checking this box certifies that the physical GPS device has been removed from {gpsModalVehicle.registrationNumber} and returned to the company office/vendor. Payment processing will be RELEASED.
+                      </span>
+                    </div>
+                  </label>
+
+                  {/* Return Form Details */}
+                  {gpsModalForm.gpsReturned && (
+                    <div className="space-y-3 p-3.5 bg-emerald-50/60 border border-emerald-200 rounded-xl text-left animate-in fade-in duration-200">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Return Received Date *</label>
+                          <input
+                            type="date"
+                            required
+                            value={gpsModalForm.gpsReturnDate}
+                            onChange={(e) => setGpsModalForm({ ...gpsModalForm, gpsReturnDate: e.target.value })}
+                            className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Handled / Received By *</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g. Admin / Office Manager"
+                            value={gpsModalForm.gpsReturnedBy}
+                            onChange={(e) => setGpsModalForm({ ...gpsModalForm, gpsReturnedBy: e.target.value })}
+                            className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">Return Remarks / Notes</label>
+                        <textarea
+                          rows={2}
+                          placeholder="e.g. GPS unit inspected and placed in office hardware store box #2."
+                          value={gpsModalForm.gpsReturnRemarks}
+                          onChange={(e) => setGpsModalForm({ ...gpsModalForm, gpsReturnRemarks: e.target.value })}
+                          className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
 
               {/* Action Buttons */}

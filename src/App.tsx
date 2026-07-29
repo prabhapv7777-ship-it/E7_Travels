@@ -47,8 +47,9 @@ import {
   Expense,
   Enquiry,
   DeletedVehicle,
+  SlabRate,
 } from './types';
-import { sanitizeUniqueEntities } from './lib/idUtils';
+import { sanitizeUniqueEntities, deduplicateDeletedVehicles, getKeyFieldsForCollection } from './lib/idUtils';
 
 // Icons
 import {
@@ -195,6 +196,17 @@ export default function App() {
   const [deletedVehicles, setDeletedVehicles] = useState<DeletedVehicle[]>(() => {
     const saved = localStorage.getItem('e7_travels_deletedVehicles') || localStorage.getItem('e7_travels_deleted_vehicles');
     if (saved !== null) {
+      try { return deduplicateDeletedVehicles(JSON.parse(saved)); } catch (e) { return []; }
+    }
+    return [];
+  });
+  const deletedVehiclesRef = React.useRef(deletedVehicles);
+  useEffect(() => {
+    deletedVehiclesRef.current = deletedVehicles;
+  }, [deletedVehicles]);
+  const [slabRates, setSlabRates] = useState<SlabRate[]>(() => {
+    const saved = localStorage.getItem('e7_travels_slab_rates');
+    if (saved !== null) {
       try { return JSON.parse(saved); } catch (e) { return []; }
     }
     return [];
@@ -219,6 +231,7 @@ export default function App() {
         else if (e.key === 'e7_travels_expenses') setExpenses(parsed);
         else if (e.key === 'e7_travels_enquiries') setEnquiries(parsed);
         else if (e.key === 'e7_travels_deletedVehicles') setDeletedVehicles(parsed);
+        else if (e.key === 'e7_travels_slab_rates') setSlabRates(parsed);
       } catch (err) {
         console.error('Storage sync error:', err);
       }
@@ -227,134 +240,152 @@ export default function App() {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  // Automatically manage authentication state & Firestore sync lifecycle
+  // Automatically manage authentication state & Firestore sync lifecycle for all sessions
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    let isMounted = true;
+
+    const initCloudSync = async () => {
+      if (!hasSyncedRef.current) {
+        hasSyncedRef.current = true;
+        try {
+          setCloudStatusMsg('syncing');
+          const cloud = await loadStateFromFirestore();
+
+          const resolveInitialData = (cloudArray: any[] | undefined, localArray: any[], sampleArray: any[]) => {
+            if (Array.isArray(cloudArray)) {
+              return cloudArray;
+            }
+            return localArray.length > 0 ? localArray : sampleArray;
+          };
+
+          const initDeleted = deduplicateDeletedVehicles(resolveInitialData(cloud.deletedVehicles, deletedVehicles, []));
+          setDeletedVehicles(initDeleted);
+          localStorage.setItem('e7_travels_deletedVehicles', JSON.stringify(initDeleted));
+          localStorage.setItem('e7_travels_deleted_vehicles', JSON.stringify(initDeleted));
+          lastReceivedFromServer.current['deletedVehicles'] = JSON.stringify(initDeleted);
+          setLastSavedHash('deletedVehicles', initDeleted);
+
+          const rawVehicles = resolveInitialData(cloud.vehicles, vehicles, SAMPLE_VEHICLES);
+          const deletedSet = new Set(
+            (initDeleted || []).flatMap((dv: any) => [
+              dv.id,
+              dv.originalVehicleId,
+              dv.registrationNumber ? dv.registrationNumber.trim().toUpperCase() : '',
+            ].filter(Boolean))
+          );
+          const filteredVehicles = rawVehicles.filter((v: any) => {
+            if (!v) return false;
+            const vId = v.id ? String(v.id).trim() : '';
+            const vReg = v.registrationNumber ? String(v.registrationNumber).trim().toUpperCase() : '';
+            return (!vId || !deletedSet.has(vId)) && (!vReg || !deletedSet.has(vReg));
+          });
+          const initVehicles = sanitizeUniqueEntities(filteredVehicles, 'VEH', 3);
+          setVehicles(initVehicles);
+          localStorage.setItem('e7_travels_vehicles', JSON.stringify(initVehicles));
+          lastReceivedFromServer.current['vehicles'] = JSON.stringify(initVehicles);
+          setLastSavedHash('vehicles', initVehicles);
+
+          const initOwners = sanitizeUniqueEntities(resolveInitialData(cloud.owners, owners, SAMPLE_OWNERS), 'OWN', 2);
+          setOwners(initOwners);
+          localStorage.setItem('e7_travels_owners', JSON.stringify(initOwners));
+          lastReceivedFromServer.current['owners'] = JSON.stringify(initOwners);
+          setLastSavedHash('owners', initOwners);
+
+          const initDrivers = sanitizeUniqueEntities(resolveInitialData(cloud.drivers, drivers, SAMPLE_DRIVERS), 'DRV', 2);
+          setDrivers(initDrivers);
+          localStorage.setItem('e7_travels_drivers', JSON.stringify(initDrivers));
+          lastReceivedFromServer.current['drivers'] = JSON.stringify(initDrivers);
+          setLastSavedHash('drivers', initDrivers);
+
+          const initCompanies = resolveInitialData(cloud.companies, companies, SAMPLE_COMPANIES);
+          setCompanies(initCompanies);
+          localStorage.setItem('e7_travels_companies', JSON.stringify(initCompanies));
+          lastReceivedFromServer.current['companies'] = JSON.stringify(initCompanies);
+          setLastSavedHash('companies', initCompanies);
+
+          const initSites = resolveInitialData(cloud.sites, sites, SAMPLE_SITES);
+          setSites(initSites);
+          localStorage.setItem('e7_travels_sites', JSON.stringify(initSites));
+          lastReceivedFromServer.current['sites'] = JSON.stringify(initSites);
+          setLastSavedHash('sites', initSites);
+
+          const initPayments = resolveInitialData(cloud.payments, payments, SAMPLE_PAYMENTS);
+          setPayments(initPayments);
+          localStorage.setItem('e7_travels_payments', JSON.stringify(initPayments));
+          lastReceivedFromServer.current['payments'] = JSON.stringify(initPayments);
+          setLastSavedHash('payments', initPayments);
+
+          const initExpenses = resolveInitialData(cloud.expenses, expenses, SAMPLE_EXPENSES);
+          setExpenses(initExpenses);
+          localStorage.setItem('e7_travels_expenses', JSON.stringify(initExpenses));
+          lastReceivedFromServer.current['expenses'] = JSON.stringify(initExpenses);
+          setLastSavedHash('expenses', initExpenses);
+
+          const initEnquiries = resolveInitialData(cloud.enquiries, enquiries, SAMPLE_ENQUIRIES);
+          setEnquiries(initEnquiries);
+          localStorage.setItem('e7_travels_enquiries', JSON.stringify(initEnquiries));
+          lastReceivedFromServer.current['enquiries'] = JSON.stringify(initEnquiries);
+          setLastSavedHash('enquiries', initEnquiries);
+
+          const initSlabRates = resolveInitialData(cloud.slabRates, slabRates, []);
+          setSlabRates(initSlabRates);
+          localStorage.setItem('e7_travels_slab_rates', JSON.stringify(initSlabRates));
+          lastReceivedFromServer.current['slabRates'] = JSON.stringify(initSlabRates);
+          setLastSavedHash('slabRates', initSlabRates);
+
+          if (!isMounted) return;
+
+          if (cloud._isQuotaExceeded) {
+            setIsQuotaExceeded(true);
+            setCloudStatusMsg('quota_exceeded');
+            setIsFirestoreLoaded(false); // Do NOT attach onSnapshot listeners when quota is exceeded
+            setHasSyncedForSession(true);
+            console.warn('Firestore daily read quota exceeded. Operating in Local Offline Mode with browser persistence.');
+          } else {
+            setIsFirestoreLoaded(true);
+            setCloudStatusMsg('success');
+            setHasSyncedForSession(true);
+            console.log('Successfully loaded and connected to Firestore cloud database.');
+          }
+        } catch (err) {
+          if (!isMounted) return;
+          if (isQuotaError(err)) {
+            setIsQuotaExceeded(true);
+            setCloudStatusMsg('quota_exceeded');
+            setIsFirestoreLoaded(false);
+            setHasSyncedForSession(true);
+            console.warn('Firestore daily read quota exceeded on session load. Switched to Local Offline Mode.');
+          } else {
+            console.error('Error syncing with Firestore cloud on active session:', err);
+            setCloudStatusMsg('error');
+            setIsFirestoreLoaded(true); // Fallback to local sandbox to allow standard app operations
+          }
+        }
+      }
+    };
+
+    initCloudSync();
+
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       if (firebaseUser) {
         setUser({
           email: firebaseUser.email,
           displayName: firebaseUser.displayName,
         });
-
-        // Trigger automatic load/sync only once per user sign-in session
-        if (!hasSyncedRef.current) {
-          hasSyncedRef.current = true;
-          try {
-            setCloudStatusMsg('syncing');
-            const cloud = await loadStateFromFirestore();
-
-            // Function to derive initial dataset: Cloud -> Local -> Sample fallback
-            const resolveInitialData = (key: string, cloudArray: any[] | undefined, currentLocal: any[], sampleData: any[]) => {
-              if (Array.isArray(cloudArray)) {
-                return cloudArray;
-              }
-              return currentLocal.length > 0 ? currentLocal : sampleData;
-            };
-
-            const initVehicles = sanitizeUniqueEntities(resolveInitialData('vehicles', cloud.vehicles, vehicles, SAMPLE_VEHICLES), 'VEH', 3);
-            setVehicles(initVehicles);
-            localStorage.setItem('e7_travels_vehicles', JSON.stringify(initVehicles));
-            lastReceivedFromServer.current['vehicles'] = JSON.stringify(initVehicles);
-            setLastSavedHash('vehicles', initVehicles);
-            if (cloud.vehicles === undefined) saveStateToFirestore('vehicles', initVehicles).catch((err) => console.error('Initial save vehicles failed:', err));
-
-            const initOwners = sanitizeUniqueEntities(resolveInitialData('owners', cloud.owners, owners, SAMPLE_OWNERS), 'OWN', 2);
-            setOwners(initOwners);
-            localStorage.setItem('e7_travels_owners', JSON.stringify(initOwners));
-            lastReceivedFromServer.current['owners'] = JSON.stringify(initOwners);
-            setLastSavedHash('owners', initOwners);
-            if (cloud.owners === undefined) saveStateToFirestore('owners', initOwners).catch((err) => console.error('Initial save owners failed:', err));
-
-            const initDrivers = sanitizeUniqueEntities(resolveInitialData('drivers', cloud.drivers, drivers, SAMPLE_DRIVERS), 'DRV', 2);
-            setDrivers(initDrivers);
-            localStorage.setItem('e7_travels_drivers', JSON.stringify(initDrivers));
-            lastReceivedFromServer.current['drivers'] = JSON.stringify(initDrivers);
-            setLastSavedHash('drivers', initDrivers);
-            if (cloud.drivers === undefined) saveStateToFirestore('drivers', initDrivers).catch((err) => console.error('Initial save drivers failed:', err));
-
-            const initCompanies = resolveInitialData('companies', cloud.companies, companies, SAMPLE_COMPANIES);
-            setCompanies(initCompanies);
-            localStorage.setItem('e7_travels_companies', JSON.stringify(initCompanies));
-            lastReceivedFromServer.current['companies'] = JSON.stringify(initCompanies);
-            setLastSavedHash('companies', initCompanies);
-            if (cloud.companies === undefined) saveStateToFirestore('companies', initCompanies).catch((err) => console.error('Initial save companies failed:', err));
-
-            const initSites = resolveInitialData('sites', cloud.sites, sites, SAMPLE_SITES);
-            setSites(initSites);
-            localStorage.setItem('e7_travels_sites', JSON.stringify(initSites));
-            lastReceivedFromServer.current['sites'] = JSON.stringify(initSites);
-            setLastSavedHash('sites', initSites);
-            if (cloud.sites === undefined) saveStateToFirestore('sites', initSites).catch((err) => console.error('Initial save sites failed:', err));
-
-            const initPayments = resolveInitialData('payments', cloud.payments, payments, SAMPLE_PAYMENTS);
-            setPayments(initPayments);
-            localStorage.setItem('e7_travels_payments', JSON.stringify(initPayments));
-            lastReceivedFromServer.current['payments'] = JSON.stringify(initPayments);
-            setLastSavedHash('payments', initPayments);
-            if (cloud.payments === undefined) saveStateToFirestore('payments', initPayments).catch((err) => console.error('Initial save payments failed:', err));
-
-            const initExpenses = resolveInitialData('expenses', cloud.expenses, expenses, SAMPLE_EXPENSES);
-            setExpenses(initExpenses);
-            localStorage.setItem('e7_travels_expenses', JSON.stringify(initExpenses));
-            lastReceivedFromServer.current['expenses'] = JSON.stringify(initExpenses);
-            setLastSavedHash('expenses', initExpenses);
-            if (cloud.expenses === undefined) saveStateToFirestore('expenses', initExpenses).catch((err) => console.error('Initial save expenses failed:', err));
-
-            const initEnquiries = resolveInitialData('enquiries', cloud.enquiries, enquiries, SAMPLE_ENQUIRIES);
-            setEnquiries(initEnquiries);
-            localStorage.setItem('e7_travels_enquiries', JSON.stringify(initEnquiries));
-            lastReceivedFromServer.current['enquiries'] = JSON.stringify(initEnquiries);
-            setLastSavedHash('enquiries', initEnquiries);
-            if (cloud.enquiries === undefined) saveStateToFirestore('enquiries', initEnquiries).catch((err) => console.error('Initial save enquiries failed:', err));
-
-            const initDeleted = cloud.deletedVehicles !== undefined ? cloud.deletedVehicles : deletedVehicles;
-            setDeletedVehicles(initDeleted);
-            localStorage.setItem('e7_travels_deletedVehicles', JSON.stringify(initDeleted));
-            lastReceivedFromServer.current['deletedVehicles'] = JSON.stringify(initDeleted);
-            setLastSavedHash('deletedVehicles', initDeleted);
-            if (cloud.deletedVehicles === undefined) saveStateToFirestore('deletedVehicles', initDeleted).catch((err) => console.error('Initial save deletedVehicles failed:', err));
-
-            if (cloud._isQuotaExceeded) {
-              setIsQuotaExceeded(true);
-              setCloudStatusMsg('quota_exceeded');
-              setIsFirestoreLoaded(false); // Do NOT attach onSnapshot listeners when quota is exceeded
-              setHasSyncedForSession(true);
-              console.warn('Firestore daily read quota exceeded. Operating in Local Offline Mode with browser persistence.');
-            } else {
-              setIsFirestoreLoaded(true);
-              setCloudStatusMsg('success');
-              setHasSyncedForSession(true);
-              console.log('Successfully loaded and connected to Firestore cloud database.');
-            }
-          } catch (err) {
-            if (isQuotaError(err)) {
-              setIsQuotaExceeded(true);
-              setCloudStatusMsg('quota_exceeded');
-              setIsFirestoreLoaded(false);
-              setHasSyncedForSession(true);
-              console.warn('Firestore daily read quota exceeded on session load. Switched to Local Offline Mode.');
-            } else {
-              console.error('Error syncing with Firestore cloud on active session:', err);
-              setCloudStatusMsg('error');
-              setIsFirestoreLoaded(true); // Fallback to local sandbox to allow standard app operations
-            }
-          }
-        }
       } else {
         setUser(null);
-        setIsFirestoreLoaded(false);
-        hasSyncedRef.current = false;
-        setHasSyncedForSession(false);
-        setCloudStatusMsg('idle');
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, []);
 
   // Real-time Firestore sync listeners to propagate changes instantly across tabs/devices
   useEffect(() => {
-    if (!isFirestoreLoaded || !user || isQuotaExceeded) return;
+    if (!isFirestoreLoaded || isQuotaExceeded) return;
 
     const keys = [
       'vehicles',
@@ -366,6 +397,7 @@ export default function App() {
       'expenses',
       'enquiries',
       'deletedVehicles',
+      'slabRates',
     ] as const;
 
     const setters: Record<typeof keys[number], React.Dispatch<React.SetStateAction<any>>> = {
@@ -378,6 +410,7 @@ export default function App() {
       expenses: setExpenses,
       enquiries: setEnquiries,
       deletedVehicles: setDeletedVehicles,
+      slabRates: setSlabRates,
     };
 
     const unsubscribes = keys.map((key) => {
@@ -390,22 +423,44 @@ export default function App() {
           const cloudData = snapshot.data().data;
           if (!Array.isArray(cloudData)) return;
 
-          const sanitized = key === 'vehicles' ? sanitizeUniqueEntities(cloudData, 'VEH', 3)
-            : key === 'owners' ? sanitizeUniqueEntities(cloudData, 'OWN', 2)
-            : key === 'drivers' ? sanitizeUniqueEntities(cloudData, 'DRV', 2)
-            : cloudData;
-
-          const cloudStr = JSON.stringify(sanitized);
-
           setters[key]((currentLocal: any) => {
+            let finalCloud = cloudData;
+            if (key === 'vehicles') {
+              const deletedSet = new Set(
+                (deletedVehiclesRef.current || []).flatMap((dv) => [
+                  dv.id,
+                  dv.originalVehicleId,
+                  dv.registrationNumber ? dv.registrationNumber.trim().toUpperCase() : '',
+                ].filter(Boolean))
+              );
+              finalCloud = cloudData.filter((v: any) => {
+                if (!v) return false;
+                const vId = v.id ? String(v.id).trim() : '';
+                const vReg = v.registrationNumber ? String(v.registrationNumber).trim().toUpperCase() : '';
+                return (!vId || !deletedSet.has(vId)) && (!vReg || !deletedSet.has(vReg));
+              });
+            }
+
+            if (key === 'vehicles' || key === 'owners' || key === 'drivers') {
+              const prefix = key === 'vehicles' ? 'VEH' : key === 'owners' ? 'OWN' : 'DRV';
+              const pad = key === 'vehicles' ? 3 : 2;
+              finalCloud = sanitizeUniqueEntities(finalCloud, prefix, pad);
+            } else if (key === 'deletedVehicles') {
+              finalCloud = deduplicateDeletedVehicles(finalCloud);
+            }
+
+            const cloudStr = JSON.stringify(finalCloud);
             const localStr = JSON.stringify(currentLocal);
 
             if (cloudStr !== localStr) {
-              console.log(`Real-time update received from Firestore for key: ${key} (${sanitized.length} items)`);
+              console.log(`Real-time online cloud sync applied for key: ${key} (${finalCloud.length} items)`);
               localStorage.setItem(`e7_travels_${key}`, cloudStr);
+              if (key === 'deletedVehicles') {
+                localStorage.setItem('e7_travels_deleted_vehicles', cloudStr);
+              }
               lastReceivedFromServer.current[key] = cloudStr;
-              setLastSavedHash(key, sanitized);
-              return sanitized;
+              setLastSavedHash(key, finalCloud);
+              return finalCloud;
             }
             return currentLocal;
           });
@@ -431,7 +486,7 @@ export default function App() {
   useEffect(() => {
     const str = JSON.stringify(vehicles);
     localStorage.setItem('e7_travels_vehicles', str);
-    if (!isQuotaExceeded) {
+    if (!isQuotaExceeded && isFirestoreLoaded) {
       if (lastReceivedFromServer.current['vehicles'] !== str) {
         lastReceivedFromServer.current['vehicles'] = str;
         saveStateToFirestore('vehicles', vehicles).catch((err) => {
@@ -439,12 +494,12 @@ export default function App() {
         });
       }
     }
-  }, [vehicles, isQuotaExceeded]);
+  }, [vehicles, isQuotaExceeded, isFirestoreLoaded]);
 
   useEffect(() => {
     const str = JSON.stringify(owners);
     localStorage.setItem('e7_travels_owners', str);
-    if (!isQuotaExceeded) {
+    if (!isQuotaExceeded && isFirestoreLoaded) {
       if (lastReceivedFromServer.current['owners'] !== str) {
         lastReceivedFromServer.current['owners'] = str;
         saveStateToFirestore('owners', owners).catch((err) => {
@@ -452,12 +507,12 @@ export default function App() {
         });
       }
     }
-  }, [owners, isQuotaExceeded]);
+  }, [owners, isQuotaExceeded, isFirestoreLoaded]);
 
   useEffect(() => {
     const str = JSON.stringify(drivers);
     localStorage.setItem('e7_travels_drivers', str);
-    if (!isQuotaExceeded) {
+    if (!isQuotaExceeded && isFirestoreLoaded) {
       if (lastReceivedFromServer.current['drivers'] !== str) {
         lastReceivedFromServer.current['drivers'] = str;
         saveStateToFirestore('drivers', drivers).catch((err) => {
@@ -465,12 +520,12 @@ export default function App() {
         });
       }
     }
-  }, [drivers, isQuotaExceeded]);
+  }, [drivers, isQuotaExceeded, isFirestoreLoaded]);
 
   useEffect(() => {
     const str = JSON.stringify(companies);
     localStorage.setItem('e7_travels_companies', str);
-    if (!isQuotaExceeded) {
+    if (!isQuotaExceeded && isFirestoreLoaded) {
       if (lastReceivedFromServer.current['companies'] !== str) {
         lastReceivedFromServer.current['companies'] = str;
         saveStateToFirestore('companies', companies).catch((err) => {
@@ -478,12 +533,12 @@ export default function App() {
         });
       }
     }
-  }, [companies, isQuotaExceeded]);
+  }, [companies, isQuotaExceeded, isFirestoreLoaded]);
 
   useEffect(() => {
     const str = JSON.stringify(sites);
     localStorage.setItem('e7_travels_sites', str);
-    if (!isQuotaExceeded) {
+    if (!isQuotaExceeded && isFirestoreLoaded) {
       if (lastReceivedFromServer.current['sites'] !== str) {
         lastReceivedFromServer.current['sites'] = str;
         saveStateToFirestore('sites', sites).catch((err) => {
@@ -491,12 +546,12 @@ export default function App() {
         });
       }
     }
-  }, [sites, isQuotaExceeded]);
+  }, [sites, isQuotaExceeded, isFirestoreLoaded]);
 
   useEffect(() => {
     const str = JSON.stringify(payments);
     localStorage.setItem('e7_travels_payments', str);
-    if (!isQuotaExceeded) {
+    if (!isQuotaExceeded && isFirestoreLoaded) {
       if (lastReceivedFromServer.current['payments'] !== str) {
         lastReceivedFromServer.current['payments'] = str;
         saveStateToFirestore('payments', payments).catch((err) => {
@@ -504,12 +559,12 @@ export default function App() {
         });
       }
     }
-  }, [payments, isQuotaExceeded]);
+  }, [payments, isQuotaExceeded, isFirestoreLoaded]);
 
   useEffect(() => {
     const str = JSON.stringify(expenses);
     localStorage.setItem('e7_travels_expenses', str);
-    if (!isQuotaExceeded) {
+    if (!isQuotaExceeded && isFirestoreLoaded) {
       if (lastReceivedFromServer.current['expenses'] !== str) {
         lastReceivedFromServer.current['expenses'] = str;
         saveStateToFirestore('expenses', expenses).catch((err) => {
@@ -517,12 +572,12 @@ export default function App() {
         });
       }
     }
-  }, [expenses, isQuotaExceeded]);
+  }, [expenses, isQuotaExceeded, isFirestoreLoaded]);
 
   useEffect(() => {
     const str = JSON.stringify(enquiries);
     localStorage.setItem('e7_travels_enquiries', str);
-    if (!isQuotaExceeded) {
+    if (!isQuotaExceeded && isFirestoreLoaded) {
       if (lastReceivedFromServer.current['enquiries'] !== str) {
         lastReceivedFromServer.current['enquiries'] = str;
         saveStateToFirestore('enquiries', enquiries).catch((err) => {
@@ -530,7 +585,34 @@ export default function App() {
         });
       }
     }
-  }, [enquiries, isQuotaExceeded]);
+  }, [enquiries, isQuotaExceeded, isFirestoreLoaded]);
+
+  useEffect(() => {
+    const str = JSON.stringify(deletedVehicles);
+    localStorage.setItem('e7_travels_deletedVehicles', str);
+    localStorage.setItem('e7_travels_deleted_vehicles', str);
+    if (!isQuotaExceeded && isFirestoreLoaded) {
+      if (lastReceivedFromServer.current['deletedVehicles'] !== str) {
+        lastReceivedFromServer.current['deletedVehicles'] = str;
+        saveStateToFirestore('deletedVehicles', deletedVehicles).catch((err) => {
+          console.warn('Auto-save deletedVehicles failed (silent):', err);
+        });
+      }
+    }
+  }, [deletedVehicles, isQuotaExceeded, isFirestoreLoaded]);
+
+  useEffect(() => {
+    const str = JSON.stringify(slabRates);
+    localStorage.setItem('e7_travels_slab_rates', str);
+    if (!isQuotaExceeded && isFirestoreLoaded) {
+      if (lastReceivedFromServer.current['slabRates'] !== str) {
+        lastReceivedFromServer.current['slabRates'] = str;
+        saveStateToFirestore('slabRates', slabRates).catch((err) => {
+          console.warn('Auto-save slabRates failed (silent):', err);
+        });
+      }
+    }
+  }, [slabRates, isQuotaExceeded, isFirestoreLoaded]);
 
   // Floating Toast notification state & auto-dismissal
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -569,12 +651,14 @@ export default function App() {
       await saveStateToFirestore('payments', payments);
       await saveStateToFirestore('expenses', expenses);
       await saveStateToFirestore('enquiries', enquiries);
+      await saveStateToFirestore('deletedVehicles', deletedVehicles);
+      await saveStateToFirestore('slabRates', slabRates);
       setCloudStatusMsg('success');
       showToast('🚀 URL Cloud Database updated successfully with your current data!', 'success');
       setCloudResultModal({
         status: 'success',
         title: 'Successfully Saved to Cloud',
-        message: 'All your current active master fleet records (Vehicles, Owners, Drivers, Companies, Sites, Payments, Expenses, and Enquiries) have been successfully stored and persisted in the secure cloud database!'
+        message: 'All your current active master fleet records (Vehicles, Owners, Drivers, Companies, Sites, Payments, Expenses, Enquiries, Deleted Vehicles, and Slab Rates) have been successfully stored and persisted in the secure cloud database!'
       });
     } catch (err) {
       console.error('Error uploading state to Firestore:', err);
@@ -610,6 +694,8 @@ export default function App() {
       if (cloud.payments) setPayments(cloud.payments);
       if (cloud.expenses) setExpenses(cloud.expenses);
       if (cloud.enquiries) setEnquiries(cloud.enquiries);
+      if (cloud.deletedVehicles) setDeletedVehicles(cloud.deletedVehicles);
+      if (cloud.slabRates) setSlabRates(cloud.slabRates);
       
       setCloudStatusMsg('success');
       showToast('📥 Loaded master data from URL Cloud Database successfully!', 'success');
@@ -642,14 +728,14 @@ export default function App() {
         }
       }
       
-      const mergedVehicles = sanitizeUniqueEntities(smartMergeRecords(vehicles, cloud.vehicles || [], SAMPLE_VEHICLES, ['id', 'registrationNumber']), 'VEH', 3);
-      const mergedOwners = sanitizeUniqueEntities(smartMergeRecords(owners, cloud.owners || [], SAMPLE_OWNERS, ['id', 'name']), 'OWN', 2);
-      const mergedDrivers = sanitizeUniqueEntities(smartMergeRecords(drivers, cloud.drivers || [], SAMPLE_DRIVERS, ['id', 'name']), 'DRV', 2);
-      const mergedCompanies = smartMergeRecords(companies, cloud.companies || [], SAMPLE_COMPANIES, ['name', 'id']);
-      const mergedSites = smartMergeRecords(sites, cloud.sites || [], SAMPLE_SITES, ['id', 'name']);
-      const mergedPayments = smartMergeRecords(payments, cloud.payments || [], SAMPLE_PAYMENTS, ['id']);
-      const mergedExpenses = smartMergeRecords(expenses, cloud.expenses || [], SAMPLE_EXPENSES, ['id']);
-      const mergedEnquiries = smartMergeRecords(enquiries, cloud.enquiries || [], SAMPLE_ENQUIRIES, ['id']);
+      const mergedVehicles = cloud.vehicles !== undefined ? sanitizeUniqueEntities(cloud.vehicles, 'VEH', 3) : vehicles;
+      const mergedOwners = cloud.owners !== undefined ? sanitizeUniqueEntities(cloud.owners, 'OWN', 2) : owners;
+      const mergedDrivers = cloud.drivers !== undefined ? sanitizeUniqueEntities(cloud.drivers, 'DRV', 2) : drivers;
+      const mergedCompanies = cloud.companies !== undefined ? cloud.companies : companies;
+      const mergedSites = cloud.sites !== undefined ? cloud.sites : sites;
+      const mergedPayments = cloud.payments !== undefined ? cloud.payments : payments;
+      const mergedExpenses = cloud.expenses !== undefined ? cloud.expenses : expenses;
+      const mergedEnquiries = cloud.enquiries !== undefined ? cloud.enquiries : enquiries;
 
       setVehicles(mergedVehicles);
       setOwners(mergedOwners);
@@ -711,6 +797,7 @@ export default function App() {
         expenses,
         enquiries,
         deletedVehicles,
+        slabRates,
         exportTimestamp: new Date().toISOString(),
         version: '1.0'
       };
@@ -746,6 +833,7 @@ export default function App() {
       const mergedExpenses = importedData.expenses ? mergeArraysById(expenses, importedData.expenses) : expenses;
       const mergedEnquiries = importedData.enquiries ? mergeArraysById(enquiries, importedData.enquiries) : enquiries;
       const mergedDeleted = importedData.deletedVehicles ? mergeArraysById(deletedVehicles, importedData.deletedVehicles) : deletedVehicles;
+      const mergedSlabRates = importedData.slabRates ? mergeArraysById(slabRates, importedData.slabRates) : slabRates;
 
       setVehicles(mergedVehicles);
       setOwners(mergedOwners);
@@ -756,6 +844,7 @@ export default function App() {
       setExpenses(mergedExpenses);
       setEnquiries(mergedEnquiries);
       setDeletedVehicles(mergedDeleted);
+      setSlabRates(mergedSlabRates);
 
       if (user) {
         await saveStateToFirestore('vehicles', mergedVehicles);
@@ -767,6 +856,7 @@ export default function App() {
         await saveStateToFirestore('expenses', mergedExpenses);
         await saveStateToFirestore('enquiries', mergedEnquiries);
         await saveStateToFirestore('deletedVehicles', mergedDeleted);
+        await saveStateToFirestore('slabRates', mergedSlabRates);
       }
 
       showToast('✅ Yesterday/Backup data merged & imported successfully!', 'success');
@@ -1218,14 +1308,27 @@ export default function App() {
     triggerPush(vehicles, owners, drivers, companies, sites, payments, expenses, newEnquiries);
   };
   const updateDeletedVehicles = (newDeletedVehicles: DeletedVehicle[]) => {
-    setDeletedVehicles(newDeletedVehicles);
+    const cleanList = deduplicateDeletedVehicles(newDeletedVehicles);
+    setDeletedVehicles(cleanList);
     try {
-      localStorage.setItem('e7_travels_deleted_vehicles', JSON.stringify(newDeletedVehicles));
+      localStorage.setItem('e7_travels_deletedVehicles', JSON.stringify(cleanList));
+      localStorage.setItem('e7_travels_deleted_vehicles', JSON.stringify(cleanList));
     } catch (err) {
       console.error('Failed to save deleted vehicles to localStorage:', err);
     }
-    saveStateToFirestore('deletedVehicles', newDeletedVehicles).catch((err) =>
+    saveStateToFirestore('deletedVehicles', cleanList).catch((err) =>
       console.error('Auto-sync deletedVehicles to Firestore failed:', err)
+    );
+  };
+  const updateSlabRates = (newRates: SlabRate[]) => {
+    setSlabRates(newRates);
+    try {
+      localStorage.setItem('e7_travels_slab_rates', JSON.stringify(newRates));
+    } catch (err) {
+      console.error('Failed to save slab rates to localStorage:', err);
+    }
+    saveStateToFirestore('slabRates', newRates).catch((err) =>
+      console.error('Auto-sync slabRates to Firestore failed:', err)
     );
   };
   const restoreVehicle = (recordToRestore: DeletedVehicle, target: 'master' | 'enquiry' = 'master') => {
@@ -1293,9 +1396,10 @@ export default function App() {
 
       updateEnquiries([newEnq, ...updatedList]);
     } else {
+      let nextVehicles = [...vehicles];
       if (orig) {
         if (!vehicles.some((v) => v.id === orig.id || v.registrationNumber === orig.registrationNumber)) {
-          updateVehicles([{ ...orig, status: 'Active' }, ...vehicles]);
+          nextVehicles = [{ ...orig, status: 'Active' }, ...vehicles];
         } else {
           const restoredVeh: Vehicle = {
             ...orig,
@@ -1303,7 +1407,7 @@ export default function App() {
             status: 'Active',
             remarks: `Restored from Deleted Vehicles on ${new Date().toISOString().substring(0, 10)}`,
           };
-          updateVehicles([restoredVeh, ...vehicles]);
+          nextVehicles = [restoredVeh, ...vehicles];
         }
       } else {
         const fallbackVeh: Vehicle = {
@@ -1332,8 +1436,70 @@ export default function App() {
           fastagNumber: '',
           remarks: 'Restored from Deleted Vehicles',
         };
-        updateVehicles([fallbackVeh, ...vehicles]);
+        nextVehicles = [fallbackVeh, ...vehicles];
       }
+
+      // Automatically restore/add Owner to Owner Master if missing
+      const ownerNameCandidate = recordToRestore.ownerName || orig?.ownerName || '';
+      const hasValidOwnerName = ownerNameCandidate && ownerNameCandidate.trim() && ownerNameCandidate.trim().toUpperCase() !== 'N/A' && ownerNameCandidate.trim().toLowerCase() !== 'unknown owner';
+
+      const ownerExists = owners.some((o) => {
+        if (recordToRestore.associatedOwner && o.id === recordToRestore.associatedOwner.id) return true;
+        if (orig?.ownerId && orig.ownerId !== 'new' && o.id === orig.ownerId) return true;
+        if (hasValidOwnerName && o.name && o.name.trim().toLowerCase() === ownerNameCandidate.trim().toLowerCase()) return true;
+        return false;
+      });
+
+      if (!ownerExists && (recordToRestore.associatedOwner || hasValidOwnerName)) {
+        const ownerToStore: Owner = recordToRestore.associatedOwner || {
+          id: orig?.ownerId && orig.ownerId !== 'new' ? orig.ownerId : `OWN${(owners.length + 1).toString().padStart(2, '0')}`,
+          name: ownerNameCandidate,
+          phone: '',
+          email: '',
+          address: '',
+          bankName: '',
+          accountNumber: '',
+          ifsc: '',
+          upiId: '',
+          pan: '',
+          aadhaar: '',
+          remarks: `Restored automatically with Vehicle ${recordToRestore.registrationNumber || ''}`,
+        };
+        updateOwners(sanitizeUniqueEntities([ownerToStore, ...owners], 'OWN', 2));
+      }
+
+      // Automatically restore/add Driver to Driver Master if missing
+      const driverNameCandidate = recordToRestore.driverName || orig?.driverName || '';
+      const hasValidDriverName = driverNameCandidate && driverNameCandidate.trim() && driverNameCandidate.trim().toUpperCase() !== 'N/A' && driverNameCandidate.trim().toLowerCase() !== 'unknown driver';
+
+      const driverExists = drivers.some((d) => {
+        if (recordToRestore.associatedDriver && d.id === recordToRestore.associatedDriver.id) return true;
+        if (orig?.driverId && orig.driverId !== 'new' && d.id === orig.driverId) return true;
+        if (hasValidDriverName && d.name && d.name.trim().toLowerCase() === driverNameCandidate.trim().toLowerCase()) return true;
+        return false;
+      });
+
+      if (!driverExists && (recordToRestore.associatedDriver || hasValidDriverName)) {
+        const driverToStore: Driver = recordToRestore.associatedDriver || {
+          id: orig?.driverId && orig.driverId !== 'new' ? orig.driverId : `DRV${(drivers.length + 1).toString().padStart(2, '0')}`,
+          name: driverNameCandidate,
+          phone: '',
+          address: '',
+          badgeNumber: '',
+          badgeExpiry: '',
+          licenceNumber: '',
+          licenceExpiry: '',
+          aadhaar: '',
+          pan: '',
+          emergencyContact: '',
+          salary: 0,
+          joiningDate: new Date().toISOString().substring(0, 10),
+          status: 'Active',
+        };
+        updateDrivers(sanitizeUniqueEntities([driverToStore, ...drivers], 'DRV', 2));
+      }
+
+      updateVehicles(nextVehicles);
     }
 
     updateDeletedVehicles(deletedVehicles.filter((dv) => dv.id !== recordToRestore.id));
@@ -2083,7 +2249,10 @@ export default function App() {
           )}
 
           {activeTab === 'Tariff' && (
-            <SlabRateManagement />
+            <SlabRateManagement
+              slabRates={slabRates}
+              onUpdateSlabRates={updateSlabRates}
+            />
           )}
 
           {activeTab === 'Documents' && (

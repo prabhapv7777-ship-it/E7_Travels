@@ -19,6 +19,7 @@ import {
   Edit2,
   Percent,
   Receipt,
+  Cloud,
 } from 'lucide-react';
 import {
   Vehicle,
@@ -27,6 +28,7 @@ import {
   Expense,
   EXPENSE_TYPES,
   ExpenseType,
+  isGpsRequiredForVehicle,
 } from '../types';
 import { formatDate, toInputDateFormat, formatMonth, getTodayDateString, getCurrentMonthString } from '../lib/dateUtils';
 
@@ -133,7 +135,7 @@ export default function TransactionViews({
 
     const matchedVehicle = vehicles.find((v) => v.registrationNumber === weeklyVehicle);
 
-    if (matchedVehicle?.status === 'Inactive' && (!!matchedVehicle.gpsVendor || !!matchedVehicle.gpsImei || !!matchedVehicle.gpsFittingDate) && !matchedVehicle.gpsReturned) {
+    if (matchedVehicle?.status === 'Inactive' && isGpsRequiredForVehicle(matchedVehicle) && !matchedVehicle.gpsReturned) {
       alert(`🚨 PAYMENT BLOCKED: Vehicle ${weeklyVehicle} is INACTIVE and has an installed GPS unit (${matchedVehicle.gpsVendor || 'GPS'}) that has NOT been returned. Return GPS in Master Register to release payment hold.`);
       return;
     }
@@ -466,6 +468,9 @@ export default function TransactionViews({
               <TrendingDown className="text-rose-600" />
             )}
             {activeSubView === 'Company Payments' ? 'Company Billing Payments' : 'Expense Deductions Registry'}
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-3xs font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wider ml-2">
+              <Cloud className="h-3 w-3 text-emerald-600" /> Cloud Sync Active
+            </span>
           </h2>
           <p className="text-xs text-slate-500">
             {activeSubView === 'Company Payments'
@@ -987,7 +992,7 @@ export default function TransactionViews({
             <form onSubmit={handlePostWeeklyPayment} className="lg:col-span-7 space-y-4">
               {(() => {
                 const selectedVeh = vehicles.find((v) => v.registrationNumber === weeklyVehicle);
-                const isGpsHold = selectedVeh?.status === 'Inactive' && (!!selectedVeh.gpsVendor || !!selectedVeh.gpsImei || !!selectedVeh.gpsFittingDate) && !selectedVeh.gpsReturned;
+                const isGpsHold = selectedVeh?.status === 'Inactive' && isGpsRequiredForVehicle(selectedVeh) && !selectedVeh.gpsReturned;
                 if (!isGpsHold || !selectedVeh) return null;
                 return (
                   <div className="p-3.5 bg-rose-50 border border-rose-300 rounded-xl text-rose-900 text-xs flex items-start gap-2.5 animate-pulse text-left">

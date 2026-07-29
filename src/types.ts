@@ -21,6 +21,8 @@ export interface DeletedVehicle {
   deletedBy?: string;
   deletionReason?: string;
   originalVehicle: Vehicle; // Complete Vehicle object preserved for restore
+  associatedOwner?: Owner;
+  associatedDriver?: Driver;
 }
 
 export interface Vehicle {
@@ -60,6 +62,7 @@ export interface Vehicle {
   officeDocRemarks?: string;
   officeDocChecklist?: OfficeDocChecklist;
   // GPS INSTALLATION & INACTIVATION RETURN TRACKING
+  gpsRequired?: 'Yes' | 'No' | boolean; // Whether GPS is mandatory/installed for this vehicle
   gpsVendor?: string;              // e.g. 'Fiesta GPS', 'Autoplant', 'Fleetx'
   gpsImei?: string;                // GPS IMEI number
   gpsFittingDate?: string;         // YYYY-MM-DD
@@ -67,6 +70,22 @@ export interface Vehicle {
   gpsReturnDate?: string;          // YYYY-MM-DD
   gpsReturnRemarks?: string;       // Notes on removal / return
   gpsReturnedBy?: string;          // Person who handed over or received
+}
+
+export function isGpsRequiredForVehicle(v?: {
+  gpsRequired?: 'Yes' | 'No' | boolean;
+  gpsVendor?: string;
+  gpsImei?: string;
+  gpsFittingDate?: string;
+} | null): boolean {
+  if (!v) return false;
+  if (v.gpsRequired === 'No' || v.gpsRequired === false) return false;
+  if (v.gpsRequired === 'Yes' || v.gpsRequired === true) return true;
+  const vendor = v.gpsVendor?.trim().toLowerCase();
+  if (!vendor || vendor === 'none' || vendor === 'no' || vendor === 'n/a' || vendor === 'not required' || vendor === 'not mandatory' || vendor === 'disabled') {
+    return false;
+  }
+  return !!(v.gpsVendor || v.gpsImei || v.gpsFittingDate);
 }
 
 export interface OfficeDocChecklist {

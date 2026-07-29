@@ -128,3 +128,58 @@ export function sanitizeUniqueEntities<T extends { id: string }>(items: T[], pre
 
   return result;
 }
+
+export function deduplicateDeletedVehicles<T extends { id: string; originalVehicleId?: string; registrationNumber?: string }>(items: T[]): T[] {
+  if (!Array.isArray(items)) return [];
+  const seenIds = new Set<string>();
+  const seenOrigIds = new Set<string>();
+  const seenRegs = new Set<string>();
+  const result: T[] = [];
+
+  for (const item of items) {
+    if (!item) continue;
+    const id = item.id ? String(item.id).trim() : '';
+    const origId = item.originalVehicleId ? String(item.originalVehicleId).trim() : '';
+    const reg = item.registrationNumber ? String(item.registrationNumber).trim().toUpperCase() : '';
+
+    if (id && seenIds.has(id)) continue;
+    if (origId && origId !== 'N/A' && origId !== '' && seenOrigIds.has(origId)) continue;
+    if (reg && reg !== 'N/A' && reg !== '' && seenRegs.has(reg)) continue;
+
+    if (id) seenIds.add(id);
+    if (origId && origId !== 'N/A' && origId !== '') seenOrigIds.add(origId);
+    if (reg && reg !== 'N/A' && reg !== '') seenRegs.add(reg);
+
+    result.push(item);
+  }
+
+  return result;
+}
+
+export function getKeyFieldsForCollection(key: string): string[] {
+  switch (key) {
+    case 'vehicles':
+      return ['id', 'registrationNumber'];
+    case 'owners':
+      return ['id', 'name'];
+    case 'drivers':
+      return ['id', 'name'];
+    case 'companies':
+      return ['companySite', 'name', 'id'];
+    case 'sites':
+      return ['id', 'name'];
+    case 'payments':
+      return ['id'];
+    case 'expenses':
+      return ['id'];
+    case 'enquiries':
+      return ['id'];
+    case 'deletedVehicles':
+      return ['registrationNumber', 'originalVehicleId', 'id'];
+    case 'slabRates':
+      return ['id', 'vehicleType'];
+    default:
+      return ['id', 'name'];
+  }
+}
+

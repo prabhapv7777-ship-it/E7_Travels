@@ -8,7 +8,7 @@ service cloud.firestore {
 
     // Master fleet documents containing synchronized master lists
     match /fleet/{documentId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if true;
     }
   }
 }

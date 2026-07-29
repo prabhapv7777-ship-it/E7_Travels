@@ -146,38 +146,23 @@ const DEFAULT_SLAB_RATES: SlabRate[] = [
   },
 ];
 
-export default function SlabRateManagement() {
+export interface SlabRateManagementProps {
+  slabRates?: SlabRate[];
+  onUpdateSlabRates?: (rates: SlabRate[]) => void;
+}
+
+export default function SlabRateManagement({
+  slabRates: propSlabRates,
+  onUpdateSlabRates,
+}: SlabRateManagementProps = {}) {
   // Rates state
-  const [slabRates, setSlabRates] = useState<SlabRate[]>(() => {
+  const [localSlabRates, setLocalSlabRates] = useState<SlabRate[]>(() => {
     try {
       const saved = localStorage.getItem('e7_travels_slab_rates');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // Normalize legacy data if needed
-          return parsed.map((item: any) => {
-            if (item.kmSlabs) {
-              item.kmSlabs = item.kmSlabs.map((row: any) => ({
-                ...row,
-                vendorAmount: row.vendorAmount !== undefined ? row.vendorAmount : (row.amount || 0),
-                directAmount: row.directAmount !== undefined ? row.directAmount : (row.amount ? Math.round(row.amount * 0.8) : 0),
-              }));
-            }
-            if (item.packageDetails) {
-              item.packageDetails.vendorPackageAmount = item.packageDetails.vendorPackageAmount !== undefined ? item.packageDetails.vendorPackageAmount : (item.packageDetails.packageAmount || 0);
-              item.packageDetails.directPackageAmount = item.packageDetails.directPackageAmount !== undefined ? item.packageDetails.directPackageAmount : (item.packageDetails.packageAmount ? Math.round(item.packageDetails.packageAmount * 0.82) : 0);
-              item.packageDetails.vendorExtraKmRate = item.packageDetails.vendorExtraKmRate !== undefined ? item.packageDetails.vendorExtraKmRate : (item.packageDetails.extraKmRate || 18);
-              item.packageDetails.directExtraKmRate = item.packageDetails.directExtraKmRate !== undefined ? item.packageDetails.directExtraKmRate : 15;
-            }
-            if (item.flatRateDetails) {
-              item.flatRateDetails.vendorFlatAmount = item.flatRateDetails.vendorFlatAmount !== undefined ? item.flatRateDetails.vendorFlatAmount : (item.flatRateDetails.flatAmount || 0);
-              item.flatRateDetails.directFlatAmount = item.flatRateDetails.directFlatAmount !== undefined ? item.flatRateDetails.directFlatAmount : (item.flatRateDetails.flatAmount ? Math.round(item.flatRateDetails.flatAmount * 0.8) : 0);
-            }
-            if (!item.rateSource || item.rateSource === 'Direct Rate' || item.rateSource === 'Vendor Rate') {
-              item.rateSource = 'Dual Rate (Vendor & Direct)';
-            }
-            return item;
-          });
+          return parsed;
         }
       }
     } catch (e) {
@@ -186,14 +171,20 @@ export default function SlabRateManagement() {
     return DEFAULT_SLAB_RATES;
   });
 
-  // Save to localStorage whenever slabRates changes
-  useEffect(() => {
+  const slabRates = propSlabRates || localSlabRates;
+
+  const setSlabRates = (action: SlabRate[] | ((prev: SlabRate[]) => SlabRate[])) => {
+    const nextRates = typeof action === 'function' ? action(slabRates) : action;
+    setLocalSlabRates(nextRates);
     try {
-      localStorage.setItem('e7_travels_slab_rates', JSON.stringify(slabRates));
+      localStorage.setItem('e7_travels_slab_rates', JSON.stringify(nextRates));
     } catch (e) {
       console.error('Error saving slab rates to localStorage:', e);
     }
-  }, [slabRates]);
+    if (onUpdateSlabRates) {
+      onUpdateSlabRates(nextRates);
+    }
+  };
 
   // Toast / notification message
   const [toastMessage, setToastMessage] = useState<string | null>(null);
