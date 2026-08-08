@@ -36,6 +36,8 @@ export interface Vehicle {
   vehicleType: 'Sedan' | 'SUV' | 'Hatchback' | 'Bus' | 'Tempo Traveler';
   ownerId: string;
   ownerName: string;
+  ownerPhone?: string;
+  ownerAddress?: string;
   driverId: string;
   driverName: string;
   company: string;
@@ -112,6 +114,9 @@ export interface Owner {
   pan: string;
   aadhaar: string;
   remarks: string;
+  emergencyContactName?: string;
+  emergencyContactNumber?: string;
+  emergencyContactRelation?: string;
   comments?: Array<{ date: string; text: string; author: string }>;
 }
 
@@ -127,6 +132,9 @@ export interface Driver {
   aadhaar: string;
   pan: string;
   emergencyContact: string;
+  emergencyContactName?: string;
+  emergencyContactNumber?: string;
+  emergencyContactRelation?: string;
   salary: number;
   joiningDate: string;
   status: 'Active' | 'Inactive';
@@ -260,6 +268,7 @@ export interface Enquiry {
   ownerId?: string;
   ownerName?: string;
   ownerMobile?: string;
+  ownerAddress?: string;
   mfdYear?: string;
   fuelType?: string;
   rcExpiry?: string;

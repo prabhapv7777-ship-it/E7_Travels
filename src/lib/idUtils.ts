@@ -87,6 +87,7 @@ export function sanitizeUniqueEntities<T extends { id: string }>(items: T[], pre
   if (!Array.isArray(items)) return [];
   const seenIds = new Set<string>();
   const seenSignatures = new Set<string>();
+  const seenVehicleRegs = new Set<string>();
   let maxNum = 0;
 
   items.forEach((item) => {
@@ -103,6 +104,15 @@ export function sanitizeUniqueEntities<T extends { id: string }>(items: T[], pre
 
   for (const item of items) {
     if (!item) continue;
+
+    // For vehicles, prevent duplicate registration numbers
+    if (prefix === 'VEH' && (item as any).registrationNumber) {
+      const normReg = String((item as any).registrationNumber).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      if (normReg && seenVehicleRegs.has(normReg)) {
+        continue;
+      }
+      if (normReg) seenVehicleRegs.add(normReg);
+    }
 
     // Deduplicate exact duplicate objects or same id + name combo
     const signature = `${item.id || ''}-${(item as any).name || (item as any).registrationNumber || ''}-${(item as any).phone || ''}`;

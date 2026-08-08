@@ -76,7 +76,6 @@ import {
   DownloadCloud,
   CheckCircle2,
   Files,
-  Tags,
 } from 'lucide-react';
 
 // Sub Components
@@ -93,7 +92,6 @@ import InductionViews from './components/InductionViews';
 import AdminLogin from './components/AdminLogin';
 import RulesView from './components/RulesView';
 import DocumentViews from './components/DocumentViews';
-import SlabRateManagement from './components/SlabRateManagement';
 
 export default function App() {
   // Authentication & Sync State
@@ -877,12 +875,12 @@ export default function App() {
   });
 
   // Layout & Navigation State
-  const [activeTab, setActiveTab] = useState<'Dashboard' | 'Enquiries' | 'Induction' | 'Registers' | 'Transactions' | 'Ledgers' | 'Settlement' | 'Reports' | 'Tariff' | 'VBA Export' | 'Settings' | 'Rules' | 'Documents'>('Dashboard');
+  const [activeTab, setActiveTab] = useState<'Dashboard' | 'Enquiries' | 'Induction' | 'Registers' | 'Transactions' | 'Ledgers' | 'Settlement' | 'Reports' | 'VBA Export' | 'Settings' | 'Rules' | 'Documents'>('Dashboard');
   const [activeSubTab, setActiveSubTab] = useState<string>('Vehicle Master');
-  const [vehicleFilter, setVehicleFilter] = useState<'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted' | 'gps_hold'>('all');
+  const [vehicleFilter, setVehicleFilter] = useState<'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted' | 'gps_hold' | 'duplicates'>('all');
 
   // Unified Navigation Router
-  const handleNavigate = (route: string, filter?: 'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted' | 'gps_hold') => {
+  const handleNavigate = (route: string, filter?: 'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted' | 'gps_hold' | 'duplicates') => {
     if (filter) {
       setVehicleFilter(filter);
     } else if (route === 'Vehicle Master') {
@@ -938,10 +936,6 @@ export default function App() {
         break;
       case 'Rules':
         setActiveTab('Rules');
-        break;
-      case 'Tariff':
-      case 'Slab Rate Management':
-        setActiveTab('Tariff');
         break;
       case 'Tax Invoice':
       case 'Letter Head':
@@ -1647,21 +1641,6 @@ export default function App() {
             </button>
           </div>
 
-          {/* Section: TARIFF */}
-          <div className="space-y-1">
-            <span className="text-4xs font-bold text-blue-300 uppercase tracking-widest pl-3 block mb-1">TARIFF</span>
-            
-            <button
-              id="menu-btn-tariff"
-              onClick={() => handleNavigate('Slab Rate Management')}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
-                activeTab === 'Tariff' ? 'bg-blue-800 text-white' : 'text-blue-100 hover:bg-blue-800/50'
-              }`}
-            >
-              <Tags className="h-4 w-4 shrink-0" /> Slab Rate Management
-            </button>
-          </div>
-
           {/* Section: DOCUMENTS */}
           <div className="space-y-1">
             <span className="text-4xs font-bold text-blue-300 uppercase tracking-widest pl-3 block mb-1">DOCUMENT</span>
@@ -2248,17 +2227,12 @@ export default function App() {
             <RulesView />
           )}
 
-          {activeTab === 'Tariff' && (
-            <SlabRateManagement
-              slabRates={slabRates}
-              onUpdateSlabRates={updateSlabRates}
-            />
-          )}
-
           {activeTab === 'Documents' && (
             <DocumentViews
               vehicles={vehicles}
               companies={companies}
+              owners={owners}
+              drivers={drivers}
               activeSubView={activeSubTab as any}
               customLogo={customLogo}
               onUpdateLogo={(newLogo) => {

@@ -20,6 +20,9 @@ import {
   Percent,
   Receipt,
   Cloud,
+  FileSpreadsheet,
+  FileText,
+  Car,
 } from 'lucide-react';
 import {
   Vehicle,
@@ -31,6 +34,7 @@ import {
   isGpsRequiredForVehicle,
 } from '../types';
 import { formatDate, toInputDateFormat, formatMonth, getTodayDateString, getCurrentMonthString } from '../lib/dateUtils';
+import { exportToExcel, exportToPDF } from '../lib/exportUtils';
 
 interface TransactionViewsProps {
   vehicles: Vehicle[];
@@ -69,6 +73,7 @@ export default function TransactionViews({
     };
   }, [isAdding]);
   const [filterMonth, setFilterMonth] = useState('');
+  const [filterVehicle, setFilterVehicle] = useState('');
   const [deleteCandidate, setDeleteCandidate] = useState<{ id: string; type: 'payment' | 'expense'; title: string } | null>(null);
 
   // Weekly Payment Calculator States
@@ -341,9 +346,9 @@ export default function TransactionViews({
       return;
     }
 
-    // Capture correct month from transaction date
-    const txDate = expForm.date || '2026-07-08';
-    const txMonth = txDate.substring(0, 7); // YYYY-MM
+    // Capture date and selected deduction month
+    const txDate = expForm.date || getTodayDateString();
+    const txMonth = expForm.month || txDate.substring(0, 7); // YYYY-MM
 
     if (editingExpense) {
       const updatedExpense: Expense = {
@@ -403,12 +408,52 @@ export default function TransactionViews({
     ].filter(Boolean))
   ).sort().reverse();
 
+  // List of vehicles with driver/owner details for vehicle filter dropdown
+  const availableVehicleFilterOptions = useMemo(() => {
+    const map = new Map<string, { reg: string; driverName?: string; ownerName?: string }>();
+    
+    vehicles.forEach((v) => {
+      if (v.registrationNumber) {
+        map.set(v.registrationNumber.toUpperCase(), {
+          reg: v.registrationNumber,
+          driverName: v.driverName,
+          ownerName: v.ownerName,
+        });
+      }
+    });
+
+    payments.forEach((p) => {
+      if (p.vehicleNumber && !map.has(p.vehicleNumber.toUpperCase())) {
+        map.set(p.vehicleNumber.toUpperCase(), { reg: p.vehicleNumber });
+      }
+    });
+
+    expenses.forEach((e) => {
+      if (e.vehicleNumber && !map.has(e.vehicleNumber.toUpperCase())) {
+        map.set(e.vehicleNumber.toUpperCase(), { reg: e.vehicleNumber });
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => a.reg.localeCompare(b.reg));
+  }, [vehicles, payments, expenses]);
+
   // Filter & Sort Transactions
   const filteredPayments = payments.filter((p) => {
+    const pVehNorm = (p.vehicleNumber || '').replace(/\s+/g, '').toUpperCase();
+    const filterVehNorm = filterVehicle.replace(/\s+/g, '').toUpperCase();
+    const matchesVehicle = !filterVehicle || pVehNorm === filterVehNorm;
+
+    const matchedVeh = vehicles.find((v) => (v.registrationNumber || '').replace(/\s+/g, '').toUpperCase() === pVehNorm);
+    const driverName = matchedVeh?.driverName || '';
+    const ownerName = matchedVeh?.ownerName || '';
+
     const matchesQuery =
       p.vehicleNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.invoiceNumber.toLowerCase().includes(searchQuery.toLowerCase());
+      p.invoiceNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.remarks || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      driverName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ownerName.toLowerCase().includes(searchQuery.toLowerCase());
     
     let matchesMonth = true;
     if (filterMonth) {
@@ -422,7 +467,7 @@ export default function TransactionViews({
         matchesMonth = p.month === filterMonth;
       }
     }
-    return matchesQuery && matchesMonth;
+    return matchesVehicle && matchesQuery && matchesMonth;
   }).sort((a, b) => {
     const dateA = a.paymentDate || '';
     const dateB = b.paymentDate || '';
@@ -430,13 +475,23 @@ export default function TransactionViews({
   });
 
   const filteredExpenses = expenses.filter((e) => {
+    const eVehNorm = (e.vehicleNumber || '').replace(/\s+/g, '').toUpperCase();
+    const filterVehNorm = filterVehicle.replace(/\s+/g, '').toUpperCase();
+    const matchesVehicle = !filterVehicle || eVehNorm === filterVehNorm;
+
+    const matchedVeh = vehicles.find((v) => (v.registrationNumber || '').replace(/\s+/g, '').toUpperCase() === eVehNorm);
+    const driverName = matchedVeh?.driverName || '';
+    const ownerName = matchedVeh?.ownerName || '';
+
     const matchesQuery =
       e.vehicleNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
       e.expenseType.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      e.remarks.toLowerCase().includes(searchQuery.toLowerCase());
+      e.remarks.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      driverName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ownerName.toLowerCase().includes(searchQuery.toLowerCase());
     
     let matchesMonth = true;
-    if (activeSubView !== 'Expense Entry' && filterMonth) {
+    if (filterMonth) {
       const isYearSelected = filterMonth.length === 4;
       const isDateSelected = filterMonth.length === 10;
       if (isDateSelected) {
@@ -447,12 +502,113 @@ export default function TransactionViews({
         matchesMonth = e.month === filterMonth;
       }
     }
-    return matchesQuery && matchesMonth;
+    return matchesVehicle && matchesQuery && matchesMonth;
   }).sort((a, b) => {
     const dateA = a.date || '';
     const dateB = b.date || '';
     return dateSortOrder === 'desc' ? dateB.localeCompare(dateA) : dateA.localeCompare(dateB);
   });
+
+  // Export handlers
+  const handleExportExcel = () => {
+    if (activeSubView === 'Company Payments') {
+      const headers = [
+        'Payment ID',
+        'Voucher Date',
+        'Billing Month',
+        'Vehicle Number',
+        'Company Name',
+        'Invoice No',
+        'Amount Received (₹)',
+        'Remarks / Note',
+      ];
+
+      const rows = filteredPayments.map((p) => [
+        p.id,
+        formatDate(p.paymentDate),
+        formatMonth(p.month),
+        p.vehicleNumber,
+        p.company || '',
+        p.invoiceNumber || '',
+        p.amountReceived || 0,
+        p.remarks || '',
+      ]);
+
+      exportToExcel('E7_Travels_Company_Payments', 'Company Payments', headers, rows);
+    } else if (activeSubView === 'Expense Entry') {
+      const headers = [
+        'Expense ID',
+        'Voucher Date',
+        'Billing Month',
+        'Category / Expense Type',
+        'Vehicle Number',
+        'Expense Amount (₹)',
+        'Remarks / Description',
+      ];
+
+      const rows = filteredExpenses.map((e) => [
+        e.id,
+        formatDate(e.date),
+        formatMonth(e.month),
+        e.expenseType,
+        e.vehicleNumber,
+        e.amount || 0,
+        e.remarks || '',
+      ]);
+
+      exportToExcel('E7_Travels_Expense_Entry', 'Expense Entry Log', headers, rows);
+    }
+  };
+
+  const handleExportPDF = () => {
+    if (activeSubView === 'Company Payments') {
+      const headers = [
+        'Payment ID',
+        'Date',
+        'Month',
+        'Vehicle No',
+        'Company Name',
+        'Invoice No',
+        'Amount Received (₹)',
+        'Remarks',
+      ];
+
+      const rows = filteredPayments.map((p) => [
+        p.id,
+        formatDate(p.paymentDate),
+        formatMonth(p.month),
+        p.vehicleNumber,
+        p.company || '-',
+        p.invoiceNumber || '-',
+        (p.amountReceived || 0).toLocaleString('en-IN'),
+        p.remarks || '-',
+      ]);
+
+      exportToPDF('E7_Travels_Company_Payments', 'E7 Travels - Company Billing Payments Log', headers, rows, 'landscape');
+    } else if (activeSubView === 'Expense Entry') {
+      const headers = [
+        'Expense ID',
+        'Date',
+        'Month',
+        'Expense Category',
+        'Vehicle No',
+        'Amount (₹)',
+        'Remarks',
+      ];
+
+      const rows = filteredExpenses.map((e) => [
+        e.id,
+        formatDate(e.date),
+        formatMonth(e.month),
+        e.expenseType,
+        e.vehicleNumber,
+        (e.amount || 0).toLocaleString('en-IN'),
+        e.remarks || '-',
+      ]);
+
+      exportToPDF('E7_Travels_Expense_Entry', 'E7 Travels - Fleet Expense Entry Log', headers, rows, 'landscape');
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -480,41 +636,71 @@ export default function TransactionViews({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-            {/* Month Filter */}
-            {activeSubView !== 'Expense Entry' && (
-              <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-600">
-                <Filter className="h-3.5 w-3.5 text-slate-400" />
-                <select
-                  id="filter-month-select"
-                  value={filterMonth}
-                  onChange={(e) => setFilterMonth(e.target.value)}
-                  className="bg-transparent focus:outline-none cursor-pointer font-bold text-slate-800"
+            {/* Vehicle & Driver Filter */}
+            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-600">
+              <Car className="h-3.5 w-3.5 text-blue-600" />
+              <select
+                id="filter-vehicle-select"
+                value={filterVehicle}
+                onChange={(e) => setFilterVehicle(e.target.value)}
+                className="bg-transparent focus:outline-none cursor-pointer font-bold text-slate-800 max-w-[220px] truncate"
+              >
+                <option value="" className="font-normal text-slate-500">All Vehicles & Drivers</option>
+                {availableVehicleFilterOptions.map((item) => {
+                  const driverOrOwner = [item.driverName, item.ownerName].filter(Boolean).join(' / ');
+                  const label = driverOrOwner ? `${item.reg} (${driverOrOwner})` : item.reg;
+                  return (
+                    <option key={item.reg} value={item.reg} className="font-bold text-slate-800">
+                      {label}
+                    </option>
+                  );
+                })}
+              </select>
+              {filterVehicle && (
+                <button
+                  type="button"
+                  onClick={() => setFilterVehicle('')}
+                  className="text-slate-400 hover:text-slate-600 ml-0.5"
+                  title="Clear vehicle filter"
                 >
-                  <option value="" className="font-normal text-slate-500">All Periods</option>
-                  <optgroup label="Month-Wise" className="text-slate-500 font-normal">
-                    {distinctMonths.map((m) => (
-                      <option key={m} value={m} className="font-bold text-slate-800">
-                        {formatMonth(m)}
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Year-Wise" className="text-slate-500 font-normal">
-                    {distinctYears.map((y) => (
-                      <option key={y} value={y} className="font-bold text-slate-800">
-                        {y} (Full Year)
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Date-Wise" className="text-slate-500 font-normal">
-                    {distinctDates.map((d) => (
-                      <option key={d} value={d} className="font-bold text-slate-800">
-                        {formatDate(d)}
-                      </option>
-                    ))}
-                  </optgroup>
-                </select>
-              </div>
-            )}
+                  <XCircle className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Month Filter */}
+            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-600">
+              <Filter className="h-3.5 w-3.5 text-slate-400" />
+              <select
+                id="filter-month-select"
+                value={filterMonth}
+                onChange={(e) => setFilterMonth(e.target.value)}
+                className="bg-transparent focus:outline-none cursor-pointer font-bold text-slate-800"
+              >
+                <option value="" className="font-normal text-slate-500">All Periods</option>
+                <optgroup label="Month-Wise" className="text-slate-500 font-normal">
+                  {distinctMonths.map((m) => (
+                    <option key={m} value={m} className="font-bold text-slate-800">
+                      {formatMonth(m)}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Year-Wise" className="text-slate-500 font-normal">
+                  {distinctYears.map((y) => (
+                    <option key={y} value={y} className="font-bold text-slate-800">
+                      {y} (Full Year)
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Date-Wise" className="text-slate-500 font-normal">
+                  {distinctDates.map((d) => (
+                    <option key={d} value={d} className="font-bold text-slate-800">
+                      {formatDate(d)}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+            </div>
 
             {/* Date Sort Dropdown */}
             <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-600">
@@ -542,6 +728,23 @@ export default function TransactionViews({
                 className="pl-8 pr-4 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 w-44"
               />
             </div>
+
+            <button
+              id="btn-export-excel-tx"
+              onClick={handleExportExcel}
+              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 hover:bg-emerald-100 flex items-center gap-1 transition-colors cursor-pointer shadow-3xs"
+              title={`Export ${activeSubView} to Excel spreadsheet (.xlsx)`}
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" /> Export Excel
+            </button>
+            <button
+              id="btn-export-pdf-tx"
+              onClick={handleExportPDF}
+              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-50 border border-rose-200 text-rose-800 hover:bg-rose-100 flex items-center gap-1 transition-colors cursor-pointer shadow-3xs"
+              title={`Export ${activeSubView} to PDF document`}
+            >
+              <FileText className="h-3.5 w-3.5 text-rose-600" /> Export PDF
+            </button>
 
             {((activeSubView === 'Company Payments' && filteredPayments.length > 0) || 
               (activeSubView === 'Expense Entry' && filteredExpenses.length > 0)) && (
@@ -726,15 +929,38 @@ export default function TransactionViews({
 
           {/* EXPENSE INPUT FORM */}
           {activeSubView === 'Expense Entry' && (
-            <form onSubmit={handleSaveExpense} className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <form onSubmit={handleSaveExpense} className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Transaction Date *</label>
                 <input
                   id="exp-date-input"
                   type="date"
                   value={toInputDateFormat(expForm.date) || ''}
-                  onChange={(e) => setExpForm({ ...expForm, date: e.target.value })}
+                  onChange={(e) => {
+                    const newDate = e.target.value;
+                    setExpForm(prev => ({
+                      ...prev,
+                      date: newDate,
+                      // If month isn't explicitly set yet, keep synced with date month
+                      month: prev.month || (newDate ? newDate.substring(0, 7) : getCurrentMonthString())
+                    }));
+                  }}
                   className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-indigo-900 mb-1 flex items-center justify-between">
+                  <span>Deduction Month *</span>
+                  <span className="text-[9px] bg-indigo-100 text-indigo-800 font-extrabold px-1.5 py-0.5 rounded border border-indigo-200 uppercase tracking-wider">
+                    Target Deduct
+                  </span>
+                </label>
+                <input
+                  id="exp-month-input"
+                  type="month"
+                  value={expForm.month || (expForm.date ? expForm.date.substring(0, 7) : getCurrentMonthString())}
+                  onChange={(e) => setExpForm({ ...expForm, month: e.target.value })}
+                  className="w-full px-3 py-2 text-xs border border-indigo-300 rounded-lg bg-indigo-50/50 font-mono font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 shadow-3xs"
                 />
               </div>
               <div>
@@ -748,7 +974,7 @@ export default function TransactionViews({
                   <option value="">-- Choose Vehicle --</option>
                   {vehicles.map((v) => (
                     <option key={v.id} value={v.registrationNumber}>
-                      {v.registrationNumber} ({v.driverName})
+                      {v.registrationNumber} ({v.driverName || v.ownerName})
                     </option>
                   ))}
                 </select>
@@ -779,7 +1005,7 @@ export default function TransactionViews({
                   className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white font-semibold"
                 />
               </div>
-              <div className="md:col-span-4">
+              <div className="md:col-span-5">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Voucher Remarks</label>
                 <input
                   id="exp-remarks-input"
@@ -790,7 +1016,7 @@ export default function TransactionViews({
                   className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white"
                 />
               </div>
-              <div className="md:col-span-4 flex gap-2">
+              <div className="md:col-span-5 flex gap-2">
                 <button
                   id="exp-submit-btn"
                   type="submit"
@@ -885,9 +1111,9 @@ export default function TransactionViews({
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-2xs font-bold text-slate-600 uppercase tracking-wider">
-                <th className="py-3 px-4">Date</th>
-                <th className="py-3 px-4">Month</th>
-                <th className="py-3 px-4">Vehicle Number</th>
+                <th className="py-3 px-4">Transaction Date</th>
+                <th className="py-3 px-4">Deduction Month</th>
+                <th className="py-3 px-4">Vehicle Plate Number</th>
                 <th className="py-3 px-4">Deduct Category</th>
                 <th className="py-3 px-4 text-right">Amount Deducted</th>
                 <th className="py-3 px-4">Remarks</th>
@@ -897,9 +1123,14 @@ export default function TransactionViews({
             <tbody className="divide-y divide-slate-100 text-xs">
               {filteredExpenses.map((e) => (
                 <tr key={e.id} className="hover:bg-slate-50/30">
-                  <td className="py-2.5 px-4 text-slate-500">{formatDate(e.date)}</td>
-                  <td className="py-2.5 px-4 font-mono font-medium text-slate-500">{e.month}</td>
-                  <td className="py-2.5 px-4 font-mono font-medium text-slate-800">{e.vehicleNumber}</td>
+                  <td className="py-2.5 px-4 text-slate-500 whitespace-nowrap">{formatDate(e.date)}</td>
+                  <td className="py-2.5 px-4 whitespace-nowrap">
+                    <span className="inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-950 px-2.5 py-1 rounded-md border border-indigo-200/80 font-mono font-bold text-2xs shadow-3xs">
+                      <Calendar className="h-3 w-3 text-indigo-600 shrink-0" />
+                      {formatMonth(e.month)}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-4 font-mono font-bold text-slate-800">{e.vehicleNumber}</td>
                   <td className="py-2.5 px-4">
                     <span
                       className={`px-2 py-0.5 rounded text-2xs font-semibold ${

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Search,
   Plus,
@@ -52,6 +52,26 @@ import PrintJoiningForm from './PrintJoiningForm';
 import PrintVehicleReport from './PrintVehicleReport';
 import PrintLetterpadSubmissionSlip from './PrintLetterpadSubmissionSlip';
 import { getVendorBadge, VENDOR_SITE_MAP } from './Settings';
+import { exportToExcel, exportToPDF } from '../lib/exportUtils';
+
+const formatCombinedEmergency = (name?: string, rel?: string, num?: string) => {
+  const parts: string[] = [];
+  if (name && rel) {
+    parts.push(`${name} (${rel})`);
+  } else if (name) {
+    parts.push(name);
+  } else if (rel) {
+    parts.push(rel);
+  }
+
+  if (num) {
+    if (parts.length > 0) {
+      return `${parts.join(' ')} - ${num}`;
+    }
+    return num;
+  }
+  return parts.join(' ');
+};
 
 interface MasterViewsProps {
   vehicles: Vehicle[];
@@ -60,8 +80,8 @@ interface MasterViewsProps {
   companies: Company[];
   sites: Site[];
   activeSubView: 'Vehicle Master' | 'Owner Master' | 'Driver Master' | 'Company Master' | 'Site Master' | 'Vendor Register' | 'Deleted Vehicles';
-  vehicleFilter?: 'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted' | 'gps_hold';
-  onSetVehicleFilter?: (filter: 'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted' | 'gps_hold') => void;
+  vehicleFilter?: 'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted' | 'gps_hold' | 'duplicates';
+  onSetVehicleFilter?: (filter: 'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted' | 'gps_hold' | 'duplicates') => void;
   onUpdateVehicles: (v: Vehicle[]) => void;
   onUpdateOwners: (o: Owner[]) => void;
   onUpdateDrivers: (d: Driver[]) => void;
@@ -147,28 +167,29 @@ export default function MasterViews({
     const fuel = (fuelType || 'Diesel').trim().toUpperCase();
     if (fuel === 'EV' || fuel === 'ELECTRIC') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-purple-100 text-purple-900 border border-purple-200/80 shadow-3xs">
-          <span className="text-[11px]">⚡</span> EV
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-purple-100 text-purple-900 border border-purple-300 shadow-3xs">
+          <span className="text-[11px] leading-none">⚡</span> EV
         </span>
       );
     }
     if (fuel === 'CNG') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-cyan-100 text-cyan-900 border border-cyan-200/80 shadow-3xs">
-          <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></span> CNG
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-900 border border-emerald-300 shadow-3xs">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse"></span> CNG
         </span>
       );
     }
     if (fuel === 'PETROL') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-900 border border-emerald-200/80 shadow-3xs">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> PETROL
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-rose-100 text-rose-900 border border-rose-300 shadow-3xs">
+          <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0"></span> PETROL
         </span>
       );
     }
+    // DIESEL
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-200/80 shadow-3xs">
-        <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> DIESEL
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300 shadow-3xs">
+        <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span> DIESEL
       </span>
     );
   };
@@ -268,18 +289,18 @@ export default function MasterViews({
     if (v.status === 'Inactive') {
       const hasGps = isGpsRequiredForVehicle(v);
       if (hasGps && !v.gpsReturned) {
-        return { label: '🚨 Payment Held (GPS Pending Return)', color: 'bg-rose-100 text-rose-900 border-rose-400 font-extrabold animate-pulse' };
+        return { label: '🚨 Payment Held (GPS Pending Return)', color: 'bg-rose-100 text-rose-900 border-rose-400 font-extrabold animate-pulse shadow-3xs' };
       }
       if (hasGps && v.gpsReturned) {
-        return { label: 'Inactive (GPS Returned)', color: 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold' };
+        return { label: 'Inactive (GPS Returned)', color: 'bg-teal-100 text-teal-900 border-teal-300 font-extrabold shadow-3xs' };
       }
-      return { label: 'Inactive', color: 'bg-slate-100 text-slate-700 border-slate-300' };
+      return { label: 'Inactive', color: 'bg-slate-200 text-slate-800 border-slate-300 font-extrabold shadow-3xs' };
     }
-    if (emiDiff < 0) return { label: 'Overdue EMI', color: 'bg-rose-100 text-rose-800 border-rose-300 animate-pulse' };
-    if (insDiff >= 0 && insDiff <= 30) return { label: 'Insurance Expiring', color: 'bg-orange-100 text-orange-800 border-orange-300' };
-    if (perDiff >= 0 && perDiff <= 30) return { label: 'Permit Expiring', color: 'bg-amber-100 text-amber-800 border-amber-300' };
-    if (fcDiff >= 0 && fcDiff <= 30) return { label: 'FC Expiring', color: 'bg-blue-100 text-blue-800 border-blue-300' };
-    return { label: 'Active', color: 'bg-emerald-100 text-emerald-800 border-emerald-300' };
+    if (emiDiff < 0) return { label: 'Overdue EMI', color: 'bg-purple-100 text-purple-900 border-purple-300 font-extrabold animate-pulse shadow-3xs' };
+    if (insDiff >= 0 && insDiff <= 30) return { label: 'Insurance Expiring', color: 'bg-orange-100 text-orange-900 border-orange-300 font-extrabold shadow-3xs' };
+    if (perDiff >= 0 && perDiff <= 30) return { label: 'Permit Expiring', color: 'bg-amber-100 text-amber-900 border-amber-300 font-extrabold shadow-3xs' };
+    if (fcDiff >= 0 && fcDiff <= 30) return { label: 'FC Expiring', color: 'bg-blue-100 text-blue-900 border-blue-300 font-extrabold shadow-3xs' };
+    return { label: 'Active', color: 'bg-emerald-100 text-emerald-900 border-emerald-300 font-extrabold shadow-3xs' };
   };
 
   // Helper to map a full Vehicle record into an Enquiry structure for printing
@@ -448,6 +469,9 @@ export default function MasterViews({
       pan: ownerForm.pan || '',
       aadhaar: ownerForm.aadhaar || '',
       remarks: ownerForm.remarks || '',
+      emergencyContactName: ownerForm.emergencyContactName || '',
+      emergencyContactNumber: ownerForm.emergencyContactNumber || '',
+      emergencyContactRelation: ownerForm.emergencyContactRelation || '',
     };
 
     if (editingId) {
@@ -469,6 +493,12 @@ export default function MasterViews({
       return;
     }
 
+    const emName = driverForm.emergencyContactName || '';
+    const emNum = driverForm.emergencyContactNumber || '';
+    const emRel = driverForm.emergencyContactRelation || '';
+
+    const combinedEmergency = formatCombinedEmergency(emName, emRel, emNum) || driverForm.emergencyContact || '';
+
     const driverRecord: Driver = {
       id: driverForm.id || generateUniqueDriverId(drivers),
       name: driverForm.name,
@@ -480,7 +510,10 @@ export default function MasterViews({
       licenceExpiry: driverForm.licenceExpiry || '',
       aadhaar: driverForm.aadhaar || '',
       pan: driverForm.pan || '',
-      emergencyContact: driverForm.emergencyContact || '',
+      emergencyContact: combinedEmergency,
+      emergencyContactName: emName,
+      emergencyContactNumber: emNum,
+      emergencyContactRelation: emRel,
       salary: Number(driverForm.salary) || 0,
       joiningDate: driverForm.joiningDate || '2026-07-08',
       status: driverForm.status || 'Active',
@@ -561,6 +594,83 @@ export default function MasterViews({
     setDeleteCandidate({ id, name });
   };
 
+  // ----------------- Duplicate Vehicle Numbers Logic -----------------
+  const normalizeRegNumber = (reg: string) => (reg || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+
+  const duplicateVehicleGroups = useMemo(() => {
+    const groups = new Map<string, Vehicle[]>();
+    vehicles.forEach((v) => {
+      const norm = normalizeRegNumber(v.registrationNumber);
+      if (!norm) return;
+      if (!groups.has(norm)) groups.set(norm, []);
+      groups.get(norm)!.push(v);
+    });
+
+    const dupes = new Map<string, Vehicle[]>();
+    groups.forEach((list, norm) => {
+      if (list.length > 1) {
+        dupes.set(norm, list);
+      }
+    });
+    return dupes;
+  }, [vehicles]);
+
+  const handleCleanDuplicateVehicles = () => {
+    const cleaned: Vehicle[] = [];
+    const groups = new Map<string, Vehicle[]>();
+
+    vehicles.forEach((v) => {
+      const norm = normalizeRegNumber(v.registrationNumber);
+      if (!norm) {
+        cleaned.push(v);
+        return;
+      }
+      if (!groups.has(norm)) groups.set(norm, []);
+      groups.get(norm)!.push(v);
+    });
+
+    groups.forEach((list) => {
+      if (list.length === 1) {
+        cleaned.push(list[0]);
+      } else {
+        const sorted = [...list].sort((a, b) => {
+          const scoreA =
+            (a.status === 'Active' ? 100 : 0) +
+            (a.insuranceExpiry ? 10 : 0) +
+            (a.ownerName && a.ownerName !== 'Unknown Owner' ? 5 : 0) +
+            (a.driverName && a.driverName !== 'Unknown Driver' ? 5 : 0) +
+            (a.company ? 5 : 0);
+          const scoreB =
+            (b.status === 'Active' ? 100 : 0) +
+            (b.insuranceExpiry ? 10 : 0) +
+            (b.ownerName && b.ownerName !== 'Unknown Owner' ? 5 : 0) +
+            (b.driverName && b.driverName !== 'Unknown Driver' ? 5 : 0) +
+            (b.company ? 5 : 0);
+          return scoreB - scoreA;
+        });
+
+        const primary = { ...sorted[0] };
+        sorted.slice(1).forEach((dup) => {
+          if (!primary.ownerName || primary.ownerName === 'Unknown Owner') primary.ownerName = dup.ownerName;
+          if (!primary.ownerId || primary.ownerId === 'new') primary.ownerId = dup.ownerId;
+          if (!primary.driverName || primary.driverName === 'Unknown Driver') primary.driverName = dup.driverName;
+          if (!primary.driverId || primary.driverId === 'new') primary.driverId = dup.driverId;
+          if (!primary.company) primary.company = dup.company;
+          if (!primary.site) primary.site = dup.site;
+          if (!primary.insuranceExpiry) primary.insuranceExpiry = dup.insuranceExpiry;
+          if (!primary.fcExpiry) primary.fcExpiry = dup.fcExpiry;
+          if (!primary.permitExpiry) primary.permitExpiry = dup.permitExpiry;
+          if (!primary.fastagNumber) primary.fastagNumber = dup.fastagNumber;
+        });
+
+        cleaned.push(primary);
+      }
+    });
+
+    onUpdateVehicles(cleaned);
+    if (onSetVehicleFilter) onSetVehicleFilter('all');
+  };
+
   // ----------------- Filter Logic -----------------
   const filteredVehicles = vehicles.filter((v) => {
     const matchesSearch =
@@ -575,6 +685,10 @@ export default function MasterViews({
 
     if (!matchesSearch) return false;
 
+    if (vehicleFilter === 'duplicates') {
+      const norm = normalizeRegNumber(v.registrationNumber);
+      return duplicateVehicleGroups.has(norm);
+    }
     if (vehicleFilter === 'running') {
       return v.status === 'Active';
     }
@@ -779,8 +893,260 @@ export default function MasterViews({
     );
   });
 
+  // ----------------- Export Handlers -----------------
+  const handleExportExcel = () => {
+    if (activeSubView === 'Vehicle Master') {
+      const headers = [
+        'Vehicle ID',
+        'Registration No',
+        'Vehicle Type',
+        'Manufacturer',
+        'Model',
+        'Owner Name',
+        'Driver Name',
+        'Company',
+        'Site',
+        'Joining Date',
+        'Status',
+        'Insurance Expiry',
+        'FC Expiry',
+        'Permit Expiry',
+        'Fastag No',
+      ];
+      const rows = filteredVehicles.map((v) => [
+        v.id,
+        v.registrationNumber,
+        v.vehicleType,
+        v.manufacturer,
+        v.model,
+        v.ownerName || '',
+        v.driverName || '',
+        v.company || '',
+        v.site || '',
+        formatDate(v.joiningDate),
+        v.status,
+        formatDate(v.insuranceExpiry),
+        formatDate(v.fcExpiry),
+        formatDate(v.permitExpiry),
+        v.fastagNumber || '',
+      ]);
+      exportToExcel('E7_Travels_Vehicle_Master', 'Vehicle Master', headers, rows);
+    } else if (activeSubView === 'Owner Master') {
+      const headers = ['Owner ID', 'Name', 'Phone', 'Address', 'Bank Name', 'Account No', 'IFSC Code', 'UPI ID', 'PAN No', 'Aadhaar No'];
+      const rows = filteredOwners.map((o) => [
+        o.id,
+        o.name,
+        o.phone || '',
+        o.address || '',
+        o.bankName || '',
+        o.accountNumber || '',
+        o.ifsc || '',
+        o.upiId || '',
+        o.pan || '',
+        o.aadhaar || '',
+      ]);
+      exportToExcel('E7_Travels_Owner_Master', 'Owner Master', headers, rows);
+    } else if (activeSubView === 'Driver Master') {
+      const headers = ['Driver ID', 'Name', 'Phone', 'Address', 'Licence No', 'Badge No', 'Aadhaar No', 'Assigned Vehicle', 'Status'];
+      const rows = filteredDrivers.map((d) => {
+        const assignedVeh = vehicles.find((v) => v.driverId === d.id || v.driverName === d.name);
+        return [
+          d.id,
+          d.name,
+          d.phone || '',
+          d.address || '',
+          d.licenceNumber || '',
+          d.badgeNumber || '',
+          d.aadhaar || '',
+          assignedVeh?.registrationNumber || '',
+          d.status,
+        ];
+      });
+      exportToExcel('E7_Travels_Driver_Master', 'Driver Master', headers, rows);
+    } else if (activeSubView === 'Company Master') {
+      const headers = ['Company Name', 'Contact Person', 'Phone', 'Email', 'Billing Cycle', 'Payment Terms', 'Address'];
+      const rows = filteredCompanies.map((c) => [
+        c.name,
+        c.contactPerson || '',
+        c.phone || '',
+        c.email || '',
+        c.billingCycle || '',
+        c.paymentTerms || '',
+        c.address || '',
+      ]);
+      exportToExcel('E7_Travels_Company_Master', 'Company Master', headers, rows);
+    } else if (activeSubView === 'Site Master') {
+      const headers = ['Site ID', 'Site Name', 'Company Name', 'Location', 'Contact Person', 'Contact Phone'];
+      const rows = filteredSites.map((s) => [
+        s.id,
+        s.name,
+        s.companyName || '',
+        s.location || '',
+        s.contactPerson || '',
+        s.phone || '',
+      ]);
+      exportToExcel('E7_Travels_Site_Master', 'Site Master', headers, rows);
+    } else if (activeSubView === 'Vendor Register') {
+      const headers = ['Vendor Name', 'Clients / Sites', 'Running Vehicles', 'Idle Vehicles', 'Total Attached', 'Utilization'];
+      const rows = filteredVendors.map((v) => [
+        v.vendorName,
+        v.clientSites.join(', '),
+        v.runningCount,
+        v.idleCount,
+        v.totalCount,
+        `${v.utilizationRate}%`,
+      ]);
+      exportToExcel('E7_Travels_Vendor_Register', 'Vendor Register', headers, rows);
+    } else if (activeSubView === 'Deleted Vehicles') {
+      const headers = ['Delete ID', 'Reg Number', 'Vehicle Type', 'Owner Name', 'Driver Name', 'Company', 'Deleted Date', 'Reason'];
+      const rows = (deletedVehicles || []).map((dv) => [
+        dv.id,
+        dv.registrationNumber,
+        dv.vehicleType,
+        dv.ownerName || '',
+        dv.driverName || '',
+        dv.company || '',
+        formatDate(dv.deletedAt),
+        dv.deletionReason || '',
+      ]);
+      exportToExcel('E7_Travels_Deleted_Vehicles', 'Deleted Vehicles', headers, rows);
+    }
+  };
+
+  const handleExportPDF = () => {
+    if (activeSubView === 'Vehicle Master') {
+      const headers = ['Vehicle ID', 'Reg Number', 'Type', 'Model', 'Owner', 'Driver', 'Company', 'Site', 'Status'];
+      const rows = filteredVehicles.map((v) => [
+        v.id,
+        v.registrationNumber,
+        v.vehicleType,
+        `${v.manufacturer} ${v.model}`,
+        v.ownerName || '-',
+        v.driverName || '-',
+        v.company || '-',
+        v.site || '-',
+        v.status,
+      ]);
+      exportToPDF('E7_Travels_Vehicle_Master', 'E7 Travels - Vehicle Master Register', headers, rows, 'landscape');
+    } else if (activeSubView === 'Owner Master') {
+      const headers = ['Owner ID', 'Name', 'Phone', 'Address', 'Bank Name', 'Account No', 'IFSC'];
+      const rows = filteredOwners.map((o) => [
+        o.id,
+        o.name,
+        o.phone || '-',
+        o.address || '-',
+        o.bankName || '-',
+        o.accountNumber || '-',
+        o.ifsc || '-',
+      ]);
+      exportToPDF('E7_Travels_Owner_Master', 'E7 Travels - Vehicle Owner Register', headers, rows, 'landscape');
+    } else if (activeSubView === 'Driver Master') {
+      const headers = ['Driver ID', 'Name', 'Phone', 'Licence No', 'Aadhaar No', 'Assigned Vehicle', 'Status'];
+      const rows = filteredDrivers.map((d) => {
+        const assignedVeh = vehicles.find((v) => v.driverId === d.id || v.driverName === d.name);
+        return [
+          d.id,
+          d.name,
+          d.phone || '-',
+          d.licenceNumber || '-',
+          d.aadhaar || '-',
+          assignedVeh?.registrationNumber || '-',
+          d.status,
+        ];
+      });
+      exportToPDF('E7_Travels_Driver_Master', 'E7 Travels - Driver Master Register', headers, rows, 'landscape');
+    } else if (activeSubView === 'Company Master') {
+      const headers = ['Company Name', 'Contact Person', 'Phone', 'Email', 'Billing Cycle', 'Payment Terms'];
+      const rows = filteredCompanies.map((c) => [
+        c.name,
+        c.contactPerson || '-',
+        c.phone || '-',
+        c.email || '-',
+        c.billingCycle || '-',
+        c.paymentTerms || '-',
+      ]);
+      exportToPDF('E7_Travels_Company_Master', 'E7 Travels - Client Company Master', headers, rows, 'landscape');
+    } else if (activeSubView === 'Site Master') {
+      const headers = ['Site ID', 'Site Name', 'Company Name', 'Location', 'Contact Person', 'Phone'];
+      const rows = filteredSites.map((s) => [
+        s.id,
+        s.name,
+        s.companyName || '-',
+        s.location || '-',
+        s.contactPerson || '-',
+        s.phone || '-',
+      ]);
+      exportToPDF('E7_Travels_Site_Master', 'E7 Travels - Operational Site Master', headers, rows, 'landscape');
+    } else if (activeSubView === 'Vendor Register') {
+      const headers = ['Vendor Name', 'Clients / Sites', 'Running', 'Idle', 'Total', 'Utilization'];
+      const rows = filteredVendors.map((v) => [
+        v.vendorName,
+        v.clientSites.join(', ') || '-',
+        v.runningCount,
+        v.idleCount,
+        v.totalCount,
+        `${v.utilizationRate}%`,
+      ]);
+      exportToPDF('E7_Travels_Vendor_Register', 'E7 Travels - Vendor Register Summary', headers, rows, 'landscape');
+    } else if (activeSubView === 'Deleted Vehicles') {
+      const headers = ['Delete ID', 'Reg Number', 'Vehicle Type', 'Owner Name', 'Driver Name', 'Company', 'Deleted Date', 'Reason'];
+      const rows = (deletedVehicles || []).map((dv) => [
+        dv.id,
+        dv.registrationNumber,
+        dv.vehicleType,
+        dv.ownerName || '-',
+        dv.driverName || '-',
+        dv.company || '-',
+        formatDate(dv.deletedAt),
+        dv.deletionReason || '-',
+      ]);
+      exportToPDF('E7_Travels_Deleted_Vehicles', 'E7 Travels - Deleted Vehicles Register', headers, rows, 'landscape');
+    }
+  };
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+      {/* Duplicate Vehicles Warning Banner */}
+      {activeSubView === 'Vehicle Master' && duplicateVehicleGroups.size > 0 && (
+        <div className="bg-rose-50 border-b border-rose-200 p-4 px-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in fade-in duration-300">
+          <div className="flex items-start gap-3">
+            <div className="p-1.5 bg-rose-100 rounded-lg text-rose-700 mt-0.5 sm:mt-0">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-rose-900 uppercase tracking-wider flex items-center gap-2">
+                Duplicate Vehicle Registration Numbers Detected
+                <span className="px-2 py-0.5 bg-rose-200 text-rose-800 text-2xs font-extrabold rounded-full">
+                  {duplicateVehicleGroups.size} Duplicate Plated Number{duplicateVehicleGroups.size === 1 ? '' : 's'}
+                </span>
+              </h4>
+              <p className="text-xs text-slate-600 mt-1">
+                The following vehicle plate numbers are registered multiple times in Master Register:
+                <span className="font-mono text-xs font-bold text-rose-900 ml-1">
+                  {Array.from(duplicateVehicleGroups.keys()).join(', ')}
+                </span>
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 self-stretch sm:self-auto shrink-0">
+            <button
+              id="btn-filter-duplicates"
+              onClick={() => onSetVehicleFilter('duplicates')}
+              className="px-3 py-1.5 bg-white hover:bg-slate-50 border border-rose-300 text-rose-800 text-xs font-bold rounded-lg shadow-2xs transition-all flex items-center gap-1 cursor-pointer"
+            >
+              View Duplicates ({Array.from(duplicateVehicleGroups.values()).reduce((acc: number, l: Vehicle[]) => acc + l.length, 0)})
+            </button>
+            <button
+              id="btn-clean-duplicates"
+              onClick={() => handleCleanDuplicateVehicles()}
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <CheckCircle className="h-4 w-4" /> Merge & Remove Duplicates
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* View Header with Search and Insert button */}
       <div className="p-6 border-b border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -797,7 +1163,23 @@ export default function MasterViews({
           <p className="text-xs text-slate-500">Manage data, configure parameters, and review system settings</p>
         </div>
 
-        <div className="flex items-center gap-2 self-end sm:self-auto">
+        <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
+          <button
+            id="btn-export-excel-master"
+            onClick={handleExportExcel}
+            className="px-3.5 py-2 text-sm font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg flex items-center gap-1.5 shadow-3xs cursor-pointer transition-colors"
+            title={`Export ${activeSubView} to Excel spreadsheet (.xlsx)`}
+          >
+            <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Export Excel
+          </button>
+          <button
+            id="btn-export-pdf-master"
+            onClick={handleExportPDF}
+            className="px-3.5 py-2 text-sm font-semibold bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded-lg flex items-center gap-1.5 shadow-3xs cursor-pointer transition-colors"
+            title={`Export ${activeSubView} to PDF document`}
+          >
+            <FileText className="h-4 w-4 text-rose-600" /> Export PDF
+          </button>
           <div className="relative">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
             <input
@@ -908,6 +1290,24 @@ export default function MasterViews({
               </button>
             );
           })}
+          {duplicateVehicleGroups.size > 0 && (
+            <button
+              id="filter-tab-duplicates"
+              onClick={() => onSetVehicleFilter('duplicates')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer ${
+                vehicleFilter === 'duplicates'
+                  ? 'bg-rose-600 border-rose-600 text-white shadow-3xs'
+                  : 'bg-rose-50 border-rose-200 text-rose-800 hover:bg-rose-100'
+              }`}
+            >
+              ⚠️ Duplicate Vehicles
+              <span className={`px-1.5 py-0.5 rounded-full text-3xs font-black ${
+                vehicleFilter === 'duplicates' ? 'bg-black/20 text-white' : 'bg-rose-200 text-rose-900'
+              }`}>
+                {Array.from(duplicateVehicleGroups.values()).reduce((acc: number, l: Vehicle[]) => acc + l.length, 0)}
+              </span>
+            </button>
+          )}
         </div>
       )}
 
@@ -974,6 +1374,19 @@ export default function MasterViews({
                   value={vehicleForm.model || ''}
                   onChange={(e) => setVehicleForm({ ...vehicleForm, model: e.target.value })}
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Manufacturing Year</label>
+                <input
+                  id="field-mfd-year"
+                  type="number"
+                  placeholder="e.g. 2023 or 2025"
+                  min={1995}
+                  max={2030}
+                  value={vehicleForm.year || ''}
+                  onChange={(e) => setVehicleForm({ ...vehicleForm, year: e.target.value ? Number(e.target.value) : undefined })}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-medium"
                 />
               </div>
               <div>
@@ -1561,6 +1974,70 @@ export default function MasterViews({
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                 />
               </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Emergency Contact Name</label>
+                <input
+                  id="field-owner-emergencyContactName"
+                  type="text"
+                  placeholder="e.g. Ramesh Kumar"
+                  value={ownerForm.emergencyContactName || ''}
+                  onChange={(e) => setOwnerForm({ ...ownerForm, emergencyContactName: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Emergency Relationship</label>
+                <div className="space-y-1">
+                  <select
+                    id="field-owner-emergencyContactRelation"
+                    value={
+                      ['Father', 'Mother', 'Wife', 'Husband', 'Spouse', 'Brother', 'Sister', 'Son', 'Daughter', 'Friend', 'Relative'].includes(ownerForm.emergencyContactRelation || '')
+                        ? ownerForm.emergencyContactRelation
+                        : (ownerForm.emergencyContactRelation ? 'Other' : '')
+                    }
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const rel = val === 'Other' ? '' : val;
+                      setOwnerForm({ ...ownerForm, emergencyContactRelation: rel });
+                    }}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    <option value="">-- Select Relationship --</option>
+                    <option value="Father">Father</option>
+                    <option value="Mother">Mother</option>
+                    <option value="Wife">Wife</option>
+                    <option value="Husband">Husband</option>
+                    <option value="Spouse">Spouse</option>
+                    <option value="Brother">Brother</option>
+                    <option value="Sister">Sister</option>
+                    <option value="Son">Son</option>
+                    <option value="Daughter">Daughter</option>
+                    <option value="Friend">Friend</option>
+                    <option value="Relative">Relative</option>
+                    <option value="Other">Other (Custom)</option>
+                  </select>
+                  {(!['Father', 'Mother', 'Wife', 'Husband', 'Spouse', 'Brother', 'Sister', 'Son', 'Daughter', 'Friend', 'Relative', ''].includes(ownerForm.emergencyContactRelation || '') || ownerForm.emergencyContactRelation === '') && (
+                    <input
+                      type="text"
+                      placeholder="Specify Relationship..."
+                      value={ownerForm.emergencyContactRelation || ''}
+                      onChange={(e) => setOwnerForm({ ...ownerForm, emergencyContactRelation: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white mt-1"
+                    />
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Emergency Contact Number</label>
+                <input
+                  id="field-owner-emergencyContactNumber"
+                  type="text"
+                  placeholder="e.g. 9876543210"
+                  value={ownerForm.emergencyContactNumber || ''}
+                  onChange={(e) => setOwnerForm({ ...ownerForm, emergencyContactNumber: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                />
+              </div>
               <div className="md:col-span-3">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Full Address</label>
                 <textarea
@@ -1715,12 +2192,99 @@ export default function MasterViews({
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Emergency Contact Info</label>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Emergency Contact Name</label>
                 <input
-                  id="field-driver-emergencyContact"
+                  id="field-driver-emergencyContactName"
                   type="text"
-                  value={driverForm.emergencyContact || ''}
-                  onChange={(e) => setDriverForm({ ...driverForm, emergencyContact: e.target.value })}
+                  placeholder="e.g. Ramesh Kumar"
+                  value={driverForm.emergencyContactName || ''}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const rel = driverForm.emergencyContactRelation || '';
+                    const num = driverForm.emergencyContactNumber || '';
+                    setDriverForm({
+                      ...driverForm,
+                      emergencyContactName: val,
+                      emergencyContact: formatCombinedEmergency(val, rel, num)
+                    });
+                  }}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Emergency Relationship</label>
+                <div className="space-y-1">
+                  <select
+                    id="field-driver-emergencyContactRelation"
+                    value={
+                      ['Father', 'Mother', 'Wife', 'Husband', 'Spouse', 'Brother', 'Sister', 'Son', 'Daughter', 'Friend', 'Relative'].includes(driverForm.emergencyContactRelation || '')
+                        ? driverForm.emergencyContactRelation
+                        : (driverForm.emergencyContactRelation ? 'Other' : '')
+                    }
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const rel = val === 'Other' ? '' : val;
+                      const name = driverForm.emergencyContactName || '';
+                      const num = driverForm.emergencyContactNumber || '';
+                      setDriverForm({
+                        ...driverForm,
+                        emergencyContactRelation: rel,
+                        emergencyContact: formatCombinedEmergency(name, rel, num)
+                      });
+                    }}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    <option value="">-- Select Relationship --</option>
+                    <option value="Father">Father</option>
+                    <option value="Mother">Mother</option>
+                    <option value="Wife">Wife</option>
+                    <option value="Husband">Husband</option>
+                    <option value="Spouse">Spouse</option>
+                    <option value="Brother">Brother</option>
+                    <option value="Sister">Sister</option>
+                    <option value="Son">Son</option>
+                    <option value="Daughter">Daughter</option>
+                    <option value="Friend">Friend</option>
+                    <option value="Relative">Relative</option>
+                    <option value="Other">Other (Custom)</option>
+                  </select>
+                  {(!['Father', 'Mother', 'Wife', 'Husband', 'Spouse', 'Brother', 'Sister', 'Son', 'Daughter', 'Friend', 'Relative', ''].includes(driverForm.emergencyContactRelation || '') || driverForm.emergencyContactRelation === '') && (
+                    <input
+                      type="text"
+                      placeholder="Specify Relationship (e.g. Uncle, Guardian)..."
+                      value={driverForm.emergencyContactRelation || ''}
+                      onChange={(e) => {
+                        const rel = e.target.value;
+                        const name = driverForm.emergencyContactName || '';
+                        const num = driverForm.emergencyContactNumber || '';
+                        setDriverForm({
+                          ...driverForm,
+                          emergencyContactRelation: rel,
+                          emergencyContact: formatCombinedEmergency(name, rel, num)
+                        });
+                      }}
+                      className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white mt-1"
+                    />
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Emergency Contact Number</label>
+                <input
+                  id="field-driver-emergencyContactNumber"
+                  type="text"
+                  placeholder="e.g. 9876543210"
+                  value={driverForm.emergencyContactNumber || ''}
+                  onChange={(e) => {
+                    const num = e.target.value;
+                    const name = driverForm.emergencyContactName || '';
+                    const rel = driverForm.emergencyContactRelation || '';
+                    setDriverForm({
+                      ...driverForm,
+                      emergencyContactNumber: num,
+                      emergencyContact: formatCombinedEmergency(name, rel, num)
+                    });
+                  }}
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                 />
               </div>
@@ -1948,9 +2512,19 @@ export default function MasterViews({
                 return (
                   <tr key={`${v.id}-${index}`} className="hover:bg-slate-50/50">
                     <td className="py-3 px-4 font-mono font-medium text-slate-500">{v.id}</td>
-                    <td className="py-3 px-4 font-semibold text-slate-800">{v.registrationNumber}</td>
+                    <td className="py-3 px-4 font-semibold text-slate-800">
+                      <div className="flex items-center gap-1.5">
+                        <span>{v.registrationNumber}</span>
+                        {duplicateVehicleGroups.has(normalizeRegNumber(v.registrationNumber)) && (
+                          <span className="px-1.5 py-0.5 bg-rose-100 text-rose-800 border border-rose-200 text-[10px] font-extrabold rounded uppercase tracking-wider">
+                            Duplicate
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="py-3 px-4 text-slate-700">
-                      {v.manufacturer} {v.model}
+                      <div className="font-semibold text-slate-800">{v.manufacturer} {v.model}</div>
+                      {v.year ? <div className="text-[10px] text-slate-500 font-medium">Mfg Year: {v.year}</div> : null}
                     </td>
                     <td className="py-3 px-4 text-xs text-slate-600">{v.vehicleType}</td>
                     <td className="py-3 px-4 text-xs">{getFuelTypeBadge(v.fuelType)}</td>
@@ -2210,7 +2784,20 @@ export default function MasterViews({
                     <td className="py-3 px-4 font-mono font-medium text-slate-500">{o.id}</td>
                     <td className="py-3 px-4 font-semibold text-slate-800">{o.name}</td>
                     <td className="py-3 px-4 font-mono text-xs text-blue-600 font-semibold">{carNo}</td>
-                    <td className="py-3 px-4 text-slate-700">{o.phone}</td>
+                    <td className="py-3 px-4 text-slate-700">
+                      <div>{o.phone}</div>
+                      {(o.emergencyContactName || o.emergencyContactRelation || o.emergencyContactNumber) && (
+                        <div className="text-2xs text-rose-600 font-medium mt-0.5">
+                          Emg: {
+                            o.emergencyContactName
+                              ? `${o.emergencyContactName}${o.emergencyContactRelation ? ` (${o.emergencyContactRelation})` : ''}${o.emergencyContactNumber ? ` - ${o.emergencyContactNumber}` : ''}`
+                              : (o.emergencyContactRelation
+                                  ? `${o.emergencyContactRelation}${o.emergencyContactNumber ? ` - ${o.emergencyContactNumber}` : ''}`
+                                  : o.emergencyContactNumber)
+                          }
+                        </div>
+                      )}
+                    </td>
                     <td className="py-3 px-4 text-slate-600 text-xs">{o.email || '-'}</td>
                     <td className="py-3 px-4 text-xs">
                       {o.bankName ? `${o.bankName} - ${o.accountNumber}` : '-'}
@@ -2241,7 +2828,12 @@ export default function MasterViews({
                           id={`btn-edit-owner-${o.id}`}
                           onClick={() => {
                             setEditingId(o.id);
-                            setOwnerForm(o);
+                            setOwnerForm({
+                              ...o,
+                              emergencyContactName: o.emergencyContactName || '',
+                              emergencyContactNumber: o.emergencyContactNumber || '',
+                              emergencyContactRelation: o.emergencyContactRelation || '',
+                            });
                           }}
                           className="p-1 hover:bg-slate-100 text-slate-600 rounded"
                         >
@@ -2297,7 +2889,20 @@ export default function MasterViews({
                     <td className="py-3 px-4 font-mono font-medium text-slate-500">{d.id}</td>
                     <td className="py-3 px-4 font-semibold text-slate-800">{d.name}</td>
                     <td className="py-3 px-4 font-mono text-xs text-blue-600 font-semibold">{carNo}</td>
-                    <td className="py-3 px-4 text-slate-700">{d.phone}</td>
+                    <td className="py-3 px-4 text-slate-700">
+                      <div>{d.phone}</div>
+                      {(d.emergencyContactName || d.emergencyContactRelation || d.emergencyContactNumber || d.emergencyContact) && (
+                        <div className="text-2xs text-rose-600 font-medium mt-0.5">
+                          Emg: {
+                            d.emergencyContactName
+                              ? `${d.emergencyContactName}${d.emergencyContactRelation ? ` (${d.emergencyContactRelation})` : ''}${d.emergencyContactNumber ? ` - ${d.emergencyContactNumber}` : ''}`
+                              : (d.emergencyContactRelation
+                                  ? `${d.emergencyContactRelation}${d.emergencyContactNumber ? ` - ${d.emergencyContactNumber}` : ''}`
+                                  : (d.emergencyContactNumber || d.emergencyContact))
+                          }
+                        </div>
+                      )}
+                    </td>
                     <td className="py-3 px-4 text-xs">
                       {d.licenceNumber} <span className="text-slate-400">({formatDate(d.licenceExpiry)})</span>
                     </td>
@@ -2315,10 +2920,10 @@ export default function MasterViews({
                     <td className="py-3 px-4 text-slate-600 text-xs">{formatDate(d.joiningDate)}</td>
                     <td className="py-3 px-4 text-center">
                       <span
-                        className={`inline-flex items-center justify-center px-3 py-1 text-2xs font-bold rounded-full border ${
+                        className={`inline-flex items-center justify-center px-3 py-1 text-2xs font-extrabold rounded-full border shadow-3xs ${
                           d.status === 'Active'
-                            ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                            : 'bg-slate-50 border-slate-200 text-slate-600'
+                            ? 'bg-emerald-100 border-emerald-300 text-emerald-900'
+                            : 'bg-rose-100 border-rose-300 text-rose-900'
                         } leading-none align-middle`}
                       >
                         {d.status}
@@ -2348,7 +2953,51 @@ export default function MasterViews({
                           id={`btn-edit-driver-${d.id}`}
                           onClick={() => {
                             setEditingId(d.id);
-                            setDriverForm(d);
+                            let emName = d.emergencyContactName || '';
+                            let emNum = d.emergencyContactNumber || '';
+                            let emRel = d.emergencyContactRelation || '';
+
+                            if (!emRel && !emName && !emNum && d.emergencyContact) {
+                              const relList = ['Father', 'Mother', 'Wife', 'Husband', 'Spouse', 'Brother', 'Sister', 'Son', 'Daughter', 'Friend', 'Relative'];
+                              const text = d.emergencyContact.trim();
+
+                              const parenMatch = text.match(/^(.*?)\s*\(([^)]+)\)\s*(?:-\s*(.*))?$/);
+                              if (parenMatch) {
+                                emName = parenMatch[1].trim();
+                                emRel = parenMatch[2].trim();
+                                emNum = (parenMatch[3] || '').trim();
+                              } else {
+                                const dashParts = text.split('-').map(s => s.trim());
+                                if (dashParts.length >= 2) {
+                                  const first = dashParts[0];
+                                  const second = dashParts.slice(1).join('-');
+                                  const matchedRel = relList.find(r => r.toLowerCase() === first.toLowerCase());
+                                  if (matchedRel) {
+                                    emRel = matchedRel;
+                                    emNum = second;
+                                  } else {
+                                    emName = first;
+                                    emNum = second;
+                                  }
+                                } else if (/^\d+$/.test(text.replace(/[\s+]/g, ''))) {
+                                  emNum = text;
+                                } else {
+                                  const matchedRel = relList.find(r => r.toLowerCase() === text.toLowerCase());
+                                  if (matchedRel) {
+                                    emRel = matchedRel;
+                                  } else {
+                                    emName = text;
+                                  }
+                                }
+                              }
+                            }
+
+                            setDriverForm({
+                              ...d,
+                              emergencyContactName: emName,
+                              emergencyContactNumber: emNum,
+                              emergencyContactRelation: emRel,
+                            });
                           }}
                           className="p-1 hover:bg-slate-100 text-slate-600 rounded"
                         >
@@ -2847,7 +3496,13 @@ export default function MasterViews({
               </div>
               <p className="text-sm text-slate-600">
                 Are you sure you want to delete <span className="font-semibold text-slate-800">"{deleteCandidate.name}"</span>?
-                This action is permanent and cannot be undone.
+                {activeSubView === 'Vehicle Master' ? (
+                  <span className="block mt-2 text-xs text-rose-700 font-medium bg-rose-50 p-2.5 rounded-lg border border-rose-200">
+                    ⚠️ Deleting this vehicle will automatically remove its associated <strong>Owner</strong> and <strong>Driver</strong> details from the Master Register.
+                  </span>
+                ) : (
+                  ' This action is permanent and cannot be undone.'
+                )}
               </p>
             </div>
             <div className="bg-slate-50 px-6 py-4 flex justify-end gap-3 border-t border-slate-150">
@@ -2865,15 +3520,19 @@ export default function MasterViews({
                   if (activeSubView === 'Vehicle Master') {
                     const vehicleToDelete = vehicles.find((v) => v.id === id);
                     if (vehicleToDelete) {
+                      const vehRegNorm = (vehicleToDelete.registrationNumber || '').replace(/\s+/g, '').toLowerCase();
+                      const vehOwnerNameNorm = (vehicleToDelete.ownerName || '').trim().toLowerCase();
+                      const vehDriverNameNorm = (vehicleToDelete.driverName || '').trim().toLowerCase();
+
                       const linkedOwner = owners.find(
                         (o) =>
-                          (vehicleToDelete.ownerId && o.id === vehicleToDelete.ownerId) ||
-                          (o.name && vehicleToDelete.ownerName && o.name.trim().toLowerCase() === vehicleToDelete.ownerName.trim().toLowerCase())
+                          (vehicleToDelete.ownerId && vehicleToDelete.ownerId !== 'new' && o.id === vehicleToDelete.ownerId) ||
+                          (o.name && vehOwnerNameNorm && o.name.trim().toLowerCase() === vehOwnerNameNorm)
                       );
                       const linkedDriver = drivers.find(
                         (d) =>
-                          (vehicleToDelete.driverId && d.id === vehicleToDelete.driverId) ||
-                          (d.name && vehicleToDelete.driverName && d.name.trim().toLowerCase() === vehicleToDelete.driverName.trim().toLowerCase())
+                          (vehicleToDelete.driverId && vehicleToDelete.driverId !== 'new' && d.id === vehicleToDelete.driverId) ||
+                          (d.name && vehDriverNameNorm && d.name.trim().toLowerCase() === vehDriverNameNorm)
                       );
 
                       const deletedRecord: DeletedVehicle = {
@@ -2901,19 +3560,20 @@ export default function MasterViews({
                         onUpdateDeletedVehicles([deletedRecord, ...(deletedVehicles || [])]);
                       }
 
-                      // Automatically delete parallel owner and driver
+                      // Automatically delete parallel owner and driver associated with this vehicle
                       const nextOwners = owners.filter((o) => {
-                        if (vehicleToDelete.ownerId && o.id === vehicleToDelete.ownerId) return false;
+                        if (vehicleToDelete.ownerId && vehicleToDelete.ownerId !== 'new' && o.id === vehicleToDelete.ownerId) return false;
                         if (linkedOwner && o.id === linkedOwner.id) return false;
-                        if (vehicleToDelete.ownerName && o.name && o.name.trim().toLowerCase() === vehicleToDelete.ownerName.trim().toLowerCase()) return false;
+                        if (vehOwnerNameNorm && vehOwnerNameNorm !== 'n/a' && vehOwnerNameNorm !== 'unknown owner' && o.name && o.name.trim().toLowerCase() === vehOwnerNameNorm) return false;
+                        if (vehRegNorm && o.remarks && o.remarks.replace(/\s+/g, '').toLowerCase().includes(vehRegNorm)) return false;
                         return true;
                       });
                       onUpdateOwners(nextOwners);
 
                       const nextDrivers = drivers.filter((d) => {
-                        if (vehicleToDelete.driverId && d.id === vehicleToDelete.driverId) return false;
+                        if (vehicleToDelete.driverId && vehicleToDelete.driverId !== 'new' && d.id === vehicleToDelete.driverId) return false;
                         if (linkedDriver && d.id === linkedDriver.id) return false;
-                        if (vehicleToDelete.driverName && d.name && d.name.trim().toLowerCase() === vehicleToDelete.driverName.trim().toLowerCase()) return false;
+                        if (vehDriverNameNorm && vehDriverNameNorm !== 'n/a' && vehDriverNameNorm !== 'unknown driver' && d.name && d.name.trim().toLowerCase() === vehDriverNameNorm) return false;
                         return true;
                       });
                       onUpdateDrivers(nextDrivers);
@@ -2943,6 +3603,8 @@ export default function MasterViews({
       {printEnquiry !== undefined && (
         <PrintJoiningForm
           enquiry={printEnquiry}
+          owners={owners}
+          vehicles={vehicles}
           onClose={() => setPrintEnquiry(undefined)}
         />
       )}

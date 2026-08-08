@@ -20,7 +20,7 @@ function formatDateToDDMMYYYY(dateStr: string | undefined | null): string {
 interface PrintVehicleReportProps {
   vehicles: Vehicle[];
   onClose: () => void;
-  initialFilter?: 'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted' | 'gps_hold';
+  initialFilter?: 'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted' | 'gps_hold' | 'duplicates';
 }
 
 export default function PrintVehicleReport({
@@ -672,7 +672,7 @@ export default function PrintVehicleReport({
                           {columns.status && (
                             <td className="py-2 px-2 border-r border-slate-200 text-center">
                               <span className={`inline-flex items-center justify-center px-2 py-0.5 text-[0.85em] font-black uppercase rounded-md border ${
-                                isActive ? 'text-emerald-700 border-emerald-200 bg-emerald-50' : 'text-amber-700 border-amber-200 bg-amber-50'
+                                isActive ? 'text-emerald-900 border-emerald-300 bg-emerald-100' : 'text-rose-900 border-rose-300 bg-rose-100'
                               }`}>
                                 {v.status}
                               </span>

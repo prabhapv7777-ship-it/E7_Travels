@@ -18,12 +18,14 @@ import {
   Trash2,
   Plus
 } from 'lucide-react';
-import { Vehicle, Company } from '../types';
-import { formatDate, getTodayDateString } from '../lib/dateUtils';
+import { Vehicle, Company, Owner, Driver } from '../types';
+import { formatDate, getTodayDateString, toInputDateFormat } from '../lib/dateUtils';
 
 interface DocumentViewsProps {
   vehicles: Vehicle[];
   companies: Company[];
+  owners?: Owner[];
+  drivers?: Driver[];
   activeSubView: 'Tax Invoice' | 'Letter Head';
   customLogo?: string | null;
   onUpdateLogo?: (logo: string | null) => void;
@@ -131,7 +133,7 @@ interface SavedRecipient {
   email: string;
 }
 
-export default function DocumentViews({ vehicles, companies, activeSubView, customLogo, onUpdateLogo }: DocumentViewsProps) {
+export default function DocumentViews({ vehicles, companies, owners, drivers, activeSubView, customLogo, onUpdateLogo }: DocumentViewsProps) {
   // Global States
   const [selectedVehicle, setSelectedVehicle] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
@@ -252,7 +254,14 @@ export default function DocumentViews({ vehicles, companies, activeSubView, cust
   const [letterSalutation, setLetterSalutation] = useState('Dear Sir/Madam,');
   const [letterBody, setLetterBody] = useState('');
   const [letterSignatory, setLetterSignatory] = useState('For E7 Tours & Travels,\n\n\n\nAuthorised Signatory');
-  const [letterPreset, setLetterPreset] = useState('blank');
+  const [letterPreset, setLetterPreset] = useState('fiesta_attachment');
+
+  // Driver & Emergency Table States
+  const [showDriverContactTable, setShowDriverContactTable] = useState(true);
+  const [letterDriver, setLetterDriver] = useState('');
+  const [letterDriverContact, setLetterDriverContact] = useState('');
+  const [letterEmergencyContact, setLetterEmergencyContact] = useState('');
+  const [letterEmergencyNumber, setLetterEmergencyNumber] = useState('');
 
   // Load selected company into Recipient state
   useEffect(() => {
@@ -279,6 +288,11 @@ export default function DocumentViews({ vehicles, companies, activeSubView, cust
         const targetComp = companies.find(c => c.name === veh.company);
         if (targetComp) {
           setSelectedCompany(targetComp.name);
+        }
+
+        // Set letter date to vehicle's induction date (joiningDate)
+        if (veh.joiningDate) {
+          setLetterDate(toInputDateFormat(veh.joiningDate));
         }
       }
     }
@@ -377,6 +391,54 @@ export default function DocumentViews({ vehicles, companies, activeSubView, cust
     setLetterRef(newRef);
 
     switch (presetName) {
+      case 'fiesta_attachment': {
+        const vehObj = selectedVehicle ? vehicles.find(v => v.registrationNumber === selectedVehicle) : undefined;
+        const ownerObj = vehObj
+          ? owners?.find(o => 
+              (vehObj.ownerId && vehObj.ownerId !== 'new' && o.id === vehObj.ownerId) ||
+              (o.name && vehObj.ownerName && o.name.trim().toLowerCase() === vehObj.ownerName.trim().toLowerCase())
+            )
+          : undefined;
+        const driverObj = vehObj
+          ? drivers?.find(d =>
+              (vehObj.driverId && vehObj.driverId !== 'new' && d.id === vehObj.driverId) ||
+              (d.name && vehObj.driverName && d.name.trim().toLowerCase() === vehObj.driverName.trim().toLowerCase())
+            )
+          : undefined;
+
+        const ownerName = ownerObj?.name || vehObj?.ownerName || '________________________';
+        const ownerPhone = ownerObj?.phone || (vehObj as any)?.ownerPhone || (vehObj as any)?.ownerMobile || '______________';
+        const ownerAddress = ownerObj?.address || (vehObj as any)?.ownerAddress || (vehObj as any)?.driverArea || '________________________';
+        const carNumber = vehObj?.registrationNumber || '______________';
+        const carName = [vehObj?.manufacturer, vehObj?.model].filter(Boolean).join(' ') || vehObj?.model || vehObj?.vehicleType || '________________';
+        const formattedDate = formatDate(letterDate) || '05/08/2026';
+
+        setLetterSubject('பொருள் : வாகன இணைப்பு சம்மந்தமாக');
+        setLetterTo('');
+        setLetterRef('');
+        setLetterSalutation('');
+        setLetterSignatory('');
+        setLetterBody(`தேதி : ${formattedDate}
+
+பெயர் : ${ownerName}
+மொபைல் எண் : ${ownerPhone}
+முகவரி : ${ownerAddress}
+
+
+${ownerName} ஆகிய நான் என்னுடைய  ${carNumber} என்ற பதிவு எண் கொண்ட  ${carName} வாகனத்தை  உங்களுடைய  கட்டுப்பாட்டின் கீழ்  FIESTA SMART MOBILITY  நிறுவனத்தில் ${formattedDate} தேதியில் இருந்து  வாகனம் ஓட்ட முழு சம்மதம் தெரிவிக்கிறேன். என்னுடைய வாகன வாடகை தொகையயையும் அதற்கான விவரங்களையும் தங்களிடமே பெற்றுக் கொள்கிறேன்.  
+
+இப்படிக்கு,
+
+
+வாகன உரிமையாளர்`);
+        setLetterDriver(driverObj?.name || vehObj?.driverName || '');
+        setLetterDriverContact(driverObj?.phone || (vehObj as any)?.driverPhone || '');
+        setLetterEmergencyContact(ownerName !== '________________________' ? ownerName : '');
+        setLetterEmergencyNumber(ownerPhone !== '______________' ? ownerPhone : '');
+        setShowDriverContactTable(true);
+        break;
+      }
+
       case 'driver_auth':
         setLetterSubject('Letter of Driver Authorization and Fleet Operator Compliance');
         setLetterTo('To Whomsoever It May Concern,\nSecurity & Ingress Control Terminal,\nChennai Hub Premises');
@@ -415,7 +477,7 @@ The layout is optimized for high-quality corporate layout print preview. When pr
     if (activeSubView === 'Letter Head' && letterPreset !== 'custom_manual') {
       handleLetterPresetChange(letterPreset);
     }
-  }, [letterDate, selectedVehicle]);
+  }, [letterDate, selectedVehicle, owners, drivers]);
 
   const handlePrint = () => {
     window.print();
@@ -982,6 +1044,7 @@ The layout is optimized for high-quality corporate layout print preview. When pr
                   onChange={(e) => handleLetterPresetChange(e.target.value)}
                   className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg font-semibold bg-emerald-50 text-emerald-800 border-emerald-200 cursor-pointer"
                 >
+                  <option value="fiesta_attachment">🚖 Fiesta Smart Mobility - Vehicle Attachment (Tamil)</option>
                   <option value="blank">📝 Custom / Blank Letterhead</option>
                   <option value="driver_auth">🪪 Driver Crew Gatepass Authorization</option>
                   <option value="noc">📜 Official No Objection Certificate (NOC)</option>
@@ -1063,6 +1126,69 @@ The layout is optimized for high-quality corporate layout print preview. When pr
                   className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg font-mono text-[10px]"
                 />
               </div>
+
+              {/* Driver & Emergency Table Controls */}
+              <div className="p-3 bg-[#114b3e]/5 border border-[#114b3e]/20 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-[#114b3e] flex items-center gap-1.5">
+                    <span>📊 Driver & Emergency Contact Table (Bottom Right)</span>
+                  </label>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showDriverContactTable}
+                      onChange={(e) => setShowDriverContactTable(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-[#114b3e]"></div>
+                  </label>
+                </div>
+
+                {showDriverContactTable && (
+                  <div className="space-y-2 pt-2 border-t border-slate-200">
+                    <div>
+                      <label className="block text-[9px] font-bold text-slate-500 uppercase">DRIVER</label>
+                      <input
+                        type="text"
+                        value={letterDriver}
+                        onChange={(e) => setLetterDriver(e.target.value)}
+                        placeholder="Driver Name"
+                        className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-lg bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-bold text-slate-500 uppercase">DRIVER CONTACT</label>
+                      <input
+                        type="text"
+                        value={letterDriverContact}
+                        onChange={(e) => setLetterDriverContact(e.target.value)}
+                        placeholder="Driver Contact Number"
+                        className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-lg bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-bold text-slate-500 uppercase">EMERGENCY CONTACT</label>
+                      <input
+                        type="text"
+                        value={letterEmergencyContact}
+                        onChange={(e) => setLetterEmergencyContact(e.target.value)}
+                        placeholder="Emergency Contact Person"
+                        className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-lg bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-bold text-slate-500 uppercase">NUMBER</label>
+                      <input
+                        type="text"
+                        value={letterEmergencyNumber}
+                        onChange={(e) => setLetterEmergencyNumber(e.target.value)}
+                        placeholder="Emergency Number"
+                        className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-lg bg-white"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -1077,22 +1203,15 @@ The layout is optimized for high-quality corporate layout print preview. When pr
             <div>
               
               {/* IMAGE HEADER BANNER STYLE */}
-              <div className="border-[1.5px] border-black overflow-hidden flex flex-col">
-                <div className="flex h-[75px] w-full border-b-[1.5px] border-black">
+              <div className="border-[1.5px] border-black bg-white overflow-hidden flex flex-col">
+                <div className="flex h-[75px] w-full border-b-[1.5px] border-black bg-white">
                   
                   {/* Left Block with stylized E7 Logo */}
                   <div className="w-[58%] bg-[#114b3e] text-white flex items-center px-4 relative justify-between overflow-hidden" style={{ clipPath: 'polygon(0 0, 100% 0, 93% 100%, 0 100%)' }}>
                     <div className="flex items-center gap-3">
                       {/* E7 visual outline matching logo box in image or uploaded custom logo */}
                       {customLogo ? (
-                        <div className={`${
-                          isLogoBgTransparent ? 'bg-transparent' : 'bg-white p-1 shadow-3xs'
-                        } rounded-md flex items-center justify-center shrink-0 overflow-hidden ${
-                          logoSize === 'sm' ? 'h-[36px] w-[36px]' :
-                          logoSize === 'md' ? 'h-[52px] w-[52px]' :
-                          logoSize === 'lg' ? 'h-[64px] w-[64px]' :
-                          'h-[72px] w-[72px]'
-                        }`}>
+                        <div className="bg-white p-1 rounded-md flex items-center justify-center shrink-0 overflow-hidden h-[52px] w-[52px] shadow-3xs border border-white/30">
                           <img 
                             src={customLogo} 
                             alt="Custom Logo" 
@@ -1101,7 +1220,7 @@ The layout is optimized for high-quality corporate layout print preview. When pr
                           />
                         </div>
                       ) : (
-                        <div className="flex flex-col items-center justify-center border-2 border-[#a3e635] px-2 py-0.5 relative shrink-0 leading-none" style={{ borderWidth: '3px' }}>
+                        <div className="flex flex-col items-center justify-center border-2 border-[#a3e635] px-2 py-0.5 relative shrink-0 leading-none bg-[#114b3e]" style={{ borderWidth: '3px' }}>
                           <span className="text-[32px] font-black tracking-tighter text-[#a3e635] italic">E7</span>
                         </div>
                       )}
@@ -1325,39 +1444,90 @@ The layout is optimized for high-quality corporate layout print preview. When pr
                   </>
                 ) : (
                   // LETTER HEAD WRITTEN INSIDE BORDERED CARD
-                  <div className="p-8 space-y-6">
-                    
-                    {/* Meta Details: Ref & Date */}
-                    <div className="flex justify-between text-xs font-semibold font-mono border-b border-slate-100 pb-2">
-                      <p><span className="text-slate-400">Ref:</span> {letterRef || 'E7/LT/GEN/771'}</p>
-                      <p><span className="text-slate-400">Date:</span> {formatDate(letterDate)}</p>
-                    </div>
-
-                    {/* Addressed To */}
-                    <div className="text-xs space-y-1 text-slate-800 text-left">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">To,</p>
-                      <div className="font-bold whitespace-pre-line leading-relaxed pl-2 border-l-2 border-slate-200">
-                        {letterTo || 'The Recipient Details'}
+                  <div className="p-8 space-y-5 flex-1 flex flex-col justify-between bg-white text-slate-900">
+                    <div className="space-y-4">
+                      
+                      {/* Date row */}
+                      <div className="flex items-center justify-end text-xs font-semibold font-mono border-b border-slate-200 pb-2.5">
+                        <p className="text-slate-900"><span className="text-slate-500 font-bold">DATE:</span> <span className="font-extrabold text-slate-900">{formatDate(letterDate)}</span></p>
                       </div>
-                    </div>
 
-                    {/* Subject Line */}
-                    <div className="bg-slate-50/50 p-3 rounded-lg border border-slate-150 text-xs font-black text-slate-800 uppercase flex gap-2 text-left">
-                      <span className="text-blue-900">SUBJECT:</span>
-                      <span className="underline decoration-indigo-300">{letterSubject || 'OFFICIAL LETTER SUBJECT CORRESPONDENCE'}</span>
-                    </div>
+                      {/* Recipient/Addressed To */}
+                      {letterTo && letterTo.trim() && (
+                        <div className="text-xs font-bold text-slate-900 whitespace-pre-line leading-relaxed my-2 bg-slate-50/90 p-3 rounded-lg border border-slate-200">
+                          <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block mb-1">To / Addressed To:</span>
+                          {letterTo}
+                        </div>
+                      )}
 
-                    {/* Letter Body */}
-                    <div className="text-xs text-slate-700 leading-relaxed space-y-4 pt-2 text-left">
-                      <p className="font-bold text-slate-900">{letterSalutation}</p>
-                      <div className="whitespace-pre-line pl-1 pr-1 font-medium text-slate-700 leading-relaxed text-justify">
-                        {letterBody || 'Please compose or select a preset template on the configuration panel.'}
+                      {/* Subject Line Centered */}
+                      {letterSubject && letterSubject.trim() && (
+                        <div className="text-center font-extrabold text-xs text-slate-900 border-y-2 border-slate-900 py-2 my-2 tracking-wide uppercase bg-slate-100/90">
+                          {letterSubject}
+                        </div>
+                      )}
+
+                      {/* Letter Body */}
+                      <div className="text-xs text-slate-800 leading-relaxed space-y-3 pt-1 text-left">
+                        {letterSalutation && letterSalutation.trim() && (
+                          <p className="font-bold text-slate-900 text-xs">{letterSalutation}</p>
+                        )}
+                        <div className="whitespace-pre-line pl-0.5 pr-0.5 font-normal text-slate-900 leading-relaxed text-justify text-xs">
+                          {letterBody || 'Please compose or select a preset template on the configuration panel.'}
+                        </div>
                       </div>
+
                     </div>
 
-                    {/* Sign-Off designations */}
-                    <div className="pt-8 text-right font-mono text-[10.5px] whitespace-pre-line leading-relaxed">
-                      {letterSignatory}
+                    <div className="space-y-4 pt-4">
+                      {/* Sign-Off designations */}
+                      {letterSignatory && letterSignatory.trim() && (
+                        <div className="text-right font-mono text-xs whitespace-pre-line leading-relaxed text-slate-900 font-bold">
+                          {letterSignatory}
+                        </div>
+                      )}
+
+                      {/* Driver & Emergency Contact Details Table (Positioned at bottom right corner) */}
+                      {showDriverContactTable && (
+                        <div className="flex justify-end pt-2 pb-1 w-full">
+                          <table className="letterhead-contact-table border-collapse border-2 border-black text-[11px] font-sans w-[280px] max-w-[280px] ml-auto bg-white">
+                            <tbody>
+                              <tr className="border-b border-black">
+                                <td className="border-r border-black font-extrabold p-1.5 uppercase text-black w-[46%] text-left align-middle bg-slate-100 tracking-tight leading-snug">
+                                  DRIVER
+                                </td>
+                                <td className="p-1.5 text-black font-bold w-[54%] text-left align-middle bg-white">
+                                  {letterDriver || 'As Assigned'}
+                                </td>
+                              </tr>
+                              <tr className="border-b border-black">
+                                <td className="border-r border-black font-extrabold p-1.5 uppercase text-black w-[46%] text-left align-middle bg-slate-100 tracking-tight leading-snug">
+                                  DRIVER CONTACT
+                                </td>
+                                <td className="p-1.5 text-black font-bold w-[54%] text-left align-middle font-mono bg-white">
+                                  {letterDriverContact || '-'}
+                                </td>
+                              </tr>
+                              <tr className="border-b border-black">
+                                <td className="border-r border-black font-extrabold p-1.5 uppercase text-black w-[46%] text-left align-middle leading-tight bg-slate-100 tracking-tight">
+                                  EMERGENCY<br />CONTACT
+                                </td>
+                                <td className="p-1.5 text-black font-bold w-[54%] text-left align-middle bg-white">
+                                  {letterEmergencyContact || '-'}
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className="border-r border-black font-extrabold p-1.5 uppercase text-black w-[46%] text-left align-middle bg-slate-100 tracking-tight leading-snug">
+                                  NUMBER
+                                </td>
+                                <td className="p-1.5 text-black font-bold w-[54%] text-left align-middle font-mono bg-white">
+                                  {letterEmergencyNumber || '-'}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
 
                   </div>
@@ -1368,7 +1538,7 @@ The layout is optimized for high-quality corporate layout print preview. When pr
             </div>
 
             {/* Bottom Accent Decorator lines mimicking exact image footer layout */}
-            <div className="mt-8">
+            <div className="mt-6">
               <div className="flex justify-center gap-1.5">
                 <div className="h-2 w-16 bg-[#114b3e]" style={{ transform: 'skewX(-25deg)' }}></div>
                 <div className="h-2 w-16 bg-[#a3e635]" style={{ transform: 'skewX(-25deg)' }}></div>
@@ -1376,7 +1546,7 @@ The layout is optimized for high-quality corporate layout print preview. When pr
                 <div className="h-2 w-16 bg-[#a3e635]" style={{ transform: 'skewX(-25deg)' }}></div>
                 <div className="h-2 w-16 bg-[#114b3e]" style={{ transform: 'skewX(-25deg)' }}></div>
               </div>
-              <div className="text-center text-[9px] text-slate-400 mt-2 font-mono">
+              <div className="text-center text-[9px] text-slate-400 mt-1.5 font-mono">
                 System Generated Digital Copy | Safe Transit Compliance Registry
               </div>
             </div>
@@ -1387,38 +1557,89 @@ The layout is optimized for high-quality corporate layout print preview. When pr
 
       </div>
 
-      {/* EMBEDDED PRINT CSS FOR PROFESSIONAL SCALING */}
+      {/* EMBEDDED PRINT CSS FOR PROFESSIONAL SCALING & STRICT 1-PAGE PDF PAGINATION */}
       <style>{`
+        table.letterhead-contact-table,
+        #printable-a4-area table.letterhead-contact-table {
+          width: 280px !important;
+          max-width: 280px !important;
+          min-width: 280px !important;
+          margin-left: auto !important;
+          margin-right: 0 !important;
+          table-layout: fixed !important;
+          background-color: white !important;
+        }
         @media print {
           @page {
             size: A4 portrait;
-            margin: 0.6cm !important;
+            margin: 0 !important;
           }
-          body {
+          html, body, #root {
             background: white !important;
             color: black !important;
             margin: 0 !important;
             padding: 0 !important;
+            width: 210mm !important;
+            height: 297mm !important;
+            max-height: 297mm !important;
+            overflow: hidden !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
           aside, header, nav, .print\\:hidden, button, select, input, textarea, .xl\\:col-span-4 {
             display: none !important;
           }
-          main {
+          main, .grid, .xl\\:col-span-8, div:has(> #printable-a4-area) {
             padding: 0 !important;
             margin: 0 !important;
-            box-shadow: none !important;
             border: none !important;
+            box-shadow: none !important;
+            background: transparent !important;
+            width: 210mm !important;
+            max-width: 210mm !important;
+            height: 297mm !important;
+            max-height: 297mm !important;
+            overflow: hidden !important;
           }
           #printable-a4-area {
-            position: static !important;
-            width: 100% !important;
-            max-width: 100% !important;
-            min-height: auto !important;
-            padding: 0 !important;
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            width: 210mm !important;
+            height: 296mm !important;
+            min-height: 296mm !important;
+            max-height: 296mm !important;
+            padding: 6mm 8mm !important;
+            box-sizing: border-box !important;
             box-shadow: none !important;
             border: none !important;
-            margin: 0 !important;
-            box-sizing: border-box !important;
+            margin: 0 auto !important;
+            background: white !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: space-between !important;
+            page-break-before: avoid !important;
+            page-break-after: avoid !important;
+            page-break-inside: avoid !important;
+            break-before: avoid !important;
+            break-after: avoid !important;
+            break-inside: avoid !important;
+            overflow: hidden !important;
+          }
+          #printable-a4-area * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          table.letterhead-contact-table,
+          #printable-a4-area table.letterhead-contact-table {
+            width: 280px !important;
+            max-width: 280px !important;
+            min-width: 280px !important;
+            margin-left: auto !important;
+            margin-right: 0 !important;
+            table-layout: fixed !important;
+            background-color: white !important;
           }
         }
       `}</style>

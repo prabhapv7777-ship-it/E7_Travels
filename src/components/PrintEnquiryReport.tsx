@@ -714,11 +714,11 @@ export default function PrintEnquiryReport({
                     filteredEnquiries.map((enq) => {
                       const effStatus = getEffectiveStatus(enq);
                       let statusBadge = '';
-                      if (effStatus === 'New') statusBadge = 'text-amber-600 border-amber-200 bg-amber-50';
-                      if (effStatus === 'Interested') statusBadge = 'text-blue-600 border-blue-200 bg-blue-50';
-                      if (effStatus === 'Site Offered') statusBadge = 'text-emerald-600 border-emerald-200 bg-emerald-50';
-                      if (effStatus === 'Induction') statusBadge = 'text-indigo-600 border-indigo-200 bg-indigo-50';
-                      if (effStatus === 'Closed') statusBadge = 'text-slate-500 border-slate-200 bg-slate-50';
+                      if (effStatus === 'New') statusBadge = 'text-amber-900 border-amber-300 bg-amber-100 font-extrabold';
+                      if (effStatus === 'Interested') statusBadge = 'text-blue-900 border-blue-300 bg-blue-100 font-extrabold';
+                      if (effStatus === 'Site Offered') statusBadge = 'text-teal-900 border-teal-300 bg-teal-100 font-extrabold';
+                      if (effStatus === 'Induction') statusBadge = 'text-purple-900 border-purple-300 bg-purple-100 font-extrabold';
+                      if (effStatus === 'Closed') statusBadge = 'text-slate-800 border-slate-300 bg-slate-200 font-extrabold';
 
                       return (
                         <tr key={enq.id} className="hover:bg-slate-50/50 align-top">

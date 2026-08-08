@@ -1,7 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Enquiry, Site, Vehicle, Owner, Driver, Company, DeletedVehicle, detectManufacturer } from '../types';
 import { formatDate } from '../lib/dateUtils';
 import { generateUniqueEnquiryId, generateUniqueOwnerId, generateUniqueDriverId, generateUniqueVehicleId } from '../lib/idUtils';
+import { exportToExcel, exportToPDF } from '../lib/exportUtils';
 
 export function calculateBatchExperience(batchExpStr?: string | null): string {
   if (!batchExpStr || !batchExpStr.trim() || batchExpStr === '-') return 'EXP: No Exp';
@@ -97,6 +98,7 @@ import {
   MapPin,
   User,
   FileText,
+  FileSpreadsheet,
   Car,
   Tag,
   Briefcase,
@@ -117,6 +119,8 @@ import {
   Send,
   AlertTriangle,
   ShieldAlert,
+  GitMerge,
+  CheckCircle2,
 } from 'lucide-react';
 import PrintJoiningForm from './PrintJoiningForm';
 import PrintEnquiryReport from './PrintEnquiryReport';
@@ -332,6 +336,139 @@ export default function EnquiryViews({
   const [promoteError, setPromoteError] = useState<string | null>(null);
   const [promoteSuccess, setPromoteSuccess] = useState<string | null>(null);
   const [infoNotification, setInfoNotification] = useState<string | null>(null);
+
+  // Merge Duplicate Vehicles States & Handlers
+  const [mergingGroupNorm, setMergingGroupNorm] = useState<string | null>(null);
+  const [selectedPrimaryEnquiryId, setSelectedPrimaryEnquiryId] = useState<string | null>(null);
+  const [mergeConsolidateRemarks, setMergeConsolidateRemarks] = useState<boolean>(true);
+
+  const handleOpenMergeModal = (normVehPlate: string) => {
+    setMergingGroupNorm(normVehPlate);
+    const group = duplicateEnquiryVehicleGroups.get(normVehPlate) || [];
+    if (group.length > 0) {
+      setSelectedPrimaryEnquiryId(group[0].id);
+    }
+    setMergeConsolidateRemarks(true);
+  };
+
+  const handleConfirmMergeSingleGroup = () => {
+    if (!mergingGroupNorm) return;
+    const group = duplicateEnquiryVehicleGroups.get(mergingGroupNorm) || [];
+    if (group.length < 2) {
+      setMergingGroupNorm(null);
+      return;
+    }
+
+    const primaryEnq = group.find((e) => e.id === selectedPrimaryEnquiryId) || group[0];
+    const duplicates = group.filter((e) => e.id !== primaryEnq.id);
+
+    let merged: Enquiry = { ...primaryEnq };
+
+    duplicates.forEach((dup) => {
+      if (!merged.vehicleType && dup.vehicleType) merged.vehicleType = dup.vehicleType;
+      if (!merged.fuelType && dup.fuelType) merged.fuelType = dup.fuelType;
+      if (!merged.vehicleModelYear && dup.vehicleModelYear) merged.vehicleModelYear = dup.vehicleModelYear;
+      if (!merged.vehicleColor && dup.vehicleColor) merged.vehicleColor = dup.vehicleColor;
+      if (!merged.ownerName && dup.ownerName) merged.ownerName = dup.ownerName;
+      if (!merged.ownerMobile && dup.ownerMobile) merged.ownerMobile = dup.ownerMobile;
+      if (!merged.ownerNamePhone && dup.ownerNamePhone) merged.ownerNamePhone = dup.ownerNamePhone;
+      if (!merged.driverName && dup.driverName) merged.driverName = dup.driverName;
+      if (!merged.driverPhone && dup.driverPhone) merged.driverPhone = dup.driverPhone;
+      if (!merged.driverArea && dup.driverArea) merged.driverArea = dup.driverArea;
+      if (!merged.alreadyRunningCompany && dup.alreadyRunningCompany) merged.alreadyRunningCompany = dup.alreadyRunningCompany;
+      if (!merged.sitePreference1 && dup.sitePreference1) merged.sitePreference1 = dup.sitePreference1;
+      if (!merged.sitePreference2 && dup.sitePreference2) merged.sitePreference2 = dup.sitePreference2;
+      if (!merged.sitePreference3 && dup.sitePreference3) merged.sitePreference3 = dup.sitePreference3;
+      if (!merged.reference && dup.reference) merged.reference = dup.reference;
+
+      if (mergeConsolidateRemarks && dup.remarks && dup.remarks.trim()) {
+        if (!merged.remarks || merged.remarks.trim() === '') {
+          merged.remarks = `[Merged from ${dup.id}]: ${dup.remarks}`;
+        } else if (!merged.remarks.includes(dup.remarks)) {
+          merged.remarks += `\n[Merged from ${dup.id}]: ${dup.remarks}`;
+        }
+      }
+
+      if (dup.comments && dup.comments.length > 0) {
+        const existingComments = merged.comments || [];
+        const newComms = dup.comments.filter(
+          (c) => !existingComments.some((ec) => ec.text === c.text && ec.date === c.date)
+        );
+        merged.comments = [...existingComments, ...newComms];
+      }
+    });
+
+    const dupIds = new Set(duplicates.map((d) => d.id));
+    const updatedList = enquiries
+      .map((e) => (e.id === primaryEnq.id ? merged : e))
+      .filter((e) => !dupIds.has(e.id));
+
+    onUpdateEnquiries(updatedList);
+    setMergingGroupNorm(null);
+    setInfoNotification(
+      `Successfully merged ${group.length} duplicate enquiry records for ${merged.vehicleNumber} into Primary Record ${merged.id}!`
+    );
+  };
+
+  const handleMergeAllDuplicatesBatch = () => {
+    if (duplicateEnquiryVehicleGroups.size === 0) return;
+
+    let updatedList = [...enquiries];
+    let totalMergedCount = 0;
+    const vehicleCount = duplicateEnquiryVehicleGroups.size;
+
+    duplicateEnquiryVehicleGroups.forEach((group) => {
+      if (group.length < 2) return;
+      const primaryEnq = group[0];
+      const duplicates = group.slice(1);
+
+      let merged: Enquiry = { ...primaryEnq };
+
+      duplicates.forEach((dup) => {
+        if (!merged.vehicleType && dup.vehicleType) merged.vehicleType = dup.vehicleType;
+        if (!merged.fuelType && dup.fuelType) merged.fuelType = dup.fuelType;
+        if (!merged.vehicleModelYear && dup.vehicleModelYear) merged.vehicleModelYear = dup.vehicleModelYear;
+        if (!merged.vehicleColor && dup.vehicleColor) merged.vehicleColor = dup.vehicleColor;
+        if (!merged.ownerName && dup.ownerName) merged.ownerName = dup.ownerName;
+        if (!merged.ownerMobile && dup.ownerMobile) merged.ownerMobile = dup.ownerMobile;
+        if (!merged.ownerNamePhone && dup.ownerNamePhone) merged.ownerNamePhone = dup.ownerNamePhone;
+        if (!merged.driverName && dup.driverName) merged.driverName = dup.driverName;
+        if (!merged.driverPhone && dup.driverPhone) merged.driverPhone = dup.driverPhone;
+        if (!merged.driverArea && dup.driverArea) merged.driverArea = dup.driverArea;
+        if (!merged.alreadyRunningCompany && dup.alreadyRunningCompany) merged.alreadyRunningCompany = dup.alreadyRunningCompany;
+        if (!merged.sitePreference1 && dup.sitePreference1) merged.sitePreference1 = dup.sitePreference1;
+        if (!merged.reference && dup.reference) merged.reference = dup.reference;
+
+        if (dup.remarks && dup.remarks.trim()) {
+          if (!merged.remarks || merged.remarks.trim() === '') {
+            merged.remarks = `[Merged from ${dup.id}]: ${dup.remarks}`;
+          } else if (!merged.remarks.includes(dup.remarks)) {
+            merged.remarks += `\n[Merged from ${dup.id}]: ${dup.remarks}`;
+          }
+        }
+
+        if (dup.comments && dup.comments.length > 0) {
+          const existingComments = merged.comments || [];
+          const newComms = dup.comments.filter(
+            (c) => !existingComments.some((ec) => ec.text === c.text && ec.date === c.date)
+          );
+          merged.comments = [...existingComments, ...newComms];
+        }
+      });
+
+      totalMergedCount += duplicates.length;
+
+      const dupIds = new Set(duplicates.map((d) => d.id));
+      updatedList = updatedList
+        .map((e) => (e.id === primaryEnq.id ? merged : e))
+        .filter((e) => !dupIds.has(e.id));
+    });
+
+    onUpdateEnquiries(updatedList);
+    setInfoNotification(
+      `Successfully merged ${totalMergedCount} duplicate enquiry records across ${vehicleCount} vehicle registration numbers!`
+    );
+  };
 
   // Vehicle Induction Dialog States
   const [inductionModalEnquiry, setInductionModalEnquiry] = useState<Enquiry | null>(null);
@@ -1348,6 +1485,99 @@ AREA: ${areaStr}`;
     return true; // Keep
   });
 
+  // Duplicate Vehicle Groups in Enquiry Register
+  const duplicateEnquiryVehicleGroups = useMemo(() => {
+    const groups = new Map<string, Enquiry[]>();
+    visibleEnquiries.forEach((e) => {
+      const norm = normalizeCarNo(e.vehicleNumber);
+      if (!norm) return;
+      if (!groups.has(norm)) groups.set(norm, []);
+      groups.get(norm)!.push(e);
+    });
+    const dupes = new Map<string, Enquiry[]>();
+    groups.forEach((list, norm) => {
+      if (list.length > 1) {
+        dupes.set(norm, list);
+      }
+    });
+    return dupes;
+  }, [visibleEnquiries]);
+
+  // Excel & PDF Exports
+  const handleExportExcel = () => {
+    const headers = [
+      'Enquiry ID',
+      'Enquiry Date',
+      'Vehicle Number',
+      'Vehicle Type',
+      'Fuel Type',
+      'Model Year',
+      'Color',
+      'Owner Name',
+      'Owner Mobile',
+      'Driver Name',
+      'Driver Phone',
+      'Driver Area',
+      'Running Company',
+      'Site Preference 1',
+      'Status',
+      'Reference',
+      'Remarks',
+    ];
+
+    const rows = sortedAndFiltered.map((e) => [
+      e.id,
+      formatDate(e.enquiryDate),
+      e.vehicleNumber || '',
+      e.vehicleType || '',
+      e.fuelType || '',
+      e.vehicleModelYear || '',
+      e.vehicleColor || '',
+      getOwnerNameOnly(e),
+      getOwnerPhone(e),
+      e.driverName || '',
+      e.driverPhone || '',
+      e.driverArea || '',
+      e.alreadyRunningCompany || '',
+      e.sitePreference1 || '',
+      getEffectiveStatus(e),
+      e.reference || '',
+      e.remarks || '',
+    ]);
+
+    exportToExcel('E7_Travels_Enquiries', 'Enquiry Desk', headers, rows);
+  };
+
+  const handleExportPDF = () => {
+    const headers = [
+      'Enquiry ID',
+      'Date',
+      'Vehicle No',
+      'Type / Fuel',
+      'Owner Name & Phone',
+      'Driver Name & Phone',
+      'Area',
+      'Site Pref 1',
+      'Status',
+      'Reference',
+    ];
+
+    const rows = sortedAndFiltered.map((e) => [
+      e.id,
+      formatDate(e.enquiryDate),
+      e.vehicleNumber || '',
+      `${e.vehicleType || 'Sedan'} (${e.fuelType || 'Diesel'})`,
+      `${getOwnerNameOnly(e)} ${getOwnerPhone(e) ? `\nPh: ${getOwnerPhone(e)}` : ''}`,
+      `${e.driverName || ''} ${e.driverPhone ? `\nPh: ${e.driverPhone}` : ''}`,
+      e.driverArea || '-',
+      e.sitePreference1 || 'Open',
+      getEffectiveStatus(e),
+      e.reference || '-',
+    ]);
+
+    exportToPDF('E7_Travels_Enquiries', 'E7 Travels - Telephone Enquiry Register', headers, rows, 'landscape');
+  };
+
   // Filter & Search Logic
   const filtered = visibleEnquiries.filter((item) => {
     const matchesSearch =
@@ -1371,7 +1601,11 @@ AREA: ${areaStr}`;
       (item.remarks || '').toLowerCase().includes(searchQuery.toLowerCase());
 
     const effStatus = getEffectiveStatus(item);
-    const matchesStatus = statusFilter === 'all' || effStatus === statusFilter;
+    let matchesStatus = statusFilter === 'all' || effStatus === statusFilter;
+    if (statusFilter === 'duplicates') {
+      const norm = normalizeCarNo(item.vehicleNumber);
+      matchesStatus = duplicateEnquiryVehicleGroups.has(norm);
+    }
 
     const hasReference = !!(item.reference && item.reference.trim() !== '' && item.reference.trim() !== '-');
     if (referenceOnlyFilter && !hasReference) return false;
@@ -1416,6 +1650,22 @@ AREA: ${areaStr}`;
         </div>
         <div className="flex flex-wrap gap-2.5 self-start md:self-auto">
           <button
+            id="btn-export-excel-enquiry"
+            onClick={handleExportExcel}
+            className="px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 rounded-lg font-bold text-xs transition-all flex items-center gap-2 shadow-3xs cursor-pointer"
+            title="Export Enquiry records to Excel spreadsheet (.xlsx)"
+          >
+            <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Export Excel
+          </button>
+          <button
+            id="btn-export-pdf-enquiry"
+            onClick={handleExportPDF}
+            className="px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-800 rounded-lg font-bold text-xs transition-all flex items-center gap-2 shadow-3xs cursor-pointer"
+            title="Export Enquiry records to PDF document"
+          >
+            <FileText className="h-4 w-4 text-rose-600" /> Export PDF
+          </button>
+          <button
             id="btn-print-enquiries"
             onClick={() => setIsPrintingReport(true)}
             className="px-4 py-2.5 bg-white border border-slate-300 text-slate-750 rounded-lg hover:bg-slate-50 font-bold text-xs transition-all flex items-center gap-2 shadow-3xs cursor-pointer"
@@ -1432,6 +1682,59 @@ AREA: ${areaStr}`;
           </button>
         </div>
       </div>
+
+      {/* Duplicate Vehicles Warning Banner */}
+      {duplicateEnquiryVehicleGroups.size > 0 && (
+        <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 px-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in fade-in duration-300 shadow-2xs">
+          <div className="flex items-start gap-3">
+            <div className="p-1.5 bg-rose-100 rounded-lg text-rose-700 mt-0.5 sm:mt-0 shrink-0">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-rose-900 uppercase tracking-wider flex items-center gap-2">
+                Duplicate Vehicle Registration Numbers Detected
+                <span className="px-2 py-0.5 bg-rose-200 text-rose-800 text-2xs font-extrabold rounded-full">
+                  {duplicateEnquiryVehicleGroups.size} Duplicate Car Number{duplicateEnquiryVehicleGroups.size === 1 ? '' : 's'}
+                </span>
+              </h4>
+              <p className="text-xs text-slate-600 mt-1">
+                The following vehicle plate numbers have multiple telephone enquiry records:
+                <span className="font-mono text-xs font-bold text-rose-900 ml-1">
+                  {Array.from(duplicateEnquiryVehicleGroups.keys()).join(', ')}
+                </span>
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 self-stretch sm:self-auto shrink-0">
+            <button
+              id="btn-filter-enq-duplicates"
+              onClick={() => setStatusFilter('duplicates')}
+              className="px-3 py-2 bg-white hover:bg-slate-50 border border-rose-300 text-rose-800 text-xs font-bold rounded-lg shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              View Duplicates ({Array.from(duplicateEnquiryVehicleGroups.values()).reduce((acc: number, l: Enquiry[]) => acc + l.length, 0)})
+            </button>
+            <button
+              id="btn-merge-duplicate-modal-open"
+              onClick={() => {
+                const firstNorm = (Array.from(duplicateEnquiryVehicleGroups.keys()) as string[])[0];
+                if (firstNorm) handleOpenMergeModal(firstNorm);
+              }}
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold rounded-lg shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+              title="Open Merge Modal to compare and combine duplicate vehicle enquiries"
+            >
+              <GitMerge className="h-4 w-4" /> Merge Duplicate Vehicles
+            </button>
+            <button
+              id="btn-merge-all-duplicates-batch"
+              onClick={handleMergeAllDuplicatesBatch}
+              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-lg shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+              title="Auto-merge all duplicate enquiry records across detected vehicles"
+            >
+              <CheckCircle2 className="h-4 w-4" /> Merge All
+            </button>
+          </div>
+        </div>
+      )}
 
       {infoNotification && (
         <div className="bg-emerald-50 border border-emerald-200 text-emerald-850 rounded-xl p-4 flex items-center justify-between shadow-2xs animate-in fade-in slide-in-from-top-4 duration-300">
@@ -2620,11 +2923,12 @@ AREA: ${areaStr}`;
               <tbody className="divide-y divide-slate-100">
                 {sortedAndFiltered.map((enq) => {
                   const displayStatus = getEffectiveStatus(enq);
-                  let badgeColor = 'bg-amber-50 text-amber-700 border-amber-200';
-                  if (displayStatus === 'Interested') badgeColor = 'bg-blue-50 text-blue-700 border-blue-200';
-                  if (displayStatus === 'Site Offered') badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-                  if (displayStatus === 'Induction') badgeColor = 'bg-indigo-50 text-indigo-700 border-indigo-200';
-                  if (displayStatus === 'Closed') badgeColor = 'bg-slate-100 text-slate-600 border-slate-200';
+                  let badgeColor = 'bg-amber-100 text-amber-900 border-amber-300 font-extrabold shadow-3xs';
+                  if (displayStatus === 'New') badgeColor = 'bg-amber-100 text-amber-900 border-amber-300 font-extrabold shadow-3xs';
+                  if (displayStatus === 'Interested') badgeColor = 'bg-blue-100 text-blue-900 border-blue-300 font-extrabold shadow-3xs';
+                  if (displayStatus === 'Site Offered') badgeColor = 'bg-teal-100 text-teal-900 border-teal-300 font-extrabold shadow-3xs';
+                  if (displayStatus === 'Induction') badgeColor = 'bg-purple-100 text-purple-900 border-purple-300 font-extrabold shadow-3xs';
+                  if (displayStatus === 'Closed') badgeColor = 'bg-slate-200 text-slate-800 border-slate-300 font-extrabold shadow-3xs';
 
                   return (
                     <tr
@@ -2643,7 +2947,19 @@ AREA: ${areaStr}`;
                       {columnVisibility.vehicleDetails && (
                         <>
                           <td className="py-3 px-3 border-r border-slate-100 font-bold text-slate-800">
-                            {enq.vehicleNumber}
+                            <div className="flex items-center gap-1.5">
+                              <span>{enq.vehicleNumber}</span>
+                              {duplicateEnquiryVehicleGroups.has(normalizeCarNo(enq.vehicleNumber)) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setDuplicateModalMatch(getExistingVehicleMatch(enq.vehicleNumber, enq.id))}
+                                  className="px-1.5 py-0.5 bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-200 text-[10px] font-extrabold rounded uppercase tracking-wider cursor-pointer shadow-2xs shrink-0"
+                                  title="Click to view duplicate vehicle details"
+                                >
+                                  Duplicate
+                                </button>
+                              )}
+                            </div>
                           </td>
                           <td className="py-3 px-3 border-r border-slate-100">
                             <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 font-semibold border border-amber-100">
@@ -2652,16 +2968,20 @@ AREA: ${areaStr}`;
                           </td>
                           <td className="py-3 px-3 border-r border-slate-100">
                             <span
-                              className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold border uppercase tracking-wider ${
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-black border uppercase tracking-wider inline-flex items-center gap-1.5 shadow-3xs ${
                                 (enq.fuelType || '').toUpperCase() === 'CNG'
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
                                   : (enq.fuelType || '').toUpperCase() === 'PETROL'
-                                  ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                  ? 'bg-rose-100 text-rose-900 border-rose-300'
                                   : (enq.fuelType || '').toUpperCase() === 'EV'
-                                  ? 'bg-purple-50 text-purple-700 border-purple-200'
-                                  : 'bg-amber-50 text-amber-800 border-amber-200'
+                                  ? 'bg-purple-100 text-purple-900 border-purple-300'
+                                  : 'bg-amber-100 text-amber-900 border-amber-300'
                               }`}
                             >
+                              {(enq.fuelType || '').toUpperCase() === 'EV' && <span className="text-[11px] leading-none">⚡</span>}
+                              {(enq.fuelType || '').toUpperCase() === 'CNG' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>}
+                              {(enq.fuelType || '').toUpperCase() === 'PETROL' && <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0"></span>}
+                              {((enq.fuelType || '').toUpperCase() === 'DIESEL' || (!['CNG', 'PETROL', 'EV'].includes((enq.fuelType || '').toUpperCase()))) && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span>}
                               {enq.fuelType || 'Diesel'}
                             </span>
                           </td>
@@ -2868,6 +3188,16 @@ AREA: ${areaStr}`;
                               </span>
                             )}
                           </button>
+                          {duplicateEnquiryVehicleGroups.has(normalizeCarNo(enq.vehicleNumber)) && (
+                            <button
+                              id={`enq-btn-merge-${enq.id}`}
+                              onClick={() => handleOpenMergeModal(normalizeCarNo(enq.vehicleNumber))}
+                              className="p-1.5 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/80 rounded-lg transition-all cursor-pointer flex items-center justify-center shadow-2xs"
+                              title="Merge Duplicate Vehicle Enquiries"
+                            >
+                              <GitMerge className="h-3.5 w-3.5 text-indigo-600" />
+                            </button>
+                          )}
                           <button
                             id={`enq-btn-induction-${enq.id}`}
                             onClick={() => handleMoveToInduction(enq.id)}
@@ -3459,6 +3789,8 @@ AREA: ${areaStr}`;
       {selectedEnquiryForFormPrint && (
         <PrintJoiningForm
           enquiry={selectedEnquiryForFormPrint}
+          owners={owners}
+          vehicles={vehicles}
           onClose={() => setSelectedEnquiryForFormPrint(null)}
         />
       )}
@@ -3950,18 +4282,32 @@ AREA: ${areaStr}`;
               </button>
 
               {duplicateModalMatch.type === 'Enquiry' && duplicateModalMatch.enquiry && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const targetEnq = duplicateModalMatch.enquiry!;
-                    setDuplicateModalMatch(null);
-                    handleOpenEdit(targetEnq);
-                  }}
-                  className="w-full sm:w-auto px-4 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Edit className="h-3.5 w-3.5" />
-                  <span>Open Tracked Record</span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const norm = normalizeCarNo(duplicateModalMatch.vehicleNumber);
+                      setDuplicateModalMatch(null);
+                      if (norm) handleOpenMergeModal(norm);
+                    }}
+                    className="w-full sm:w-auto px-4 py-2 text-xs font-extrabold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <GitMerge className="h-3.5 w-3.5" />
+                    <span>Merge Duplicate Enquiries</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const targetEnq = duplicateModalMatch.enquiry!;
+                      setDuplicateModalMatch(null);
+                      handleOpenEdit(targetEnq);
+                    }}
+                    className="w-full sm:w-auto px-4 py-2 text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white rounded-xl shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Edit className="h-3.5 w-3.5" />
+                    <span>Open Tracked Record</span>
+                  </button>
+                </>
               )}
 
               {duplicateModalMatch.type === 'MasterVehicle' && (
@@ -3986,6 +4332,197 @@ AREA: ${areaStr}`;
                 title="Save duplicate entry anyway if required"
               >
                 Proceed & Save Duplicate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MERGE DUPLICATE VEHICLES MODAL */}
+      {mergingGroupNorm && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-indigo-100 max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-100 bg-gradient-to-r from-indigo-900 via-slate-900 to-purple-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-indigo-500/20 rounded-xl border border-indigo-400/30 text-indigo-300">
+                  <GitMerge className="h-6 w-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-black uppercase tracking-wider text-white">
+                      Merge Duplicate Vehicle Enquiries
+                    </h3>
+                    <span className="px-2 py-0.5 bg-amber-400/20 border border-amber-400/40 text-amber-200 text-2xs font-mono font-black rounded-full">
+                      {mergingGroupNorm}
+                    </span>
+                  </div>
+                  <p className="text-xs text-indigo-200/90 font-medium mt-0.5">
+                    Select the primary record to retain and consolidate duplicate enquiry details
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMergingGroupNorm(null)}
+                className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+              >
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Group Selector if multiple groups exist */}
+              {duplicateEnquiryVehicleGroups.size > 1 && (
+                <div className="bg-indigo-50/60 border border-indigo-100 p-3.5 rounded-xl flex items-center justify-between gap-3">
+                  <span className="text-xs font-extrabold text-indigo-900 uppercase tracking-wider shrink-0 flex items-center gap-1.5">
+                    <Layers className="h-4 w-4 text-indigo-600" /> Select Duplicate Vehicle Group:
+                  </span>
+                  <select
+                    value={mergingGroupNorm}
+                    onChange={(e) => handleOpenMergeModal(e.target.value)}
+                    className="px-3 py-1.5 bg-white border border-indigo-200 text-xs font-bold text-slate-900 rounded-lg focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    {Array.from(duplicateEnquiryVehicleGroups.entries()).map(([norm, list]) => (
+                      <option key={norm} value={norm}>
+                        {norm} ({list.length} Duplicate Records)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Records Comparison List */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">
+                    Detected Duplicate Records ({duplicateEnquiryVehicleGroups.get(mergingGroupNorm)?.length || 0})
+                  </h4>
+                  <span className="text-2xs text-slate-500 font-semibold">
+                    Select radio button on the left to set Primary Record
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  {(duplicateEnquiryVehicleGroups.get(mergingGroupNorm) || []).map((enq, idx) => {
+                    const isSelected = selectedPrimaryEnquiryId === enq.id;
+                    return (
+                      <div
+                        key={enq.id}
+                        onClick={() => setSelectedPrimaryEnquiryId(enq.id)}
+                        className={`p-4 rounded-xl border-2 transition-all cursor-pointer relative ${
+                          isSelected
+                            ? 'border-indigo-600 bg-indigo-50/30 shadow-xs'
+                            : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="radio"
+                              name="primaryEnqSelection"
+                              checked={isSelected}
+                              onChange={() => setSelectedPrimaryEnquiryId(enq.id)}
+                              className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            />
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-black text-sm text-indigo-900">{enq.id}</span>
+                                {isSelected && (
+                                  <span className="px-2 py-0.5 bg-indigo-600 text-white text-[10px] font-extrabold uppercase rounded-full">
+                                    Primary Record
+                                  </span>
+                                )}
+                                <span className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-bold rounded">
+                                  {enq.status}
+                                </span>
+                              </div>
+                              <span className="text-2xs text-slate-500 font-medium">
+                                Enquiry Date: <strong className="font-mono text-slate-700">{formatDate(enq.enquiryDate)}</strong>
+                              </span>
+                            </div>
+                          </div>
+                          <span className="text-2xs font-extrabold text-slate-400 uppercase tracking-wider">
+                            Record #{idx + 1}
+                          </span>
+                        </div>
+
+                        {/* Record Details Grid */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 pt-3 border-t border-slate-200/60 text-xs text-slate-700">
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-slate-400 block">Vehicle</span>
+                            <span className="font-bold text-slate-900">{enq.vehicleType || '-'} ({enq.fuelType || '-'})</span>
+                            <span className="block text-2xs text-slate-500">{enq.vehicleModelYear || '-'}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-slate-400 block">Owner</span>
+                            <span className="font-bold text-slate-900 block">{enq.ownerName || enq.ownerNamePhone || '-'}</span>
+                            <span className="text-2xs font-mono text-slate-500">{enq.ownerMobile || ''}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-slate-400 block">Driver</span>
+                            <span className="font-bold text-slate-900 block">{enq.driverName || '-'}</span>
+                            <span className="text-2xs font-mono text-slate-500">{enq.driverPhone || ''}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-slate-400 block">Site Pref / Running</span>
+                            <span className="font-bold text-slate-900 block">{enq.sitePreference1 || 'Open Preference'}</span>
+                            <span className="text-2xs text-slate-500">{enq.alreadyRunningCompany || ''}</span>
+                          </div>
+                        </div>
+
+                        {enq.remarks && (
+                          <div className="mt-2 text-2xs bg-slate-100/80 p-2 rounded text-slate-700 font-mono">
+                            <strong className="text-slate-500">Remarks:</strong> {enq.remarks}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Merge Options */}
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 space-y-3">
+                <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-amber-500" /> Smart Merge Rules
+                </h4>
+                <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside font-medium">
+                  <li>Missing details in the selected Primary Record will be automatically backfilled from duplicate records.</li>
+                  <li>Duplicate enquiry entries will be removed from the register to eliminate clutter.</li>
+                </ul>
+                <div className="flex items-center gap-2 pt-2 border-t border-slate-200/60">
+                  <input
+                    type="checkbox"
+                    id="chk-merge-consolidate-remarks"
+                    checked={mergeConsolidateRemarks}
+                    onChange={(e) => setMergeConsolidateRemarks(e.target.checked)}
+                    className="h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                  />
+                  <label htmlFor="chk-merge-consolidate-remarks" className="text-xs font-bold text-slate-800 cursor-pointer">
+                    Consolidate and preserve remarks & comments from all duplicate records
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="p-4 border-t border-slate-100 bg-slate-50/80 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setMergingGroupNorm(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200/60 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                id="btn-confirm-merge-enquiry-records"
+                onClick={handleConfirmMergeSingleGroup}
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer"
+              >
+                <GitMerge className="h-4 w-4" />
+                Confirm & Merge Records
               </button>
             </div>
           </div>

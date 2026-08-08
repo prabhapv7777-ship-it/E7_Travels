@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Enquiry } from '../types';
+import { Enquiry, Owner, Vehicle } from '../types';
 import { Printer, X, Download, FileText } from 'lucide-react';
 
 function formatDateToDDMMYYYY(dateStr: string | undefined | null): string {
@@ -24,10 +24,12 @@ function formatDateToDDMMYYYY(dateStr: string | undefined | null): string {
 
 interface PrintJoiningFormProps {
   enquiry: Enquiry | null; // Pass null for a blank form!
+  owners?: Owner[];
+  vehicles?: Vehicle[];
   onClose: () => void;
 }
 
-export default function PrintJoiningForm({ enquiry, onClose }: PrintJoiningFormProps) {
+export default function PrintJoiningForm({ enquiry, owners = [], vehicles = [], onClose }: PrintJoiningFormProps) {
   const printAreaRef = useRef<HTMLDivElement>(null);
 
   // Editable local state for fine-tuning before printing
@@ -55,6 +57,7 @@ export default function PrintJoiningForm({ enquiry, onClose }: PrintJoiningFormP
     ownerId: enquiry?.ownerId || '',
     ownerName: enquiry?.ownerName || '',
     ownerMobile: enquiry?.ownerMobile || '',
+    ownerAddress: enquiry?.ownerAddress || '',
     mfdYear: enquiry?.mfdYear || '',
     fuelType: enquiry?.fuelType || 'Diesel',
     rcExpiry: enquiry?.rcExpiry || '',
@@ -77,13 +80,47 @@ export default function PrintJoiningForm({ enquiry, onClose }: PrintJoiningFormP
     sitePreference4: enquiry?.sitePreference4 || '',
   });
 
-  // Automatically parse fields like Owner Name & Phone if they are passed as a single string
+  // Automatically parse fields like Owner Name, Phone, Address & Site Assignment from Master Register
   useEffect(() => {
     if (enquiry) {
       const stateUpdate: Partial<Enquiry> = {};
       
+      // Match vehicle from Master Register
+      const matchedVeh = vehicles.find((v) =>
+        v.registrationNumber && enquiry.vehicleNumber &&
+        v.registrationNumber.replace(/\s+/g, '').toUpperCase() === enquiry.vehicleNumber.replace(/\s+/g, '').toUpperCase()
+      );
+
+      // Match owner from Owner Data
+      const matchedOwner = owners.find((o) =>
+        (enquiry.ownerId && o.id === enquiry.ownerId) ||
+        (matchedVeh?.ownerId && o.id === matchedVeh.ownerId) ||
+        (enquiry.ownerName && o.name && o.name.trim().toLowerCase() === enquiry.ownerName.trim().toLowerCase()) ||
+        (matchedVeh?.ownerName && o.name && o.name.trim().toLowerCase() === matchedVeh.ownerName.trim().toLowerCase())
+      );
+
+      // Recognize owner details from Owner Data & Master Register
+      const recognizedOwnerAddress = matchedOwner?.address || enquiry.ownerAddress || matchedVeh?.ownerAddress || '';
+      const recognizedOwnerName = matchedOwner?.name || enquiry.ownerName || matchedVeh?.ownerName || '';
+      const recognizedOwnerMobile = matchedOwner?.phone || enquiry.ownerMobile || matchedVeh?.ownerPhone || '';
+      const recognizedOwnerId = matchedOwner?.id || enquiry.ownerId || matchedVeh?.ownerId || '';
+
+      // Recognize assigned site from Master Register
+      const assignedSite = matchedVeh?.company || enquiry.inductionCompany || enquiry.alreadyRunningCompany || enquiry.sitePreference1 || '';
+
+      stateUpdate.ownerAddress = recognizedOwnerAddress;
+      if (recognizedOwnerName) stateUpdate.ownerName = recognizedOwnerName;
+      if (recognizedOwnerMobile) stateUpdate.ownerMobile = recognizedOwnerMobile;
+      if (recognizedOwnerId) stateUpdate.ownerId = recognizedOwnerId;
+
+      // Set assigned site as sitePreference1 and clear rest of preferences
+      stateUpdate.sitePreference1 = assignedSite;
+      stateUpdate.sitePreference2 = '';
+      stateUpdate.sitePreference3 = '';
+      stateUpdate.sitePreference4 = '';
+
       // Parse owner name/phone e.g. "VIGNESH-7358742132" or "RAGHAVAN-8825756609"
-      if (enquiry.ownerNamePhone && !enquiry.ownerName) {
+      if (enquiry.ownerNamePhone && !stateUpdate.ownerName && !enquiry.ownerName) {
         const parts = enquiry.ownerNamePhone.split(/[-–—/]/);
         if (parts.length > 0) stateUpdate.ownerName = parts[0].trim();
         if (parts.length > 1) stateUpdate.ownerMobile = parts[1].trim();
@@ -98,7 +135,7 @@ export default function PrintJoiningForm({ enquiry, onClose }: PrintJoiningFormP
         setFormData(prev => ({ ...prev, ...stateUpdate }));
       }
     }
-  }, [enquiry]);
+  }, [enquiry, owners, vehicles]);
 
   const [isInIframe, setIsInIframe] = useState(false);
   const [printError, setPrintError] = useState(false);
@@ -261,6 +298,17 @@ export default function PrintJoiningForm({ enquiry, onClose }: PrintJoiningFormP
                 value={formData.ownerMobile || ''}
                 onChange={(e) => setFormData({ ...formData, ownerMobile: e.target.value })}
                 className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Owner Address</label>
+              <textarea
+                rows={2}
+                value={formData.ownerAddress || ''}
+                onChange={(e) => setFormData({ ...formData, ownerAddress: e.target.value })}
+                className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded"
+                placeholder="Owner permanent address"
               />
             </div>
 
@@ -896,6 +944,20 @@ export default function PrintJoiningForm({ enquiry, onClose }: PrintJoiningFormP
                     </div>
                   </div>
                 </div>
+
+                {/* Row 4 */}
+                <div className="grid grid-cols-1 divide-y divide-slate-300">
+                  <div className="flex divide-x divide-slate-300 min-h-[22px]">
+                    <div className="w-32 bg-slate-50 px-2 py-0.5 flex items-center font-bold text-slate-600 text-[9.5px] shrink-0">
+                      Owner Address:
+                    </div>
+                    <div className="flex-1 bg-white px-2 py-0.5 flex items-center">
+                      <span className="font-bold border-b border-slate-300 flex-1 px-1 min-h-[14px] text-left text-[10.5px] text-slate-900 leading-tight">
+                        {formData.ownerAddress || '\u00A0'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1201,14 +1263,14 @@ export default function PrintJoiningForm({ enquiry, onClose }: PrintJoiningFormP
                 </h3>
               </div>
               <p className="text-[9.5px] italic text-slate-500 ml-1">
-                Please specify up to 4 operational sites/clients this vehicle is assigned to:
+                Operational site/client assigned from Master Register:
               </p>
               <div className="border border-slate-300 rounded-2xs overflow-hidden divide-y divide-slate-300 bg-white text-xs">
                 {/* Row 1 */}
                 <div className="grid grid-cols-2 divide-x divide-slate-300">
                   <div className="flex divide-x divide-slate-300 min-h-[22px]">
-                    <div className="w-20 bg-slate-50 px-2 py-0.5 flex items-center font-bold text-slate-600 text-[9.5px] shrink-0">
-                      Site 1:
+                    <div className="w-24 bg-slate-50 px-2 py-0.5 flex items-center font-bold text-slate-600 text-[9.5px] shrink-0">
+                      Assigned Site:
                     </div>
                     <div className="flex-1 bg-white px-2 py-0.5 flex items-center">
                       <span className="font-bold border-b border-slate-300 flex-1 px-1 min-h-[14px] text-left text-[10.5px] text-slate-900">
@@ -1217,8 +1279,8 @@ export default function PrintJoiningForm({ enquiry, onClose }: PrintJoiningFormP
                     </div>
                   </div>
                   <div className="flex divide-x divide-slate-300 min-h-[22px]">
-                    <div className="w-20 bg-slate-50 px-2 py-0.5 flex items-center font-bold text-slate-600 text-[9.5px] shrink-0">
-                      Site 2:
+                    <div className="w-24 bg-slate-50 px-2 py-0.5 flex items-center font-bold text-slate-600 text-[9.5px] shrink-0">
+                      Site Pref 2:
                     </div>
                     <div className="flex-1 bg-white px-2 py-0.5 flex items-center">
                       <span className="font-bold border-b border-slate-300 flex-1 px-1 min-h-[14px] text-left text-[10.5px] text-slate-900">
@@ -1231,8 +1293,8 @@ export default function PrintJoiningForm({ enquiry, onClose }: PrintJoiningFormP
                 {/* Row 2 */}
                 <div className="grid grid-cols-2 divide-x divide-slate-300">
                   <div className="flex divide-x divide-slate-300 min-h-[22px]">
-                    <div className="w-20 bg-slate-50 px-2 py-0.5 flex items-center font-bold text-slate-600 text-[9.5px] shrink-0">
-                      Site 3:
+                    <div className="w-24 bg-slate-50 px-2 py-0.5 flex items-center font-bold text-slate-600 text-[9.5px] shrink-0">
+                      Site Pref 3:
                     </div>
                     <div className="flex-1 bg-white px-2 py-0.5 flex items-center">
                       <span className="font-bold border-b border-slate-300 flex-1 px-1 min-h-[14px] text-left text-[10.5px] text-slate-900">
@@ -1241,8 +1303,8 @@ export default function PrintJoiningForm({ enquiry, onClose }: PrintJoiningFormP
                     </div>
                   </div>
                   <div className="flex divide-x divide-slate-300 min-h-[22px]">
-                    <div className="w-20 bg-slate-50 px-2 py-0.5 flex items-center font-bold text-slate-600 text-[9.5px] shrink-0">
-                      Site 4:
+                    <div className="w-24 bg-slate-50 px-2 py-0.5 flex items-center font-bold text-slate-600 text-[9.5px] shrink-0">
+                      Site Pref 4:
                     </div>
                     <div className="flex-1 bg-white px-2 py-0.5 flex items-center">
                       <span className="font-bold border-b border-slate-300 flex-1 px-1 min-h-[14px] text-left text-[10.5px] text-slate-900">
