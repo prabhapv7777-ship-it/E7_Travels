@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Award, Printer, Search, FileText, AlertTriangle, Shield, Landmark, Globe } from 'lucide-react';
+import { printDocument } from '../utils/printService';
 
 interface RuleItem {
   id: string;
@@ -12,7 +13,11 @@ interface RuleItem {
   severity: 'high' | 'medium' | 'info';
 }
 
-export default function RulesView() {
+interface RulesViewProps {
+  customLogo?: string | null;
+}
+
+export default function RulesView({ customLogo: propLogo }: RulesViewProps = {}) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [lang, setLang] = useState<'ta' | 'en'>('ta');
@@ -31,7 +36,7 @@ export default function RulesView() {
     }
   }, []);
 
-  const customLogo = localStorage.getItem('e7_custom_logo') || null;
+  const customLogo = propLogo || localStorage.getItem('e7_custom_logo') || localStorage.getItem('e7_original_logo') || null;
 
   const rules: RuleItem[] = [
     {
@@ -145,8 +150,8 @@ export default function RulesView() {
       severity: 'high',
     },
     {
-      id: 'rule-11a',
-      number: '11 (A)',
+      id: 'rule-12',
+      number: '12',
       text: 'ஜிபிஎஸ் சாதனம் தொலைந்து போனாலோ அல்லது ஜிபிஎஸ் சாதனத்தைத் திரும்ப ஒப்படைக்காமல் 15 தினங்களுக்கு மேல் விடுமுறையில் இருந்தாலோ, பேமெண்ட்டிலிருந்து ரூ. 15,000 பிடித்தம் செய்யப்பட்டு, மாற்று ஜிபிஎஸ் சாதனம் வாங்கி வேறு வாகனத்தில் பொருத்தப்படும்.',
       textEn: 'If the GPS device is lost, or if the driver is on leave for more than 15 days without returning the GPS device, ₹15,000 will be deducted from the payment, and a replacement GPS device will be purchased and fitted to another vehicle.',
       category: 'gps',
@@ -155,8 +160,8 @@ export default function RulesView() {
       severity: 'high',
     },
     {
-      id: 'rule-12',
-      number: '12',
+      id: 'rule-13',
+      number: '13',
       text: 'E7 TRAVELS அலுவலகத்தில் எரிபொருள் பணம் (Fuel Cash) வாங்குபவர்களுக்கு, மாதந்தோறும் அவர்களின் பேமெண்ட்டிலிருந்து 4% எரிபொருள் சேவை எஞ்சல் கட்டணம் (Fuel Service Charge), சேர்க்கைக் கட்டணம் (Admission Charge - ரூ. 200), மூலத்தில் பிடித்தம் செய்யப்படும் வரி (TDS), பெனால்டி, டிரிப் ஷீட் புத்தகக் கட்டணம் (Trip Sheet Book Charge) மற்றும் ஸ்டிக்கர் கட்டணம் போன்றவை பிடித்தம் செய்யப்படும்.',
       textEn: 'For those receiving Fuel Cash at the E7 TRAVELS office, a monthly deduction will be made from their payment for a 4% Fuel Service Charge, Admission Charge (₹200), Tax Deducted at Source (TDS), penalties, Trip Sheet Book charges, and sticker charges.',
       category: 'payment',
@@ -165,8 +170,8 @@ export default function RulesView() {
       severity: 'medium',
     },
     {
-      id: 'rule-13',
-      number: '13',
+      id: 'rule-14',
+      number: '14',
       text: 'வாகனத்தின் ஓட்டுநர், உரிமையாளர் அல்லது அவருடைய நண்பர்/உறவினர் யாரேனும் மது அருந்திவிட்டு (குடிபோதையில்) வாகனத்தை ஓட்டினாலோ, அல்லது கிளையண்ட் நிறுவனம் மற்றும் E7 TRAVELS அலுவலகத்திற்குள் நுழைந்தாலோ ரூ. 20,000 அபராதம் விதிக்கப்படும். ஓட்டுநர் போதையில் வாகனம் ஓட்டியதாக நிறுவனம் ஊழியர்கள் புகார் அளித்தாலும் இந்த அபராதம் விதிக்கப்படும்.',
       textEn: 'If the driver, owner, or any of their friends/relatives drive the vehicle or enter the client premises or E7 TRAVELS office under the influence of alcohol (drunk), a fine of ₹20,000 will be imposed. This fine will also be levied if company employees complain that the driver drove under the influence.',
       category: 'safety',
@@ -175,8 +180,8 @@ export default function RulesView() {
       severity: 'high',
     },
     {
-      id: 'rule-16',
-      number: '16',
+      id: 'rule-15',
+      number: '15',
       text: 'வாகன இன்டக்ஷன் (Induction) முடிந்து முதல் ரூட்டை எடுத்த நாளிலிருந்து குறைந்தபட்சம் 15 நாட்கள் வாகனம் கட்டாயமாக இயக்கப்பட்டிருக்க வேண்டும். வாகனம் இயக்கத் தொடங்கிய பிறகு 15 நாட்களுக்குள் எந்தவித முன் அறிவிப்பும் இன்றி வாகனத்தை நிறுத்தினால், அந்த வாகனத்திற்கான பேமெண்ட் வழங்கப்படாது.',
       textEn: 'After vehicle induction and commencing the first route, the vehicle must be operated for at least 15 days. If the vehicle is stopped within 15 days of operation without any prior notice, no payment will be released for that vehicle.',
       category: 'general',
@@ -185,8 +190,8 @@ export default function RulesView() {
       severity: 'high',
     },
     {
-      id: 'rule-17',
-      number: '17',
+      id: 'rule-16',
+      number: '16',
       text: 'வாகனத்தை எங்கள் நிறுவன சேவையிலிருந்து விலக்க விரும்பினால், குறைந்தபட்சம் 15 நாட்களுக்கு முன்பாக எழுத்துப்பூர்வமாக அல்லது அதிகாரப்பூர்வமாக தகவல் தெரிவிக்க வேண்டும். மேற்கண்ட முன் அறிவிப்பு வழங்கப்படாமல் வாகனம் நிறுத்தப்பட்டால், அந்த மாதத்திற்கான பேமெண்ட் வழங்கப்படாது.',
       textEn: 'If you wish to withdraw the vehicle from our company\'s service, at least 15 days\' prior written or official notice must be given. If the vehicle is stopped without the above prior notice, the payment for that month will not be made.',
       category: 'general',
@@ -195,8 +200,8 @@ export default function RulesView() {
       severity: 'high',
     },
     {
-      id: 'rule-18',
-      number: '18',
+      id: 'rule-17',
+      number: '17',
       text: 'E7 Travels நிறுவனத்தில் இணையும் அனைத்து வாகன ஓட்டுநர்களுக்கும் Background Verification (பின்னணி சரிபார்ப்பு) கட்டாயமாக மேற்கொள்ளப்படும். இந்த சரிபார்ப்பு எங்கள் நிறுவனத்தின் சார்பில் செய்யப்படும். அதற்கான கட்டணம் சம்பந்தப்பட்ட ஓட்டுநர் அல்லது வாகன உரிமையாளரின் பேமெண்ட்டிலிருந்து பிடித்தம் செய்யப்படும்.',
       textEn: 'Background Verification is mandatory for all drivers joining E7 Travels. This verification will be conducted on behalf of our company, and the fee for it will be deducted from the payment of the concerned driver or vehicle owner.',
       category: 'conduct',
@@ -205,8 +210,8 @@ export default function RulesView() {
       severity: 'medium',
     },
     {
-      id: 'rule-19',
-      number: '19',
+      id: 'rule-18',
+      number: '18',
       text: 'வாகனம் ஓட்டத்திலிருந்து நிறுத்தப்பட்ட பிறகு, நிறுவனத்தின் டீசல் கூப்பனைப் பயன்படுத்தி டீசல் போடப்பட்டிருந்தால், ஒவ்வொரு முறை டீசல் போட்டதற்கும் தலா ரூ. 5,000 அபராதம் விதிக்கப்படுவதோடு, நிலுவையில் உள்ள பேமெண்ட் அல்லது பிணைப்புத் தொகையிலிருந்து (Caution Deposit) அதற்கான எரிபொருள் தொகை பிடித்தம் செய்யப்படும்.',
       textEn: 'If company diesel coupons are used to fuel the vehicle after it has been stopped from operation, a fine of ₹5,000 will be charged for each fueling instance, and the fuel cost will be deducted from the outstanding payment or caution deposit.',
       category: 'payment',
@@ -215,18 +220,18 @@ export default function RulesView() {
       severity: 'high',
     },
     {
-      id: 'rule-20',
-      number: '20',
+      id: 'rule-19',
+      number: '19',
       text: 'மேற்பார்வையாளர் (Supervisor), நிறுவன ஊழியர்கள் (Staff) மற்றும் பாதுகாப்புப் பணியாளர்கள் (Security) யாருடனும் எந்த நேரத்திலும் வாக்குவாதத்தில் ஈடுபடக் கூடாது. அவ்வாறு ஒழுங்கீனமாக நடப்பவர்கள் மீது ஒழுங்கு நடவடிக்கை எடுக்கப்பட்டு ரூ. 20,000 அபராதம் விதிக்கப்படும்.',
-      textEn: 'The driver must not argue at any time with supervisors, company employees (staff), or security personnel. Disciplinarian action will be taken and a fine of ₹20,050 will be imposed on those who behave in such an undisciplined manner.',
+      textEn: 'The driver must not argue at any time with supervisors, company employees (staff), or security personnel. Disciplinarian action will be taken and a fine of ₹20,000 will be imposed on those who behave in such an undisciplined manner.',
       category: 'conduct',
       categoryLabel: 'ஓட்டுநர் & ஒழுங்குமுறை (Driver & Conduct)',
       categoryLabelEn: 'Driver & Conduct',
       severity: 'high',
     },
     {
-      id: 'rule-21',
-      number: '21',
+      id: 'rule-20',
+      number: '20',
       text: 'அலட்சியக் குறைவாக வாகனத்தை ஓட்டுதல் (Rash Driving), வாகனத்தை ஓட்டும்போது தூங்குதல் (Slept while Driving) மற்றும் தடை செய்யப்பட்ட பைபாஸ் (Bypass) சாலைகளில் பயணம் செய்தல் போன்ற புகார்கள் வந்தால் ரூ. 20,000 அபராதம் விதிக்கப்படும்.',
       textEn: 'If complaints are received regarding rash driving, sleeping while driving, or traveling on restricted bypass roads, a fine of ₹20,000 will be imposed.',
       category: 'safety',
@@ -235,8 +240,8 @@ export default function RulesView() {
       severity: 'high',
     },
     {
-      id: 'rule-22',
-      number: '22',
+      id: 'rule-21',
+      number: '21',
       text: 'எந்தக் காரணத்தைக் கொண்டும், நட்பு ரீதியாகக்கூட பெண் ஊழியர்களுக்கு (Lady Associates) குறுஞ்செய்தி (SMS), வாட்ஸ்அப் (WhatsApp) செய்தி அல்லது போன் கால் செய்தல் கூடாது. தேவையில்லாமல் ‘Hi’ என்றோ அல்லது ‘How are you’ என்றோ செய்தி அனுப்பினால் கூட ரூ. 20,000 அபராதம் (Penalty) விதிக்கப்படும்.',
       textEn: 'Under no circumstances, even in a friendly manner, should any SMS, WhatsApp message, or phone call be made to female employees (Lady Associates). Sending messages unnecessarily like \'Hi\' or \'How are you\' will also attract a penalty of ₹20,000.',
       category: 'safety',
@@ -245,8 +250,8 @@ export default function RulesView() {
       severity: 'high',
     },
     {
-      id: 'rule-23',
-      number: '23',
+      id: 'rule-22',
+      number: '22',
       text: 'வாகன பிக்-அப் (Pickup) மற்றும் டிராப் (Drop) செய்யப்படும்போது, வெளிநபர்களை (அந்நியர்களை) வாகனத்தில் ஏற்றக் கூடாது (டிக்கெட் அடித்து சவாரி செய்யக் கூடாது). அவ்வாறு செய்வது கண்டறியப்பட்டால் ரூ. 20,000 அபராதம் விதிக்கப்படும்.',
       textEn: 'While performing pickup and drop services, external persons (strangers) must not be allowed in the vehicle (commercial/ticket-based ride-sharing is prohibited). If found doing so, a fine of ₹20,000 will be imposed.',
       category: 'safety',
@@ -255,8 +260,8 @@ export default function RulesView() {
       severity: 'high',
     },
     {
-      id: 'rule-24',
-      number: '24',
+      id: 'rule-23',
+      number: '23',
       text: 'காலை 7 மணிக்கு முன்பாகவோ அல்லது மாலை 6 மணிக்கு பின்பாகவோ, பெண் ஊழியர்களைப் பாதுகாப்புப் பணியாளர் (Security Escort) இல்லாமல் தனியாக பிக்-அப் செய்யக் கூடாது. தவறினால் ரூ. 20,000 அபராதம் விதிக்கப்படும்.',
       textEn: 'Before 7:00 AM or after 6:00 PM, female employees must not be picked up alone without a security guard (Security Escort). Failure to comply will attract a fine of ₹20,000.',
       category: 'safety',
@@ -265,8 +270,8 @@ export default function RulesView() {
       severity: 'high',
     },
     {
-      id: 'rule-25',
-      number: '25',
+      id: 'rule-24',
+      number: '24',
       text: 'எந்தக் காரணத்தைக் கொண்டும் பயண வழியில் (On the way) வாகனத்தை நிறுத்தக் கூடாது.',
       textEn: 'Under no circumstances should the vehicle be stopped along the transit route.',
       category: 'general',
@@ -275,8 +280,8 @@ export default function RulesView() {
       severity: 'info',
     },
     {
-      id: 'rule-26',
-      number: '26',
+      id: 'rule-25',
+      number: '25',
       text: 'ஊழியர்களை (Associate) நிறுவனத்தின் உள்ளே கொண்டு வந்துதான் இறக்கி விட வேண்டும். நிறுவன வாசலில் (Company Main Gate) எக்காரணம் கொண்டும் இறக்கி விடக்கூடாது. மீறினால், கிளையண்ட் நிறுவனம் விதிக்கும் அபராதத் தொகை (Penalty) வாகனத்தின் பேமெண்ட்டிலிருந்து பிடித்தம் செய்யப்படும்.',
       textEn: 'Employees (Associates) must be dropped off only inside the company premises. Under no circumstances should they be dropped at the company main gate. If violated, any penalty imposed by the client company will be deducted from the vehicle\'s payment.',
       category: 'safety',
@@ -285,8 +290,8 @@ export default function RulesView() {
       severity: 'high',
     },
     {
-      id: 'rule-27',
-      number: '27',
+      id: 'rule-26',
+      number: '26',
       text: 'ஊழியர்களை அவர்களின் வீடு அல்லது நிறுவனத்தால் நியமிக்கப்பட்ட டிராப் பாயிண்ட்டில் (Drop Point) தான் இறக்கி விட வேண்டும். எந்தக் காரணத்தைக் கொண்டும் வழியில் இறக்கி விடக் கூடாது. பாதுகாப்புப் பணியாளரை (Security Escort) மீண்டும் நிறுவனத்திற்கே கொண்டு வந்து விட வேண்டும்; அவரையும் வழியில் இறக்கிவிடக் கூடாது.',
       textEn: 'Employees must be dropped only at their homes or designated drop points. Under no circumstances should they be dropped on the way. The Security Escort must be brought back to the company; they must also not be dropped on the way.',
       category: 'safety',
@@ -295,8 +300,8 @@ export default function RulesView() {
       severity: 'high',
     },
     {
-      id: 'rule-28',
-      number: '28',
+      id: 'rule-27',
+      number: '27',
       text: 'டிரிப் ஷீட்டில் (Trip Sheet) ஓட்டுநர் எந்தக் காரணத்தைக் கொண்டும் ஊழியர்களைப் பற்றிய விவரங்களை எழுதக் கூடாது. அந்தந்த விவரங்களைச் சம்பந்தப்பட்ட ஊழியர்கள்தான் (Associates) எழுத வேண்டும். ஓட்டுநரின் பெயர், அடையாள எண் (ID) மற்றும் பகுதி (Area) போன்றவை தெளிவாக எழுதப்பட்டிருப்பதை ஓட்டுநர் உறுதி செய்ய வேண்டும்.',
       textEn: 'The driver must not write any details about the employees on the Trip Sheet under any circumstances. The respective details must be written only by the employees (Associates). The driver must ensure that their name, ID, and area are clearly written.',
       category: 'general',
@@ -305,8 +310,8 @@ export default function RulesView() {
       severity: 'medium',
     },
     {
-      id: 'rule-29',
-      number: '29',
+      id: 'rule-28',
+      number: '28',
       text: 'வாகனம் யார் பெயரில் பதிவு செய்யப்பட்டுள்ளதோ, அவர் பெயரில்தான் காசோலை (Cheque OR Bank Transfer) வழங்கப்படும். காசோலை பெரும் பெயர் மாற்றத் தேவைப்பட்டால், வாகனப் பதிவு உரிமையாளரிடமிருந்து ரூ. 20 மதிப்புள்ள முத்திரைத்தாளில் (Stamp Paper) எழுத்துப்பூர்வமான சம்மதக் கடிதம் பெற்றுத் தர வேண்டும். உறவினர் பெயருக்கு மாற்ற வேண்டும் என்றால் அதற்கான முறையான உறவுமுறைச் சான்றிதழ் சமர்ப்பிக்கப்பட வேண்டும்.',
       textEn: 'Cheque or bank transfer payments will be issued only in the name of the registered vehicle owner. If a change of payment recipient is required, a written consent letter must be provided by the registered owner on a ₹20 stamp paper. If the payment is to be transferred to a relative, a proper relationship certificate must be submitted.',
       category: 'payment',
@@ -339,8 +344,13 @@ export default function RulesView() {
   const handlePrint = () => {
     try {
       setPrintError(false);
+      const originalTitle = document.title;
+      document.title = 'E7_Travels_Vehicle_Induction_and_Driver_Rules_Regulations';
       window.focus();
       window.print();
+      setTimeout(() => {
+        document.title = originalTitle;
+      }, 3000);
     } catch (err) {
       console.error('Print failed:', err);
       setPrintError(true);
@@ -355,8 +365,12 @@ export default function RulesView() {
         @media print {
           /* Remove browser headers and footers (title, date/time, URL) */
           @page {
-            size: auto;
-            margin: 0 !important;
+            size: A4 portrait;
+            margin: 0;
+          }
+
+          * {
+            box-sizing: border-box;
           }
 
           /* Hide standard non-print components of RulesView and App.tsx */
@@ -366,85 +380,121 @@ export default function RulesView() {
             overflow: hidden !important;
           }
           
-          /* Reset parent layout restrictions so browser can multi-page print */
-          body, html, #root, #root > div, #root > div > div, main {
+          /* Reset parent layout restrictions */
+          html, body, #root, #root > div, #root > div > div, main {
+            width: 210mm !important;
+            margin: 0 !important;
+            padding: 0 !important;
             background: white !important;
             color: black !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            height: auto !important;
-            min-height: auto !important;
             overflow: visible !important;
-            display: block !important;
           }
 
-          /* Add safe printable margins since browser default margin is set to 0 */
           body {
-            padding: ${printDensity === 'super-compact' ? '6mm 10mm 6mm 10mm' : printDensity === 'compact' ? '10mm 15mm 10mm 15mm' : '15mm 20mm 15mm 20mm'} !important;
-          }
-
-          /* Ensure content takes full print area */
-          .print-sheet {
-            display: block !important;
-            width: 100% !important;
-            padding: 0 !important;
+            font-family: "Nirmala UI", "Latha", Arial, sans-serif !important;
+            font-size: 10pt !important;
+            line-height: 1.32 !important;
             margin: 0 !important;
-            box-shadow: none !important;
-            border: none !important;
+            padding: 0 !important;
           }
 
-          /* Print rule item page-break safety */
-          .print-rule-item {
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            margin-bottom: ${printDensity === 'super-compact' ? '4px' : printDensity === 'compact' ? '7px' : '12px'} !important;
-            padding-bottom: ${printDensity === 'super-compact' ? '4px' : printDensity === 'compact' ? '7px' : '12px'} !important;
-          }
-
-          /* Font size and line heights for rules */
-          .rule-num {
-            font-size: ${printDensity === 'super-compact' ? '9px' : printDensity === 'compact' ? '10px' : '11px'} !important;
-            width: ${printDensity === 'super-compact' ? '1.25rem' : printDensity === 'compact' ? '1.5rem' : '2rem'} !important;
-          }
-          .rule-text-primary {
-            font-size: ${printDensity === 'super-compact' ? '9px' : printDensity === 'compact' ? '10px' : '11.5px'} !important;
-            line-height: ${printDensity === 'super-compact' ? '1.2' : printDensity === 'compact' ? '1.3' : '1.45'} !important;
-          }
-          .rule-text-secondary {
-            font-size: ${printDensity === 'super-compact' ? '8px' : printDensity === 'compact' ? '8.5px' : '9.5px'} !important;
-            line-height: ${printDensity === 'super-compact' ? '1.15' : printDensity === 'compact' ? '1.25' : '1.35'} !important;
-          }
-
-          /* Header area scaling */
-          .print-header {
-            padding-bottom: ${printDensity === 'super-compact' ? '10px' : printDensity === 'compact' ? '15px' : '24px'} !important;
-          }
-          .print-header h1 {
-            font-size: ${printDensity === 'super-compact' ? '13px' : printDensity === 'compact' ? '15px' : '18px'} !important;
-          }
-          .print-header h2 {
-            font-size: ${printDensity === 'super-compact' ? '10px' : printDensity === 'compact' ? '11px' : '13px'} !important;
-          }
-          .print-rules-container {
-            margin-top: ${printDensity === 'super-compact' ? '10px' : printDensity === 'compact' ? '15px' : '24px'} !important;
-          }
-
-          /* Signature block spacing and break safety */
-          .print-signature-block {
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            margin-top: ${printDensity === 'super-compact' ? '1.5rem' : printDensity === 'compact' ? '2rem' : '3.5rem'} !important;
-            gap: ${printDensity === 'super-compact' ? '0.75rem' : printDensity === 'compact' ? '1.25rem' : '1.5rem'} !important;
-          }
-          .print-signature-col {
-            margin-bottom: 0 !important;
-          }
-          .print-signature-col p {
+          h1, h2, h3, p {
             margin-top: 0 !important;
-            margin-bottom: ${printDensity === 'super-compact' ? '0.75rem' : printDensity === 'compact' ? '1.25rem' : '2.5rem'} !important;
           }
-          .print-signature-col p:last-child {
+
+          /* Exact Page Containers */
+          .page {
+            width: 210mm !important;
+            height: 297mm !important;
+            max-height: 297mm !important;
+            box-sizing: border-box !important;
+            position: relative !important;
+            overflow: hidden !important;
+            background: white !important;
+            page-break-after: always !important;
+            break-after: page !important;
+          }
+
+          .page:last-child {
+            page-break-after: auto !important;
+            break-after: auto !important;
+          }
+
+          .page-content {
+            width: 210mm !important;
+            max-width: 210mm !important;
+            padding-left: 14mm !important;
+            padding-right: 14mm !important;
+            padding-top: 9mm !important;
+            padding-bottom: 8mm !important;
+            box-sizing: border-box !important;
+            height: 297mm !important;
+            max-height: 297mm !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: space-between !important;
+          }
+
+          .document-title {
+            font-size: 11pt !important;
+            font-weight: bold !important;
+            text-align: center !important;
+            margin-bottom: 2mm !important;
+            line-height: 1.2 !important;
+          }
+
+          .rules-container {
+            flex: 1 1 auto !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: flex-start !important;
+          }
+
+          .rule {
+            font-size: 9.8pt !important;
+            line-height: 1.34 !important;
+            margin: 0 0 2.2mm 0 !important;
+            padding: 0 !important;
+            text-align: justify !important;
+          }
+
+          .rule:last-child {
             margin-bottom: 0 !important;
+          }
+
+          .rule-number {
+            font-weight: bold !important;
+            margin-right: 3px !important;
+          }
+
+          .rule-en {
+            font-size: 8.8pt !important;
+            line-height: 1.24 !important;
+            color: #374151 !important;
+            margin: 0.5mm 0 0 0 !important;
+            text-align: justify !important;
+          }
+
+          .page-3-rule {
+            font-size: 9.4pt !important;
+            line-height: 1.28 !important;
+            margin: 0 0 1.8mm 0 !important;
+          }
+
+          .page-footer {
+            margin-top: auto !important;
+            padding-top: 1.5mm !important;
+            border-top: 1px solid #cbd5e1 !important;
+            flex-shrink: 0 !important;
+          }
+
+          .signature-section {
+            width: 100% !important;
+            font-size: 8.5pt !important;
+            line-height: 1.25 !important;
+            margin-top: 2mm !important;
+            box-sizing: border-box !important;
+            flex-shrink: 0 !important;
           }
         }
       `}} />
@@ -534,7 +584,7 @@ export default function RulesView() {
           
           <button
             onClick={handlePrint}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-black text-xs rounded-xl transition-all shadow-md flex items-center gap-2 border border-blue-400 cursor-pointer"
+            className="px-5 py-2.5 bg-[#006B57] hover:bg-[#004D40] active:scale-95 text-white font-bold text-xs rounded-xl transition-all shadow-md flex items-center gap-2 border border-emerald-500 cursor-pointer"
           >
             <Printer className="h-4 w-4" />
             {lang === 'ta' ? 'அச்சிடு / PDF சேமி' : 'Print Document / Save PDF'}
@@ -550,7 +600,7 @@ export default function RulesView() {
               <button
                 onClick={() => setPrintLang('ta')}
                 className={`py-1.5 text-[10px] font-bold rounded-lg transition-all cursor-pointer ${
-                  printLang === 'ta' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                  printLang === 'ta' ? 'bg-[#007A63] text-white shadow-sm' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 தமிழ்
@@ -558,7 +608,7 @@ export default function RulesView() {
               <button
                 onClick={() => setPrintLang('en')}
                 className={`py-1.5 text-[10px] font-bold rounded-lg transition-all cursor-pointer ${
-                  printLang === 'en' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                  printLang === 'en' ? 'bg-[#007A63] text-white shadow-sm' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 English
@@ -566,7 +616,7 @@ export default function RulesView() {
               <button
                 onClick={() => setPrintLang('bilingual')}
                 className={`py-1.5 text-[10px] font-bold rounded-lg transition-all cursor-pointer ${
-                  printLang === 'bilingual' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                  printLang === 'bilingual' ? 'bg-[#007A63] text-white shadow-sm' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 Bilingual
@@ -581,7 +631,7 @@ export default function RulesView() {
               <button
                 onClick={() => setPrintScope('all')}
                 className={`py-1.5 text-[10px] font-bold rounded-lg transition-all cursor-pointer ${
-                  printScope === 'all' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                  printScope === 'all' ? 'bg-[#007A63] text-white shadow-sm' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 All Rules ({rules.length})
@@ -589,7 +639,7 @@ export default function RulesView() {
               <button
                 onClick={() => setPrintScope('filtered')}
                 className={`py-1.5 text-[10px] font-bold rounded-lg transition-all cursor-pointer ${
-                  printScope === 'filtered' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                  printScope === 'filtered' ? 'bg-[#007A63] text-white shadow-sm' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 Filtered Only ({filteredRules.length})
@@ -604,7 +654,7 @@ export default function RulesView() {
               <button
                 onClick={() => setIncludeSignatures(true)}
                 className={`py-1.5 text-[10px] font-bold rounded-lg transition-all cursor-pointer ${
-                  includeSignatures ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                  includeSignatures ? 'bg-[#007A63] text-white shadow-sm' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 With Signatures
@@ -612,7 +662,7 @@ export default function RulesView() {
               <button
                 onClick={() => setIncludeSignatures(false)}
                 className={`py-1.5 text-[10px] font-bold rounded-lg transition-all cursor-pointer ${
-                  !includeSignatures ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                  !includeSignatures ? 'bg-[#007A63] text-white shadow-sm' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 Text Only
@@ -627,7 +677,7 @@ export default function RulesView() {
               <button
                 onClick={() => setPrintDensity('compact')}
                 className={`py-1.5 text-[9px] font-bold rounded-lg transition-all cursor-pointer ${
-                  printDensity === 'compact' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                  printDensity === 'compact' ? 'bg-[#007A63] text-white shadow-sm' : 'text-slate-400 hover:text-white'
                 }`}
                 title="Slightly smaller spacing and text to fit within 3 pages"
               >
@@ -636,7 +686,7 @@ export default function RulesView() {
               <button
                 onClick={() => setPrintDensity('super-compact')}
                 className={`py-1.5 text-[9px] font-bold rounded-lg transition-all cursor-pointer ${
-                  printDensity === 'super-compact' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                  printDensity === 'super-compact' ? 'bg-[#007A63] text-white shadow-sm' : 'text-slate-400 hover:text-white'
                 }`}
                 title="Ultra tight layout and text to fit within 2 pages"
               >
@@ -645,7 +695,7 @@ export default function RulesView() {
               <button
                 onClick={() => setPrintDensity('standard')}
                 className={`py-1.5 text-[9px] font-bold rounded-lg transition-all cursor-pointer ${
-                  printDensity === 'standard' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                  printDensity === 'standard' ? 'bg-[#007A63] text-white shadow-sm' : 'text-slate-400 hover:text-white'
                 }`}
                 title="Default layout size, might take 4 pages"
               >
@@ -754,72 +804,233 @@ export default function RulesView() {
         )}
       </div>
 
-      {/* Printing Only Layout */}
-      <div className="hidden print:block font-sans text-xs pt-12 print-sheet">
-        <div className="text-center space-y-2 border-b border-double border-slate-400 pb-6 flex flex-col items-center justify-center print-header">
-          {customLogo ? (
-            <img src={customLogo} alt="E7 Travels" className="h-14 w-14 object-contain mb-2" referrerPolicy="no-referrer" />
-          ) : (
-            <div className="h-12 w-12 rounded bg-amber-500 text-slate-950 font-black text-xl border-2 border-slate-950 shadow-sm flex items-center justify-center mb-2 shrink-0">
-              E7
-            </div>
-          )}
-          <h1 className="text-lg font-black tracking-tight text-black uppercase">E7 TRAVELS CHENNAI HUB</h1>
-          <h2 className="text-sm font-bold tracking-wide">
-            {printLang === 'ta' && 'வாகன இணைப்பு மற்றும் ஓட்டுநர்களுக்கான விதிமுறைகள் (Rules & Regulations)'}
-            {printLang === 'en' && 'Vehicle Induction & Driver Rules & Regulations'}
-            {printLang === 'bilingual' && 'வாகன இணைப்பு & ஓட்டுநர் விதிமுறைகள் / Vehicle Induction & Driver Rules'}
-          </h2>
-          <p className="text-[10px] font-medium text-slate-500 italic">
-            E7 Travels Authorized Document — {lang === 'ta' ? 'விதிமுறைகள் ஆவணம்' : 'Rules Directory Reference'}
-          </p>
-        </div>
+      {/* Printing Only Layout - Exactly 3 Pages */}
+      <div className="hidden print:block font-sans text-xs">
+        {(() => {
+          const printableRules = printScope === 'all' ? rules : filteredRules;
+          // Exact pagination: Page 1 (1 to 10), Page 2 (11 to 20), Page 3 (21 to 29 + photo + signatures)
+          const p1Rules = printableRules.slice(0, 10);
+          const p2Rules = printableRules.slice(10, 20);
+          const p3Rules = printableRules.slice(20);
 
-        <div className="space-y-4 mt-6 print-rules-container">
-          {(printScope === 'all' ? rules : filteredRules).map((rule) => (
-            <div key={rule.id} className="flex gap-3 text-[11px] border-b border-slate-100 pb-3 leading-relaxed print-rule-item text-justify">
-              <span className="font-bold shrink-0 text-right text-slate-700 rule-num">{rule.number}.</span>
-              <div className="flex-1 space-y-1">
-                {(printLang === 'ta' || printLang === 'bilingual') && (
-                  <p className="font-sans font-semibold text-slate-900 rule-text-primary">{rule.text}</p>
+          const renderLogoHeader = () => (
+            <div className="document-title border-b-2 border-slate-900 pb-1.5 mb-2">
+              <div className="flex items-center justify-center gap-2 mb-1">
+                {customLogo ? (
+                  <img src={customLogo} alt="E7 Travels" className="h-8 w-auto max-w-[90px] max-h-8 object-contain shrink-0" referrerPolicy="no-referrer" />
+                ) : (
+                  <span className="font-black px-1.5 py-0.5 bg-amber-400 border border-slate-900 rounded text-xs">E7</span>
                 )}
-                {(printLang === 'en' || printLang === 'bilingual') && (
-                  <p className={`font-sans text-slate-600 rule-text-secondary ${printLang === 'bilingual' ? 'italic mt-0.5' : 'font-medium'}`}>
-                    {rule.textEn}
-                  </p>
-                )}
+                <span className="text-[11pt] font-black uppercase tracking-tight text-slate-950">E7 TOURS & TRAVELS</span>
+              </div>
+
+              <div className="text-[10pt] font-bold text-slate-900 tracking-wide uppercase">
+                {printLang === 'ta' && 'வாகன இணைப்பு மற்றும் ஓட்டுநர்களுக்கான விதிமுறைகள் (Rules & Regulations)'}
+                {printLang === 'en' && 'Vehicle Induction & Driver Rules & Regulations'}
+                {printLang === 'bilingual' && 'வாகன இணைப்பு & ஓட்டுநர் விதிமுறைகள் / Vehicle Induction & Driver Rules'}
               </div>
             </div>
-          ))}
-        </div>
+          );
 
-        {/* Print Signature block */}
-        {includeSignatures && (
-          <div className="grid grid-cols-3 gap-6 pt-16 text-[10px] print-signature-block">
-            <div className="space-y-12 print-signature-col">
-              <p className="font-bold">Owner Name: _________________</p>
-              <p className="font-bold">Owner Signature: ______________</p>
-              <p className="font-bold">Date: _________________</p>
+          const renderRuleRow = (rule: RuleItem, isPage3 = false) => (
+            <div key={rule.id} className={`rule ${isPage3 ? 'page-3-rule' : ''}`}>
+              {(printLang === 'ta' || printLang === 'bilingual') && (
+                <p className="rule-ta text-slate-950 font-normal">
+                  <span className="rule-number font-bold text-slate-950">{rule.number}. </span>
+                  {rule.text}
+                </p>
+              )}
+              {(printLang === 'en' || printLang === 'bilingual') && (
+                <p className={`rule-en ${printLang === 'en' ? 'text-slate-950' : 'text-slate-700 italic'}`}>
+                  {printLang === 'en' && <span className="rule-number font-bold text-slate-950">{rule.number}. </span>}
+                  {rule.textEn}
+                </p>
+              )}
             </div>
-            <div className="space-y-12 print-signature-col">
-              <p className="font-bold">Driver Name: _________________</p>
-              <p className="font-bold">Driver Signature: ______________</p>
-              <p className="font-bold">Date: _________________</p>
-            </div>
-            <div className="space-y-12 flex flex-col justify-end">
-              <p className="font-extrabold text-right text-[11px]">E7 TRAVELS AUTHORIZED SIGNATURE</p>
-              <p className="text-slate-400 text-right italic">(Office Seal & Signature)</p>
-            </div>
-          </div>
-        )}
+          );
 
-        {includeSignatures && (
-          <div className="pt-12 text-center text-3xs text-slate-400 italic">
-            {lang === 'ta' 
-              ? 'மேலே குறிப்பிட்ட அனைத்து விதிமுறைகளையும் நான் மனப்பூர்வமாக ஏற்றுக் கொள்கிறேன்.' 
-              : 'I hereby accept all the above mentioned rules and regulations wholeheartedly.'}
-          </div>
-        )}
+          return (
+            <>
+              {/* PAGE 1: Rules 1 to 10 */}
+              <div className="page">
+                <div className="page-content">
+                  <div>
+                    {renderLogoHeader()}
+                    <div className="rules-container mt-1">
+                      {p1Rules.map((rule) => renderRuleRow(rule))}
+                    </div>
+                  </div>
+                  <div className="page-footer flex justify-between items-center text-[7.5pt] text-slate-500 font-semibold">
+                    <span>E7 Travels Official Rules & Regulations • Continued on Page 2</span>
+                    <span>Page 1 of 3</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* PAGE 2: Rules 11 to 20 */}
+              <div className="page">
+                <div className="page-content">
+                  <div>
+                    {renderLogoHeader()}
+                    <div className="rules-container mt-1">
+                      {p2Rules.map((rule) => renderRuleRow(rule))}
+                    </div>
+                  </div>
+                  <div className="page-footer flex justify-between items-center text-[7.5pt] text-slate-500 font-semibold">
+                    <span>E7 Travels Official Rules & Regulations • Continued on Page 3</span>
+                    <span>Page 2 of 3</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* PAGE 3: Rules 21 to 28 + Detailed Owner/Driver info + Photo + Office Use */}
+              <div className="page">
+                <div className="page-content">
+                  <div>
+                    {renderLogoHeader()}
+                    <div className="rules-container mt-1">
+                      {p3Rules.map((rule) => renderRuleRow(rule, true))}
+                    </div>
+                  </div>
+
+                  {/* Print Verification, Details, Photo & Office Use Section */}
+                  <div className="signature-section border-t-2 border-slate-900 pt-1.5 mt-1 space-y-1.5">
+                    {includeSignatures && (
+                      <>
+                        {/* 1. Acceptance Declaration */}
+                        <div className="bg-slate-100 px-2 py-0.5 rounded border border-slate-300 text-center text-[7.5pt] font-bold text-slate-900">
+                          {printLang === 'ta' ? (
+                            'மேலே குறிப்பிட்ட அனைத்து விதிமுறைகளையும் நான் முழுமையாகப் படித்து, மனப்பூர்வமாக ஏற்றுக் கொள்கிறேன்.'
+                          ) : printLang === 'en' ? (
+                            'I have read, understood, and hereby accept all the above mentioned rules and regulations wholeheartedly.'
+                          ) : (
+                            'மேலே குறிப்பிட்ட அனைத்து விதிமுறைகளையும் நான் மனப்பூர்வமாக ஏற்றுக் கொள்கிறேன். / I hereby accept all the above rules and regulations wholeheartedly.'
+                          )}
+                        </div>
+
+                        {/* 2. Owner & Driver Comprehensive Details */}
+                        <div className="grid grid-cols-2 gap-2 text-[7.5pt]">
+                          {/* Owner Details & Bank Details */}
+                          <div className="border border-slate-400 p-1.5 rounded bg-slate-50/80 flex flex-col justify-between">
+                            <div>
+                              <p className="font-bold text-slate-950 border-b border-slate-300 pb-0.5 text-[8pt] uppercase tracking-wide">
+                                வாகன உரிமையாளர் & வங்கி விவரங்கள் (Owner & Bank Details)
+                              </p>
+                              <div className="grid grid-cols-2 gap-x-2 gap-y-1 mt-1 text-[7.2pt] text-slate-800">
+                                <div><span className="font-semibold">பெயர் (Name):</span> ________________</div>
+                                <div><span className="font-semibold">வண்டி எண் (Vehicle No):</span> ___________</div>
+                                <div><span className="font-semibold">தொலைபேசி (Phone):</span> ____________</div>
+                                <div><span className="font-semibold">ஆதார் எண் (Aadhaar):</span> ___________</div>
+                                <div><span className="font-semibold">வங்கி பெயர் (Bank):</span> ______________</div>
+                                <div><span className="font-semibold">கிளை (Branch):</span> _________________</div>
+                                <div className="col-span-2"><span className="font-semibold">வங்கிக் கணக்கு எண் (A/C No):</span> _________________________________</div>
+                                <div className="col-span-2"><span className="font-semibold">IFSC Code:</span> ______________________ <span className="font-semibold ml-2">UPI ID:</span> ________________</div>
+                              </div>
+                            </div>
+                            <div className="pt-1.5 mt-1 border-t border-slate-300 flex justify-between items-center text-[7pt]">
+                              <span>உரிமையாளர் கையொப்பம் (Sign): _________________</span>
+                              <span>தேதி (Date): ___________</span>
+                            </div>
+                          </div>
+
+                          {/* Driver Details & License Info */}
+                          <div className="border border-slate-400 p-1.5 rounded bg-slate-50/80 flex flex-col justify-between">
+                            <div>
+                              <p className="font-bold text-slate-950 border-b border-slate-300 pb-0.5 text-[8pt] uppercase tracking-wide">
+                                வாகன ஓட்டுநர் விவரங்கள் (Driver Details & License)
+                              </p>
+                              <div className="grid grid-cols-2 gap-x-2 gap-y-1 mt-1 text-[7.2pt] text-slate-800">
+                                <div><span className="font-semibold">பெயர் (Name):</span> ________________</div>
+                                <div><span className="font-semibold">தொலைபேசி (Mobile):</span> ____________</div>
+                                <div><span className="font-semibold">ஓட்டுநர் உரிம எண் (DL No):</span> _______</div>
+                                <div><span className="font-semibold">DL காலாவதி (Expiry):</span> ___________</div>
+                                <div><span className="font-semibold">ஆதார் எண் (Aadhaar):</span> ___________</div>
+                                <div><span className="font-semibold">இரத்த வகை (Blood Grp):</span> _________</div>
+                                <div className="col-span-2"><span className="font-semibold">முகவரி (Address):</span> _____________________________________________</div>
+                                <div className="col-span-2"><span className="font-semibold">அவசர தொடர்பு (Emergency Contact):</span> __________________________</div>
+                              </div>
+                            </div>
+                            <div className="pt-1.5 mt-1 border-t border-slate-300 flex justify-between items-center text-[7pt]">
+                              <span>ஓட்டுநர் கையொப்பம் (Sign): ___________________</span>
+                              <span>தேதி (Date): ___________</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 3. Photos (Owner & Driver) + Office Use Section */}
+                        <div className="grid grid-cols-4 gap-2 text-[7.2pt]">
+                          {/* Owner Passport Photo Box */}
+                          <div className="border border-slate-400 p-1 rounded bg-slate-50/80 flex flex-col items-center justify-between text-center">
+                            <p className="font-bold text-slate-900 text-[7pt] border-b border-slate-300 pb-0.5 w-full">
+                              உரிமையாளர் புகைப்படம் (Owner Photo)
+                            </p>
+                            <div className="w-[25mm] h-[30mm] my-0.5 border border-dashed border-slate-500 rounded flex flex-col items-center justify-center p-0.5 bg-white text-slate-400">
+                              <span className="text-[10px]">📷</span>
+                              <span className="text-[6pt] font-bold text-slate-600 uppercase mt-0.5">PASTE PHOTO</span>
+                              <span className="text-[5pt] text-slate-400">உரிமையாளர் படம்</span>
+                            </div>
+                            <p className="text-[6pt] text-slate-600 font-medium">Passport Size</p>
+                          </div>
+
+                          {/* Driver Passport Photo Box */}
+                          <div className="border border-slate-400 p-1 rounded bg-slate-50/80 flex flex-col items-center justify-between text-center">
+                            <p className="font-bold text-slate-900 text-[7pt] border-b border-slate-300 pb-0.5 w-full">
+                              ஓட்டுநர் புகைப்படம் (Driver Photo)
+                            </p>
+                            <div className="w-[25mm] h-[30mm] my-0.5 border border-dashed border-slate-500 rounded flex flex-col items-center justify-center p-0.5 bg-white text-slate-400">
+                              <span className="text-[10px]">📷</span>
+                              <span className="text-[6pt] font-bold text-slate-600 uppercase mt-0.5">PASTE PHOTO</span>
+                              <span className="text-[5pt] text-slate-400">ஓட்டுநர் படம்</span>
+                            </div>
+                            <p className="text-[6pt] text-slate-600 font-medium">Passport Size</p>
+                          </div>
+
+                          {/* Office Use & Document Verification */}
+                          <div className="col-span-2 border border-slate-400 p-1.5 rounded bg-slate-50/80 flex flex-col justify-between">
+                            <div>
+                              <div className="flex justify-between items-center border-b border-slate-300 pb-0.5">
+                                <span className="font-black text-slate-950 uppercase text-[7.5pt]">E7 TOURS & TRAVELS - FOR OFFICE USE ONLY</span>
+                                <span className="text-[6.5pt] font-semibold text-slate-600 italic">அலுவலக சரிபார்ப்பு</span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 mt-1 text-[6.8pt] text-slate-800">
+                                <div><span className="font-semibold">இன்டக்ஷன் தேதி (Induction):</span> ________</div>
+                                <div><span className="font-semibold">ஜிபிஎஸ் எண் (GPS ID):</span> ____________</div>
+                                <div><span className="font-semibold">பிணைப்பு தொகை (Caution Dep):</span> _____</div>
+                                <div><span className="font-semibold">ரசீது எண் (Receipt No):</span> ___________</div>
+                                <div className="col-span-2 pt-0.5">
+                                  <span className="font-semibold">ஆவணங்கள் (Verified): </span>
+                                  <span className="text-[6.2pt] text-slate-700 font-medium">
+                                    [ ] RC &nbsp; [ ] Ins &nbsp; [ ] FC &nbsp; [ ] Permit &nbsp; [ ] DL &nbsp; [ ] Aadhaar &nbsp; [ ] Passbook
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-300 text-[6.5pt]">
+                              <div>
+                                <p className="font-semibold text-slate-700">சரிபார்த்தவர் (Verified By):</p>
+                                <p className="mt-2 text-slate-500 font-medium">மேற்பார்வையாளர் கையொப்பம்</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="font-bold text-slate-950 uppercase">Authorized Signatory</p>
+                                <p className="mt-2 text-slate-500 font-medium">(Office Seal & Sign)</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    <div className="page-footer flex justify-between items-center text-[7.5pt] text-slate-500 font-semibold mt-1">
+                      <span>E7 Travels Official Rules & Regulations • End of Document</span>
+                      <span>Page 3 of 3</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          );
+        })()}
       </div>
 
     </div>

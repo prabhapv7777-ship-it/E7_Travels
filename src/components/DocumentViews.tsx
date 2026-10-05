@@ -222,7 +222,7 @@ export default function DocumentViews({ vehicles, companies, owners, drivers, ac
   // Supplier details
   const [supplierName, setSupplierName] = useState('E7 Tours & Travels');
   const [supplierGstin, setSupplierGstin] = useState('33BZEPP2705B1ZX');
-  const [supplierAddress, setSupplierAddress] = useState('3/289, South Street, Annai teresa nursery and primary school, Mudhanai, Cuddalore Tamil Nadu - 607804');
+  const [supplierAddress, setSupplierAddress] = useState('3/289, South Street, Mudhanai, Vridhachalam Taluk - 607804');
   const [supplierMobile, setSupplierMobile] = useState('9942210038');
   const [supplierEmail, setSupplierEmail] = useState('e7tourstravels@gmail.com');
 
@@ -480,7 +480,13 @@ The layout is optimized for high-quality corporate layout print preview. When pr
   }, [letterDate, selectedVehicle, owners, drivers]);
 
   const handlePrint = () => {
+    const originalTitle = document.title;
+    document.title = `E7_Travels_${activeSubView.replace(/\s+/g, '_')}_${selectedVehicle ? selectedVehicle.replace(/[^A-Za-z0-9]/g, '_') : 'Doc'}_${letterDate || new Date().toISOString().substring(0, 10)}`;
+    window.focus();
     window.print();
+    setTimeout(() => {
+      document.title = originalTitle;
+    }, 3000);
   };
 
   return (

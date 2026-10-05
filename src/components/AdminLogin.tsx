@@ -1,3 +1,8 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import React, { useState, useEffect } from 'react';
 import {
   Lock,
@@ -9,6 +14,11 @@ import {
   LogIn,
   HelpCircle,
   Sparkles,
+  CheckCircle2,
+  Clock,
+  Car,
+  Building2,
+  Navigation,
 } from 'lucide-react';
 
 interface AdminLoginProps {
@@ -24,12 +34,13 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [showHint, setShowHint] = useState(true);
 
-  // Default credentials
+  // Default admin credentials
   const DEFAULT_EMAIL = 'admin@e7travels.com';
   const DEFAULT_PASSWORD = 'admin';
 
+  const [forgotMsg, setForgotMsg] = useState(false);
+
   useEffect(() => {
-    // Check if credentials are saved in localStorage
     const savedEmail = localStorage.getItem('e7_admin_remembered_email');
     if (savedEmail) {
       setEmail(savedEmail);
@@ -51,25 +62,21 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
 
     setIsLoading(true);
 
-    // Simulate database lookup / encryption check with a realistic micro-timeout
     setTimeout(() => {
       const trimmedEmail = email.trim().toLowerCase();
-      
-      // Check against standard preset admin credentials
       if (trimmedEmail === DEFAULT_EMAIL && password === DEFAULT_PASSWORD) {
         if (rememberMe) {
           localStorage.setItem('e7_admin_remembered_email', trimmedEmail);
         } else {
           localStorage.removeItem('e7_admin_remembered_email');
         }
-        
         localStorage.setItem('e7_admin_session_active', 'true');
         onLoginSuccess(trimmedEmail);
       } else {
-        setError('Invalid administrative credentials. Please verify your email and password.');
+        setError('Invalid administrative credentials. Please check your email and password.');
         setIsLoading(false);
       }
-    }, 850);
+    }, 600);
   };
 
   const fillDefaultCredentials = () => {
@@ -79,200 +86,245 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans antialiased selection:bg-blue-100">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        
-        {/* Brand/Logo Identifier */}
-        <div className="flex flex-col items-center">
-          <div className="relative group mb-4">
-            {/* Ambient Background Glow */}
-            <div className="absolute -inset-1.5 bg-gradient-to-r from-blue-600 via-amber-500 to-indigo-600 rounded-3xl blur-md opacity-45 group-hover:opacity-75 transition duration-1000 group-hover:duration-200"></div>
-            
-            {/* Main Interactive Logo Container */}
-            <div className="relative w-20 h-20 bg-gradient-to-br from-blue-950 via-slate-900 to-indigo-950 rounded-2xl flex items-center justify-center shadow-2xl border-2 border-white/10 transition-all duration-300 group-hover:scale-105 group-hover:border-blue-500">
-              {/* Custom SVG Vector Corporate Travel Logo */}
-              <svg className="w-14 h-14" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                {/* Dynamic Forward Chevron (Gold) */}
-                <path d="M40 20L75 50L40 80" stroke="url(#goldGradient)" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
-                {/* Deep Blue Transport Wing Lines (Silver/Blue) */}
-                <path d="M25 35L55 50L25 65" stroke="url(#blueGradient)" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M10 42L35 50L10 58" stroke="url(#silverGradient)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" opacity="0.7" />
-                
-                {/* Central Elegant Monogram Text */}
-                <text x="32" y="58" fill="white" fontSize="22" fontWeight="900" fontFamily="'Inter', sans-serif" letterSpacing="-1">E7</text>
-                
-                {/* Defs for gradients */}
-                <defs>
-                  <linearGradient id="goldGradient" x1="40" y1="20" x2="75" y2="80" gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" stopColor="#F59E0B" />
-                    <stop offset="50%" stopColor="#FBBF24" />
-                    <stop offset="100%" stopColor="#D97706" />
-                  </linearGradient>
-                  <linearGradient id="blueGradient" x1="25" y1="35" x2="55" y2="65" gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" stopColor="#3B82F6" />
-                    <stop offset="100%" stopColor="#1E3A8A" />
-                  </linearGradient>
-                  <linearGradient id="silverGradient" x1="10" y1="42" x2="35" y2="58" gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" stopColor="#E2E8F0" />
-                    <stop offset="100%" stopColor="#94A3B8" />
-                  </linearGradient>
-                </defs>
-              </svg>
+    <div className="min-h-screen bg-[#F8FAFC] flex flex-col lg:flex-row font-sans antialiased text-[#172033]">
+      {/* LEFT SPLIT SCREEN: Dark Emerald Green Branding & Visual */}
+      <div className="lg:w-1/2 bg-gradient-to-br from-[#00382E] via-[#004D40] to-[#006B57] text-white p-8 lg:p-14 flex flex-col justify-between relative overflow-hidden">
+        {/* Subtle Background Pattern & Circles */}
+        <div className="absolute top-0 right-0 -mr-20 -mt-20 w-96 h-96 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none"></div>
+        <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-96 h-96 rounded-full bg-[#D4A72C]/10 blur-3xl pointer-events-none"></div>
+
+        {/* Top Logo and Tagline */}
+        <div className="relative z-10">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#006B57] to-[#00382E] border-2 border-[#D4A72C] flex items-center justify-center shadow-xl">
+              <span className="text-xl font-black text-white tracking-tighter">
+                E<span className="text-[#D4A72C]">7</span>
+              </span>
+            </div>
+            <div>
+              <h1 className="text-2xl font-black tracking-tight text-white flex items-center gap-1.5">
+                E7 <span className="text-[#D4A72C]">TRAVELS</span>
+              </h1>
+              <p className="text-[11px] font-semibold text-emerald-200 uppercase tracking-widest">
+                Fleet & Transport Management
+              </p>
             </div>
           </div>
-          
-          <h2 className="text-center text-2xl font-extrabold text-slate-800 tracking-tight">
-            E7 Travels Fleet ERP
-          </h2>
-          <p className="mt-1 text-center text-xs font-semibold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            Chennai Corporate Logistics
-          </p>
+        </div>
+
+        {/* Center: Chennai City & Corporate Fleet Visual */}
+        <div className="my-10 relative z-10">
+          <div className="bg-[#002D24]/70 backdrop-blur-md border border-emerald-500/20 rounded-2xl p-6 lg:p-8 shadow-2xl relative">
+            <div className="flex items-center justify-between mb-4 border-b border-emerald-500/20 pb-3">
+              <div className="flex items-center gap-2">
+                <Navigation className="h-5 w-5 text-[#D4A72C]" />
+                <span className="text-xs font-bold text-emerald-100 uppercase tracking-wider">
+                  Chennai Operations Command Hub
+                </span>
+              </div>
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                Live ERP
+              </span>
+            </div>
+
+            <p className="text-sm text-emerald-100/90 leading-relaxed mb-6 font-medium">
+              Enterprise Fleet Operations, Corporate Commute Logistics, Employee Transport Services, and Automated Multi-Tier Financial Settlements for Chennai’s Premier IT Parks & Industrial Corridors.
+            </p>
+
+            {/* Feature Indicators */}
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <div className="flex items-center gap-2.5 bg-[#004D40]/60 border border-emerald-400/20 rounded-xl p-3">
+                <div className="w-7 h-7 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-300">
+                  <ShieldCheck className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-white">Safe</p>
+                  <p className="text-[10px] text-emerald-200">100% Verified Fleet</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 bg-[#004D40]/60 border border-emerald-400/20 rounded-xl p-3">
+                <div className="w-7 h-7 rounded-lg bg-[#D4A72C]/20 flex items-center justify-center text-[#D4A72C]">
+                  <CheckCircle2 className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-white">Reliable</p>
+                  <p className="text-[10px] text-emerald-200">99.8% Uptime SLA</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 bg-[#004D40]/60 border border-emerald-400/20 rounded-xl p-3">
+                <div className="w-7 h-7 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-300">
+                  <Building2 className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-white">Corporate</p>
+                  <p className="text-[10px] text-emerald-200">Fortune 500 Clients</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 bg-[#004D40]/60 border border-emerald-400/20 rounded-xl p-3">
+                <div className="w-7 h-7 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-300">
+                  <Clock className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-white">On-Time</p>
+                  <p className="text-[10px] text-emerald-200">Real-Time Dispatch</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Left Footer */}
+        <div className="text-xs text-emerald-200/80 flex items-center justify-between border-t border-emerald-500/20 pt-4 relative z-10">
+          <span>&copy; {new Date().getFullYear()} E7 Travels Chennai</span>
+          <span className="flex items-center gap-1.5 text-[11px] font-semibold text-[#D4A72C]">
+            <Car className="h-3.5 w-3.5" /> Fleet & Financial ERP v3.8
+          </span>
         </div>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md px-4 sm:px-0">
-        <div className="bg-white py-8 px-6 sm:px-10 rounded-2xl border border-slate-200/80 shadow-md space-y-6">
-          
-          {/* Section Indicator */}
-          <div className="border-b border-slate-100 pb-4 text-center">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-3xs font-extrabold uppercase tracking-wider border border-blue-100">
-              <ShieldCheck className="h-3 w-3" /> Secure Gatekeeper Active
-            </span>
+      {/* RIGHT SPLIT SCREEN: Corporate Login Form */}
+      <div className="lg:w-1/2 flex items-center justify-center p-6 sm:p-12 lg:p-16 bg-[#F8FAFC]">
+        <div className="w-full max-w-md bg-white rounded-2xl border border-[#E2E8F0] shadow-sm p-8 sm:p-10">
+          {/* Header */}
+          <div className="mb-6">
+            <h2 className="text-2xl font-black text-[#172033] tracking-tight">
+              Welcome to E7 Travels
+            </h2>
+            <p className="text-xs font-medium text-[#64748B] mt-1">
+              Login to your account to manage corporate fleet & financial operations
+            </p>
           </div>
 
-          {/* Validation Banner */}
+          {/* Error Banner */}
           {error && (
-            <div className="p-3.5 bg-rose-50 text-rose-700 text-xs border border-rose-200 rounded-xl flex items-start gap-2.5 animate-pulse">
+            <div className="mb-5 p-3.5 bg-rose-50 text-rose-700 text-xs border border-rose-200 rounded-xl flex items-start gap-2.5">
               <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5" />
               <div>
                 <p className="font-bold">Authentication Refused</p>
-                <p className="text-3xs text-rose-600 mt-0.5">{error}</p>
+                <p className="text-[11px] text-rose-600 mt-0.5">{error}</p>
               </div>
             </div>
           )}
 
-          {/* Main Credentials Form */}
-          <form className="space-y-5" onSubmit={handleSubmit}>
-            
-            {/* Email Address */}
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="admin-email" className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1.5">
-                Administrative Email *
+              <label htmlFor="admin-email" className="block text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-1.5">
+                Email Address
               </label>
-              <div className="relative rounded-xl shadow-3xs">
+              <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
                   <Mail className="h-4 w-4" />
                 </div>
                 <input
                   id="admin-email"
-                  name="email"
                   type="email"
-                  autoComplete="email"
                   required
                   placeholder="admin@e7travels.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="block w-full pl-10 pr-3 py-2.5 text-xs border border-slate-200 rounded-xl bg-slate-50/50 hover:bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all text-slate-800 font-medium"
+                  className="block w-full pl-10 pr-3 py-2.5 text-xs border border-[#E2E8F0] rounded-xl bg-white hover:bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#006B57]/30 focus:border-[#006B57] transition-all text-[#172033] font-medium"
                 />
               </div>
             </div>
 
-            {/* Password Field */}
             <div>
-              <label htmlFor="admin-password" className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1.5">
-                Administrator Password *
+              <label htmlFor="admin-password" className="block text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-1.5">
+                Password
               </label>
-              <div className="relative rounded-xl shadow-3xs">
+              <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
                   <Lock className="h-4 w-4" />
                 </div>
                 <input
                   id="admin-password"
-                  name="password"
                   type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
                   required
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full pl-10 pr-10 py-2.5 text-xs border border-slate-200 rounded-xl bg-slate-50/50 hover:bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all text-slate-800 font-mono tracking-widest"
+                  className="block w-full pl-10 pr-10 py-2.5 text-xs border border-[#E2E8F0] rounded-xl bg-white hover:bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#006B57]/30 focus:border-[#006B57] transition-all text-[#172033] font-medium"
                 />
                 <button
-                  id="toggle-password-visibility"
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
             </div>
 
-            {/* Remember Me Toggle */}
             <div className="flex items-center justify-between pt-1">
-              <div className="flex items-center">
+              <label className="flex items-center cursor-pointer">
                 <input
-                  id="remember-me"
-                  name="remember-me"
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-slate-300 rounded cursor-pointer"
+                  className="h-4 w-4 text-[#006B57] focus:ring-[#006B57] border-slate-300 rounded cursor-pointer"
                 />
-                <label htmlFor="remember-me" className="ml-2 block text-3xs font-extrabold text-slate-500 uppercase tracking-wider cursor-pointer">
-                  Remember my workstation
-                </label>
-              </div>
-            </div>
+                <span className="ml-2 text-xs font-semibold text-[#64748B]">
+                  Remember me
+                </span>
+              </label>
 
-            {/* Submit Button */}
-            <div>
               <button
-                id="admin-login-submit"
-                type="submit"
-                disabled={isLoading}
-                className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-xs text-xs font-bold text-white bg-blue-900 hover:bg-blue-950 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-900 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+                type="button"
+                onClick={() => setForgotMsg(!forgotMsg)}
+                className="text-xs font-bold text-[#006B57] hover:text-[#004D40] cursor-pointer"
               >
-                {isLoading ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Verifying Access Keys...
-                  </>
-                ) : (
-                  <>
-                    <LogIn className="h-4 w-4" /> Authorise Access
-                  </>
-                )}
+                Forgot password?
               </button>
             </div>
+
+            {forgotMsg && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800">
+                Please contact E7 Travels Admin Operations (support@e7travels.com) or use the demo credentials below to sign in.
+              </div>
+            )}
+
+            {/* Gold Login Button */}
+            <button
+              id="login-btn-gold"
+              type="submit"
+              disabled={isLoading}
+              className="w-full mt-2 py-3 px-4 rounded-xl shadow-xs text-xs font-bold text-[#172033] bg-[#D4A72C] hover:bg-[#C09420] active:bg-[#AA8118] transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              {isLoading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-[#172033] border-t-transparent rounded-full animate-spin"></div>
+                  <span>Signing In...</span>
+                </>
+              ) : (
+                <>
+                  <LogIn className="h-4 w-4" />
+                  <span>Login</span>
+                </>
+              )}
+            </button>
           </form>
 
-          {/* Preset Admin Credentials Tip */}
+          {/* Quick Auto-Fill Helper */}
           {showHint && (
-            <div className="mt-4 p-4 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2.5">
+            <div className="mt-6 p-3.5 bg-amber-50/80 border border-amber-200/80 rounded-xl space-y-2">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-amber-800">
-                  <HelpCircle className="h-3.5 w-3.5" />
-                  <span className="text-3xs font-extrabold uppercase tracking-wider">Default Admin Credentials</span>
+                <div className="flex items-center gap-1.5 text-amber-900">
+                  <HelpCircle className="h-3.5 w-3.5 text-[#D4A72C]" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider">Demo Credentials</span>
                 </div>
                 <button
-                  id="admin-credential-auto-fill"
+                  type="button"
                   onClick={fillDefaultCredentials}
-                  className="text-4xs font-black text-amber-900 uppercase tracking-widest bg-amber-200/60 hover:bg-amber-200 px-2 py-0.5 rounded transition-all flex items-center gap-1"
+                  className="text-[10px] font-black text-[#172033] bg-[#D4A72C] hover:bg-[#C09420] px-2.5 py-1 rounded-md transition-all flex items-center gap-1 cursor-pointer"
                 >
-                  <Sparkles className="h-2.5 w-2.5 text-amber-800" /> Auto Fill
+                  <Sparkles className="h-3 w-3" /> Auto Fill
                 </button>
               </div>
-              <div className="text-[11px] text-amber-700/90 leading-normal font-medium space-y-1">
-                <p>Use these credentials to gain full developer-level administrative clearance:</p>
-                <div className="bg-white/80 border border-amber-200/50 rounded-lg p-2 font-mono text-[10px] space-y-1">
-                  <div><span className="font-extrabold text-amber-900">Email:</span> admin@e7travels.com</div>
-                  <div><span className="font-extrabold text-amber-900">Password:</span> admin</div>
-                </div>
+              <div className="text-[11px] text-amber-900/90 font-mono bg-white/80 p-2 rounded-lg border border-amber-200/60">
+                <div>admin@e7travels.com / admin</div>
               </div>
             </div>
           )}

@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Vehicle, Enquiry } from '../types';
 import { Printer, X, FileCheck, CheckCircle2, Building, Send } from 'lucide-react';
+import { printDocument } from '../utils/printService';
 
 interface PrintLetterpadSubmissionSlipProps {
   vehicle: Vehicle | null;
@@ -36,8 +37,18 @@ export default function PrintLetterpadSubmissionSlip({ vehicle, enquiry, onClose
     medicalCertificate: savedChecklist?.medicalCertificate ?? true,
   });
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    const docTitle = `E7_Travels_Letterpad_Submission_Slip_${regNo.replace(/[^A-Za-z0-9]/g, '_')}_${refNoInput.replace(/[^A-Za-z0-9]/g, '_')}`;
+    if (printAreaRef.current) {
+      await printDocument({
+        title: docTitle,
+        element: printAreaRef.current,
+        paperSize: 'A4',
+        openInNewTab: false,
+      });
+    } else {
+      window.print();
+    }
   };
 
   const modelName = vehicle ? `${vehicle.manufacturer} ${vehicle.model}` : enquiry?.vehicleType || 'Vehicle';
@@ -90,9 +101,9 @@ export default function PrintLetterpadSubmissionSlip({ vehicle, enquiry, onClose
             {/* Letterhead Header */}
             <div className="border-b-2 border-slate-900 pb-4 flex items-center justify-between">
               <div>
-                <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight">E7 TRAVELS & FLEET</h1>
+                <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight">E7 TOURS & TRAVELS</h1>
                 <p className="text-2xs font-bold text-slate-600 uppercase tracking-widest mt-0.5">Corporate Employee Transport & Fleet Logistics</p>
-                <p className="text-3xs text-slate-500 font-mono mt-0.5">Chennai, Tamil Nadu • Contact: +91 98400 00000</p>
+                <p className="text-3xs text-slate-500 font-mono mt-0.5">3/289, South Street, Mudhanai, Vridhachalam Taluk - 607804 • Contact: 99422 10038 / 70107 97811</p>
               </div>
               <div className="text-right">
                 <span className="inline-block px-3 py-1 bg-slate-900 text-white text-xs font-black uppercase tracking-wider rounded">
@@ -204,10 +215,10 @@ export default function PrintLetterpadSubmissionSlip({ vehicle, enquiry, onClose
             {/* Signatures & Stamps Block */}
             <div className="pt-12 grid grid-cols-2 gap-8 text-xs border-t-2 border-slate-900 mt-8">
               <div className="space-y-12">
-                <p className="text-2xs font-bold text-slate-500 uppercase tracking-wider">Submitted By (E7 Travels Admin):</p>
+                <p className="text-2xs font-bold text-slate-500 uppercase tracking-wider">Submitted By (E7 Tours & Travels Admin):</p>
                 <div className="border-t border-slate-400 pt-1">
                   <p className="font-extrabold text-slate-900">Authorized Signatory</p>
-                  <p className="text-3xs text-slate-500 font-mono">E7 Travels Fleet Operations</p>
+                  <p className="text-3xs text-slate-500 font-mono">E7 Tours & Travels Fleet Operations</p>
                 </div>
               </div>
               <div className="space-y-12 text-right">

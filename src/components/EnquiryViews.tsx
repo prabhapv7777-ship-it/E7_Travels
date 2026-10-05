@@ -3,6 +3,7 @@ import { Enquiry, Site, Vehicle, Owner, Driver, Company, DeletedVehicle, detectM
 import { formatDate } from '../lib/dateUtils';
 import { generateUniqueEnquiryId, generateUniqueOwnerId, generateUniqueDriverId, generateUniqueVehicleId } from '../lib/idUtils';
 import { exportToExcel, exportToPDF } from '../lib/exportUtils';
+import { renderCommonSiteOptions, getCommonSiteOptions, cleanSiteValue } from '../lib/siteOptions';
 
 export function calculateBatchExperience(batchExpStr?: string | null): string {
   if (!batchExpStr || !batchExpStr.trim() || batchExpStr === '-') return 'EXP: No Exp';
@@ -139,6 +140,7 @@ interface EnquiryViewsProps {
   onNavigate?: (route: string) => void;
   deletedVehicles?: DeletedVehicle[];
   onUpdateDeletedVehicles?: (newDeletedVehicles: DeletedVehicle[]) => void;
+  customLogo?: string | null;
 }
 
 export default function EnquiryViews({
@@ -155,6 +157,7 @@ export default function EnquiryViews({
   onNavigate,
   deletedVehicles = [],
   onUpdateDeletedVehicles,
+  customLogo,
 }: EnquiryViewsProps) {
   // Helper to parse Site Preference into Company Name, Site Name, and Vendor Badge
   const getSitePrefCompanyDisplay = (pref: string | undefined) => {
@@ -190,53 +193,7 @@ export default function EnquiryViews({
 
   // Helper to render Site Preference select options including all Corporate Companies and Sites
   const renderSitePrefOptions = (currentVal: string) => {
-    const optionsMap = new Map<string, string>(); // value -> display label
-
-    // Add companies first
-    companies.forEach((c) => {
-      const siteVal = c.companySite || c.name;
-      const label = c.companySite && c.companySite !== c.name
-        ? `${c.name} - ${c.companySite}${c.vendorName ? ` [${c.vendorName}]` : ''}`
-        : `${c.name}${c.vendorName ? ` [${c.vendorName}]` : ''}`;
-      if (siteVal) optionsMap.set(siteVal, label);
-      if (c.name && !optionsMap.has(c.name)) optionsMap.set(c.name, c.name);
-    });
-
-    // Add sites
-    sites.forEach((s) => {
-      const label = s.companyName ? `${s.companyName} - ${s.name}` : s.name;
-      if (s.name && !optionsMap.has(s.name)) {
-        optionsMap.set(s.name, label);
-      }
-    });
-
-    // Add standard known corporate clients if not already added
-    const defaultCorporates = [
-      'AMAZON', 'ASTRAZENICA', 'BARCLAYS', 'COGNIZANT', 'CTS', 'MEDEXPERT',
-      'OPTUM', 'STATE STREET', 'TCS', 'WALMART', 'WORKDAY'
-    ];
-    defaultCorporates.forEach((corp) => {
-      if (!optionsMap.has(corp)) {
-        optionsMap.set(corp, corp);
-      }
-    });
-
-    if (currentVal && currentVal !== 'Open Preference' && !optionsMap.has(currentVal)) {
-      optionsMap.set(currentVal, currentVal);
-    }
-
-    return (
-      <>
-        <option value="Open Preference">Open Preference / Any Site</option>
-        <optgroup label="🏢 Corporate Companies & Operating Sites">
-          {Array.from(optionsMap.entries()).map(([val, label]) => (
-            <option key={val} value={val}>
-              {label}
-            </option>
-          ))}
-        </optgroup>
-      </>
-    );
+    return renderCommonSiteOptions(companies, sites, currentVal, true);
   };
 
   // Helper to extract Owner Name only
@@ -723,7 +680,7 @@ AREA: ${areaStr}`;
       driverBatchExp: '',
       alreadyRunningCompany: '',
       sitePreference1: 'Open Preference',
-      sitePreference2: 'Open Preference',
+      sitePreference2: '',
       enquiryDate: new Date().toISOString().substring(0, 10),
       status: 'New',
       remarks: '',
@@ -2401,6 +2358,30 @@ AREA: ${areaStr}`;
                 </div>
 
                 <div>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Emergency Contact Name</label>
+                  <input
+                    id="enq-form-driverEmergencyName"
+                    type="text"
+                    placeholder="e.g. Mrs. Priya (Spouse)"
+                    value={formState.driverEmergencyContactName || ''}
+                    onChange={(e) => setFormState({ ...formState, driverEmergencyContactName: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Emergency Contact Number</label>
+                  <input
+                    id="enq-form-driverEmergencyNumber"
+                    type="text"
+                    placeholder="e.g. 9840998877"
+                    value={formState.driverEmergencyContactNumber || ''}
+                    onChange={(e) => setFormState({ ...formState, driverEmergencyContactNumber: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
                   <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Aadhaar Number</label>
                   <input
                     id="enq-form-driverAadhaar"
@@ -2475,7 +2456,7 @@ AREA: ${areaStr}`;
                     onChange={(e) => setFormState({ ...formState, sitePreference1: e.target.value })}
                     className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   >
-                    {renderSitePrefOptions(formState.sitePreference1 || '')}
+                    {renderCommonSiteOptions(companies, sites, formState.sitePreference1 || '', true, '-- Select Site Preference 1 --')}
                   </select>
                 </div>
 
@@ -2483,11 +2464,11 @@ AREA: ${areaStr}`;
                   <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Site Preference 2 (Backup 1)</label>
                   <select
                     id="enq-form-sitePref2"
-                    value={formState.sitePreference2 || ''}
+                    value={cleanSiteValue(formState.sitePreference2)}
                     onChange={(e) => setFormState({ ...formState, sitePreference2: e.target.value })}
                     className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
                   >
-                    {renderSitePrefOptions(formState.sitePreference2 || '')}
+                    {renderCommonSiteOptions(companies, sites, cleanSiteValue(formState.sitePreference2), false, '-- None / Empty --')}
                   </select>
                 </div>
 
@@ -2495,11 +2476,11 @@ AREA: ${areaStr}`;
                   <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Site Preference 3 (Backup 2)</label>
                   <select
                     id="enq-form-sitePref3"
-                    value={formState.sitePreference3 || ''}
+                    value={cleanSiteValue(formState.sitePreference3)}
                     onChange={(e) => setFormState({ ...formState, sitePreference3: e.target.value })}
                     className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   >
-                    {renderSitePrefOptions(formState.sitePreference3 || '')}
+                    {renderCommonSiteOptions(companies, sites, cleanSiteValue(formState.sitePreference3), false, '-- None / Empty --')}
                   </select>
                 </div>
 
@@ -2507,11 +2488,11 @@ AREA: ${areaStr}`;
                   <label className="block text-3xs font-extrabold text-slate-500 uppercase tracking-wider mb-1">Site Preference 4 (Backup 3)</label>
                   <select
                     id="enq-form-sitePref4"
-                    value={formState.sitePreference4 || ''}
+                    value={cleanSiteValue(formState.sitePreference4)}
                     onChange={(e) => setFormState({ ...formState, sitePreference4: e.target.value })}
                     className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   >
-                    {renderSitePrefOptions(formState.sitePreference4 || '')}
+                    {renderCommonSiteOptions(companies, sites, cleanSiteValue(formState.sitePreference4), false, '-- None / Empty --')}
                   </select>
                 </div>
 
@@ -3791,6 +3772,10 @@ AREA: ${areaStr}`;
           enquiry={selectedEnquiryForFormPrint}
           owners={owners}
           vehicles={vehicles}
+          drivers={drivers}
+          companies={companies}
+          sites={sites}
+          customLogo={customLogo}
           onClose={() => setSelectedEnquiryForFormPrint(null)}
         />
       )}

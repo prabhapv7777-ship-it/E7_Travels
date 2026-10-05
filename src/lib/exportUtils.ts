@@ -1,6 +1,12 @@
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import autoTable, { UserOptions } from 'jspdf-autotable';
+
+export interface ExcelSheetData {
+  sheetName: string;
+  headers: string[];
+  rows: (string | number | boolean | null | undefined)[][];
+}
 
 /**
  * Export tabular data to an Excel file (.xlsx)
@@ -11,25 +17,44 @@ export function exportToExcel(
   headers: string[],
   rows: (string | number | boolean | null | undefined)[][]
 ) {
-  const cleanRows = rows.map((row) =>
-    row.map((val) => (val === null || val === undefined ? '' : String(val)))
-  );
+  exportMultiSheetExcel(filename, [{ sheetName, headers, rows }]);
+}
 
-  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...cleanRows]);
-
-  // Set column widths based on maximum string length
-  const colWidths = headers.map((h, colIdx) => {
-    let maxLen = String(h).length;
-    cleanRows.forEach((r) => {
-      const cellVal = String(r[colIdx] || '');
-      if (cellVal.length > maxLen) maxLen = cellVal.length;
-    });
-    return { wch: Math.min(Math.max(maxLen + 3, 10), 45) };
-  });
-  worksheet['!cols'] = colWidths;
-
+/**
+ * Export multiple sheets to a single Excel workbook (.xlsx)
+ */
+export function exportMultiSheetExcel(
+  filename: string,
+  sheets: ExcelSheetData[]
+) {
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName.substring(0, 31));
+
+  sheets.forEach((sheet) => {
+    const cleanRows = sheet.rows.map((row) =>
+      row.map((val) => (val === null || val === undefined ? '' : String(val)))
+    );
+
+    const worksheet = XLSX.utils.aoa_to_sheet([sheet.headers, ...cleanRows]);
+
+    // Set column widths based on maximum string length
+    const colWidths = sheet.headers.map((h, colIdx) => {
+      let maxLen = String(h).length;
+      cleanRows.forEach((r) => {
+        const cellVal = String(r[colIdx] || '');
+        // handle multi-line strings
+        const lines = cellVal.split('\n');
+        lines.forEach(l => {
+          if (l.length > maxLen) maxLen = l.length;
+        });
+      });
+      return { wch: Math.min(Math.max(maxLen + 3, 10), 55) };
+    });
+    worksheet['!cols'] = colWidths;
+
+    const safeSheetName = sheet.sheetName.replace(/[\\/?*[\]:]/g, '_').substring(0, 31);
+    XLSX.utils.book_append_sheet(workbook, worksheet, safeSheetName);
+  });
+
   XLSX.writeFile(workbook, `${filename}.xlsx`);
 }
 
@@ -41,7 +66,8 @@ export function exportToPDF(
   title: string,
   headers: string[],
   rows: (string | number | boolean | null | undefined)[][],
-  orientation: 'portrait' | 'landscape' = 'landscape'
+  orientation: 'portrait' | 'landscape' = 'landscape',
+  customOptions?: Partial<UserOptions>
 ) {
   const doc = new jsPDF({
     orientation,
@@ -52,7 +78,7 @@ export function exportToPDF(
   // Header Title
   doc.setFontSize(13);
   doc.setTextColor(15, 23, 42); // slate-900
-  doc.text(title, 30, 32);
+  doc.text(title, 30, 30);
 
   doc.setFontSize(8);
   doc.setTextColor(100, 116, 139); // slate-500
@@ -65,7 +91,7 @@ export function exportToPDF(
       minute: '2-digit',
     })}`,
     30,
-    45
+    43
   );
 
   const cleanRows = rows.map((row) =>
@@ -73,13 +99,13 @@ export function exportToPDF(
   );
 
   autoTable(doc, {
-    startY: 55,
+    startY: 52,
     head: [headers],
     body: cleanRows,
     theme: 'grid',
     styles: {
-      fontSize: 7.5,
-      cellPadding: 3.5,
+      fontSize: 7,
+      cellPadding: 3,
       textColor: [30, 41, 59], // slate-800
       overflow: 'linebreak',
     },
@@ -92,8 +118,10 @@ export function exportToPDF(
     alternateRowStyles: {
       fillColor: [248, 250, 252], // slate-50
     },
-    margin: { top: 55, left: 25, right: 25, bottom: 25 },
+    margin: { top: 52, left: 20, right: 20, bottom: 20 },
+    ...customOptions,
   });
 
   doc.save(`${filename}.pdf`);
 }
+

@@ -1,7 +1,8 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Vehicle } from '../types';
-import { Printer, X, Filter, Check } from 'lucide-react';
+import { Vehicle, Owner, Driver } from '../types';
+import { Printer, X, Filter, Check, ExternalLink } from 'lucide-react';
+import { printDocument } from '../utils/printService';
 
 function formatDateToDDMMYYYY(dateStr: string | undefined | null): string {
   if (!dateStr || !dateStr.trim()) return '';
@@ -19,12 +20,16 @@ function formatDateToDDMMYYYY(dateStr: string | undefined | null): string {
 
 interface PrintVehicleReportProps {
   vehicles: Vehicle[];
+  owners?: Owner[];
+  drivers?: Driver[];
   onClose: () => void;
   initialFilter?: 'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted' | 'gps_hold' | 'duplicates';
 }
 
 export default function PrintVehicleReport({
   vehicles,
+  owners = [],
+  drivers = [],
   onClose,
   initialFilter = 'all'
 }: PrintVehicleReportProps) {
@@ -124,16 +129,7 @@ export default function PrintVehicleReport({
       return 0;
     });
 
-  const [isInIframe, setIsInIframe] = useState(false);
   const [printError, setPrintError] = useState(false);
-
-  useEffect(() => {
-    try {
-      setIsInIframe(window.self !== window.top);
-    } catch (e) {
-      setIsInIframe(true);
-    }
-  }, []);
 
   useEffect(() => {
     document.body.classList.add('print-active');
@@ -142,42 +138,201 @@ export default function PrintVehicleReport({
     };
   }, []);
 
-  const handlePrint = () => {
+  const generateStandaloneHtml = (contentHtml: string, forNewTab: boolean = false) => {
+    const maxWidth = orientation === 'landscape' ? '297mm' : '210mm';
+    let parentStyles = '';
     try {
-      setPrintError(false);
-      window.focus();
-      window.print();
-    } catch (err) {
-      console.error('Print failed:', err);
-      setPrintError(true);
+      document.querySelectorAll('style, link[rel="stylesheet"]').forEach(el => {
+        parentStyles += el.outerHTML + '\n';
+      });
+    } catch (e) {
+      console.warn('Could not extract parent styles:', e);
     }
+
+    return `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Master Vehicle Register Report - E7 TOURS & TRAVELS</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    
+    <!-- Parent App Stylesheets & Injected Rules -->
+    ${parentStyles}
+    <style>
+      *, *::before, *::after {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        color: #0f172a;
+        -webkit-font-smoothing: antialiased;
+        margin: 0;
+        padding: 0;
+      }
+      .font-mono {
+        font-family: 'JetBrains Mono', ui-monospace, monospace !important;
+      }
+      @page {
+        size: A4 ${orientation};
+        margin: 4mm 5mm 4mm 5mm;
+      }
+      @media print {
+        .no-print, .print-toolbar {
+          display: none !important;
+        }
+        html, body {
+          margin: 0 !important;
+          padding: 0 !important;
+          background: #ffffff !important;
+          color: #0f172a !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+          font-size: ${getActualFontSize()} !important;
+        }
+        .print-sheet {
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          border: none !important;
+          box-shadow: none !important;
+          transform: none !important;
+        }
+      }
+      @media screen {
+        body {
+          padding: 16px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          min-height: 100vh;
+          background: #0f172a;
+        }
+        .print-toolbar {
+          width: 100%;
+          max-width: ${maxWidth};
+          margin-bottom: 16px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: #1e293b;
+          color: white;
+          padding: 12px 18px;
+          border-radius: 8px;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+        }
+        .print-sheet {
+          width: 100%;
+          max-width: ${maxWidth};
+          background: #ffffff;
+          padding: 18px 20px;
+          border-radius: 4px;
+          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+          box-sizing: border-box;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    ${forNewTab ? `
+    <div class="no-print print-toolbar">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="font-size:20px;">📋</span>
+        <div>
+          <div style="font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px;">Master Vehicle Report • Print Ready</div>
+          <div style="font-size:11px; color:#94a3b8;">${filteredVehicles.length} Vehicles • Ready to Print</div>
+        </div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button onclick="window.print()" style="background:#2563eb; color:white; border:none; padding:8px 18px; font-size:12px; font-weight:800; border-radius:6px; cursor:pointer; text-transform:uppercase; display:flex; align-items:center; gap:6px;">
+          🖨️ Print Now
+        </button>
+        <button onclick="window.close()" style="background:#334155; color:#cbd5e1; border:none; padding:8px 14px; font-size:12px; font-weight:700; border-radius:6px; cursor:pointer;">
+          Close Tab
+        </button>
+      </div>
+    </div>
+    ` : ''}
+
+    <div class="print-sheet">
+      ${contentHtml}
+    </div>
+
+    <script>
+      ${forNewTab ? `
+      window.addEventListener('load', function() {
+        setTimeout(function() {
+          window.focus();
+        }, 300);
+      });
+      ` : `
+      window.addEventListener('load', function() {
+        setTimeout(function() {
+          window.focus();
+          window.print();
+        }, 300);
+      });
+      `}
+    </script>
+  </body>
+</html>`;
+  };
+
+  const handlePrint = async () => {
+    setPrintError(false);
+    const docTitle = `E7_Travels_Vehicle_Master_Report_${filterType.toUpperCase()}_${new Date().toISOString().substring(0, 10)}`;
+    try {
+      if (printAreaRef.current) {
+        await printDocument({
+          title: docTitle,
+          element: printAreaRef.current,
+          paperSize: 'A4',
+          openInNewTab: false,
+        });
+      } else {
+        window.focus();
+        window.print();
+      }
+    } catch (err) {
+      console.warn('Direct printDocument failed, trying new window:', err);
+      handleOpenPrintWindow();
+    }
+  };
+
+  const handleOpenPrintWindow = () => {
+    if (!printAreaRef.current) return;
+    const docTitle = `E7_Travels_Vehicle_Master_Report_${filterType.toUpperCase()}_${new Date().toISOString().substring(0, 10)}`;
+    printDocument({
+      title: docTitle,
+      element: printAreaRef.current,
+      paperSize: 'A4',
+      openInNewTab: true,
+    });
   };
 
   const customLogo = localStorage.getItem('e7_custom_logo') || null;
 
   return createPortal(
-    <div className="print-modal-root fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex flex-col items-center justify-start overflow-y-auto p-4 sm:p-6 md:p-10 print:p-0 print:bg-white print:static print:overflow-visible">
-      
-      {/* Helpful banner for iframe preview environment */}
-      {isInIframe && (
-        <div className="w-full max-w-6xl bg-amber-500 text-slate-950 p-3.5 text-xs font-extrabold rounded-lg mb-2 flex items-center justify-between border-2 border-amber-600 print:hidden shadow-md">
-          <div className="flex items-center gap-2 text-left">
-            <span className="text-sm shrink-0">💡</span>
-            <span>
-              Running inside Preview Panel? Please click <strong className="underline text-amber-950 font-black">"Open in New Tab"</strong> at the top-right corner of your screen to print perfectly. Browser security blocks print dialogs inside iframe previews.
-            </span>
-          </div>
-        </div>
-      )}
+    <div className="print-modal-root fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex flex-col items-center justify-start overflow-y-auto p-2 sm:p-4 md:p-6 print:p-0 print:bg-white print:static print:overflow-visible">
 
       {printError && (
         <div className="w-full max-w-[1400px] bg-rose-500 text-white p-3.5 text-xs font-extrabold rounded-lg mb-2 flex items-center justify-between border-2 border-rose-600 print:hidden shadow-md">
           <div className="flex items-center gap-2 text-left">
             <span className="text-sm shrink-0">⚠️</span>
             <span>
-              Print blocked by browser security. Please click the "Open in New Tab" button in the top-right corner of the browser preview and print from there!
+              Could not open print dialog directly in this view. You can review the exact print preview below or use browser Print.
             </span>
           </div>
+          <button 
+            onClick={() => setPrintError(false)}
+            className="text-white hover:text-rose-100 text-xs font-black uppercase ml-4"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
@@ -199,9 +354,18 @@ export default function PrintVehicleReport({
           <button
             onClick={handlePrint}
             className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black rounded-lg transition-all shadow-xs cursor-pointer"
+            title="Trigger Print"
           >
             <Printer className="h-4 w-4" />
             Print Report
+          </button>
+          <button
+            onClick={handleOpenPrintWindow}
+            className="flex items-center gap-1.5 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-blue-300 hover:text-blue-200 text-xs font-bold rounded-lg transition-all border border-slate-600 cursor-pointer"
+            title="Open Report in New Tab to Print"
+          >
+            <ExternalLink className="h-4 w-4" />
+            <span>Print in New Tab</span>
           </button>
           <button
             onClick={onClose}
@@ -404,7 +568,7 @@ export default function PrintVehicleReport({
           {/* Print CSS overrides */}
           <style dangerouslySetInnerHTML={{ __html: `
             @media print {
-              #root, body > div:not(.print-modal-root) {
+              #root {
                 display: none !important;
               }
               
@@ -570,7 +734,7 @@ export default function PrintVehicleReport({
                 )}
                 <div>
                   <h1 className="font-sans font-black tracking-wider text-blue-600 uppercase leading-none text-lg">
-                    E7 TRAVELS
+                    E7 TOURS & TRAVELS
                   </h1>
                   <p className="text-[9px] text-slate-500 mt-1 uppercase font-bold tracking-widest">Master Register Fleet Report</p>
                 </div>
@@ -642,19 +806,42 @@ export default function PrintVehicleReport({
                             </td>
                           )}
 
-                          {columns.owner && (
-                            <td className="py-2 px-2.5 border-r border-slate-200">
-                              <div className="font-bold text-slate-850">{v.ownerName || '-'}</div>
-                              <div className="text-slate-400 font-mono text-[0.8em] mt-0.5">ID: {v.ownerId || '-'}</div>
-                            </td>
-                          )}
+                          {columns.owner && (() => {
+                            const o = owners.find(
+                              (own) => own.id === v.ownerId || (own.name && v.ownerName && own.name.trim().toLowerCase() === v.ownerName.trim().toLowerCase())
+                            );
+                            return (
+                              <td className="py-2 px-2.5 border-r border-slate-200">
+                                <div className="font-bold text-slate-850">{v.ownerName || '-'}</div>
+                                <div className="text-slate-500 font-mono text-[0.85em] font-semibold mt-0.5">
+                                  {o?.phone || v.ownerPhone ? `📞 ${o?.phone || v.ownerPhone}` : `ID: ${v.ownerId || '-'}`}
+                                </div>
+                                {o?.pan && <div className="text-[0.8em] text-slate-500 font-mono">PAN: {o.pan}</div>}
+                                {o?.bankName && <div className="text-[0.75em] text-slate-400 truncate max-w-[120px]">{o.bankName}</div>}
+                              </td>
+                            );
+                          })()}
 
-                          {columns.driver && (
-                            <td className="py-2 px-2.5 border-r border-slate-200">
-                              <div className="font-bold text-slate-850">{v.driverName || '-'}</div>
-                              <div className="text-slate-400 font-mono text-[0.8em] mt-0.5">ID: {v.driverId || '-'}</div>
-                            </td>
-                          )}
+                          {columns.driver && (() => {
+                            const d = drivers.find(
+                              (drv) => drv.id === v.driverId || (drv.name && v.driverName && drv.name.trim().toLowerCase() === v.driverName.trim().toLowerCase())
+                            );
+                            const dType = d?.driverType || (v.ownerName && v.driverName && v.ownerName.trim().toLowerCase() === v.driverName.trim().toLowerCase() ? 'Owner-cum-Driver' : 'Owner-Paid');
+                            return (
+                              <td className="py-2 px-2.5 border-r border-slate-200">
+                                <div className="font-bold text-slate-850">{v.driverName || '-'}</div>
+                                <div className="text-slate-500 font-mono text-[0.85em] font-semibold mt-0.5">
+                                  {d?.phone ? `📞 ${d.phone}` : `ID: ${v.driverId || '-'}`}
+                                </div>
+                                <div className="text-[0.75em] font-bold text-indigo-600 mt-0.5">{dType}</div>
+                                {d?.licenceNumber && (
+                                  <div className="text-[0.75em] text-slate-500 font-mono truncate max-w-[120px]">
+                                    DL: {d.licenceNumber}
+                                  </div>
+                                )}
+                              </td>
+                            );
+                          })()}
 
                           {columns.assignment && (
                             <td className="py-2 px-2.5 border-r border-slate-200 text-slate-700">
@@ -757,7 +944,7 @@ export default function PrintVehicleReport({
 
             {/* Print Footer */}
             <div className="pt-6 border-t border-slate-100 flex justify-between items-center text-[8px] text-slate-400 font-bold uppercase tracking-widest">
-              <span>E7 Travels Fleet Operations Management System</span>
+              <span>E7 TOURS & TRAVELS Fleet Operations Management System</span>
               <span>Signature of Supervisor: ________________________</span>
             </div>
           </div>

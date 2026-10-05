@@ -14,9 +14,15 @@ import {
   Users,
   Calendar,
   Building,
+  Calculator,
+  Plus,
+  Save,
+  ShieldAlert,
+  Info,
 } from 'lucide-react';
 import { Vehicle, Owner, Driver, CompanyPayment, Expense } from '../types';
 import { formatDate, formatMonth, toInputDateFormat, getCurrentMonthString, getTodayDateString } from '../lib/dateUtils';
+import { getManualLedgerStore, saveManualLedgerEntry, getManualLedgerEntry } from '../lib/ledgerStorage';
 
 interface LedgerViewsProps {
   vehicles: Vehicle[];
@@ -40,6 +46,15 @@ export default function LedgerViews({
   const [selectedDriver, setSelectedDriver] = useState(drivers[0]?.id || '');
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthString());
   const [selectedCompany, setSelectedCompany] = useState('');
+
+  // MANUAL LEDGER & AUTO TDS STATE
+  const [manualStore, setManualStore] = useState(() => getManualLedgerStore());
+  const [defaultTdsRate, setDefaultTdsRate] = useState<number>(1);
+
+  const handleUpdateManualLedger = (vehicleNumber: string, field: string, value: number | null) => {
+    const updated = saveManualLedgerEntry(vehicleNumber, selectedMonth, { [field]: value });
+    setManualStore(updated);
+  };
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -125,7 +140,7 @@ export default function LedgerViews({
 
     const rows: LedgerRow[] = [];
 
-    // Add Payments as Credits
+    // Add Payments as Credits & Auto TDS as Debits
     matchedPayments.forEach((p) => {
       const periodText = p.fromDate && p.toDate ? ` (Period: ${formatDate(p.fromDate)} to ${formatDate(p.toDate)})` : '';
       rows.push({
@@ -137,6 +152,26 @@ export default function LedgerViews({
         debit: 0,
         balance: 0,
       });
+
+      // Auto TDS Deduction logic
+      const manualRec = getManualLedgerEntry(selectedVehicle, selectedMonth, manualStore);
+      const effectiveTdsRate = manualRec.tdsRate !== undefined ? manualRec.tdsRate : defaultTdsRate;
+      const autoTds = manualRec.tdsOverride !== undefined && manualRec.tdsOverride !== null && manualRec.tdsOverride >= 0
+        ? manualRec.tdsOverride
+        : Math.round(p.amountReceived * (effectiveTdsRate / 100));
+
+      const hasTdsExp = matchedExpenses.some((e) => e.expenseType === 'TDS');
+      if (!hasTdsExp && autoTds > 0) {
+        rows.push({
+          date: p.paymentDate || `${p.month}-05`,
+          description: `Auto TDS Deduction (${effectiveTdsRate}%) on Invoice ${p.invoiceNumber}`,
+          type: 'Expense',
+          category: 'TDS',
+          credit: 0,
+          debit: autoTds,
+          balance: 0,
+        });
+      }
     });
 
     // Add Expenses as Debits
@@ -151,6 +186,66 @@ export default function LedgerViews({
         balance: 0,
       });
     });
+
+    // Add Manual Ledger Entries (Penalty, D&R, Caution Deposit, Admin Charges, GPS Rent) if stored and not duplicated
+    const manualRec = getManualLedgerEntry(selectedVehicle, selectedMonth, manualStore);
+    const dateStamp = `${selectedMonth.length === 7 ? selectedMonth : '2026-07'}-25`;
+
+    if (manualRec.penalty && !matchedExpenses.some((e) => e.expenseType === 'Penalty')) {
+      rows.push({
+        date: dateStamp,
+        description: `Manual Ledger Deduction - Penalty`,
+        type: 'Expense',
+        category: 'Penalty',
+        credit: 0,
+        debit: manualRec.penalty,
+        balance: 0,
+      });
+    }
+    if (manualRec.dnr && !matchedExpenses.some((e) => e.expenseType === 'D&R')) {
+      rows.push({
+        date: dateStamp,
+        description: `Manual Ledger Deduction - D&R (Damage & Recovery)`,
+        type: 'Expense',
+        category: 'D&R',
+        credit: 0,
+        debit: manualRec.dnr,
+        balance: 0,
+      });
+    }
+    if (manualRec.cautionDeposit && !matchedExpenses.some((e) => e.expenseType === 'Caution Deposit')) {
+      rows.push({
+        date: dateStamp,
+        description: `Manual Ledger Deduction - Caution Deposit`,
+        type: 'Expense',
+        category: 'Caution Deposit',
+        credit: 0,
+        debit: manualRec.cautionDeposit,
+        balance: 0,
+      });
+    }
+    if (manualRec.adminCharges && !matchedExpenses.some((e) => e.expenseType === 'Admin Charges')) {
+      rows.push({
+        date: dateStamp,
+        description: `Manual Ledger Deduction - Admin Charges`,
+        type: 'Expense',
+        category: 'Admin Charges',
+        credit: 0,
+        debit: manualRec.adminCharges,
+        balance: 0,
+      });
+    }
+    if (manualRec.gpsRent && !matchedExpenses.some((e) => e.expenseType === 'GPS Rent')) {
+      rows.push({
+        date: dateStamp,
+        description: `Manual Ledger Deduction - GPS Rent`,
+        type: 'Expense',
+        category: 'GPS Rent',
+        credit: 0,
+        debit: manualRec.gpsRent,
+        balance: 0,
+      });
+    }
 
     // Sort chronologically
     rows.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -454,6 +549,85 @@ export default function LedgerViews({
                 </div>
               </div>
             </div>
+
+            {/* Manual Running Ledger Inputs Box */}
+            {(() => {
+              const currentManual = getManualLedgerEntry(selectedVehicle, selectedMonth, manualStore);
+              return (
+                <div className="p-4 bg-amber-50/60 border-b border-amber-200/60 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-extrabold text-slate-700 uppercase mb-1">
+                      Auto TDS ({currentManual.tdsRate !== undefined ? currentManual.tdsRate : defaultTdsRate}%)
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <span className="text-2xs font-bold text-blue-700 bg-blue-100/70 px-2 py-1 rounded w-full text-center">
+                        Auto Deducted
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-extrabold text-rose-800 uppercase mb-1">Penalty (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={currentManual.penalty || ''}
+                      onChange={(e) => handleUpdateManualLedger(selectedVehicle, 'penalty', e.target.value === '' ? 0 : Number(e.target.value))}
+                      className="w-full px-2 py-1 text-xs font-bold border border-rose-300 rounded bg-white text-rose-700 focus:ring-2 focus:ring-rose-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-extrabold text-rose-800 uppercase mb-1">D&R (Damage/Rec) (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={currentManual.dnr || ''}
+                      onChange={(e) => handleUpdateManualLedger(selectedVehicle, 'dnr', e.target.value === '' ? 0 : Number(e.target.value))}
+                      className="w-full px-2 py-1 text-xs font-bold border border-rose-300 rounded bg-white text-rose-700 focus:ring-2 focus:ring-rose-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-extrabold text-rose-800 uppercase mb-1">Caution Deposit (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={currentManual.cautionDeposit || ''}
+                      onChange={(e) => handleUpdateManualLedger(selectedVehicle, 'cautionDeposit', e.target.value === '' ? 0 : Number(e.target.value))}
+                      className="w-full px-2 py-1 text-xs font-bold border border-rose-300 rounded bg-white text-rose-700 focus:ring-2 focus:ring-rose-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-extrabold text-rose-800 uppercase mb-1">Admin Charges (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={currentManual.adminCharges || ''}
+                      onChange={(e) => handleUpdateManualLedger(selectedVehicle, 'adminCharges', e.target.value === '' ? 0 : Number(e.target.value))}
+                      className="w-full px-2 py-1 text-xs font-bold border border-rose-300 rounded bg-white text-rose-700 focus:ring-2 focus:ring-rose-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-extrabold text-rose-800 uppercase mb-1">GPS Rent (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={currentManual.gpsRent || ''}
+                      onChange={(e) => handleUpdateManualLedger(selectedVehicle, 'gpsRent', e.target.value === '' ? 0 : Number(e.target.value))}
+                      className="w-full px-2 py-1 text-xs font-bold border border-rose-300 rounded bg-white text-rose-700 focus:ring-2 focus:ring-rose-400"
+                    />
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Ledger Transactions list */}
             <div className="overflow-x-auto scrollbar-visible">

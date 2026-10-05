@@ -21,6 +21,7 @@ import {
   smartMergeRecords,
   isQuotaError,
   setLastSavedHash,
+  FleetState,
 } from './lib/firestoreService';
 import {
   createFleetSpreadsheet,
@@ -48,6 +49,13 @@ import {
   Enquiry,
   DeletedVehicle,
   SlabRate,
+  AdvanceRecord,
+  RecoveryRecord,
+  DailyRunningEntry,
+  InvoiceRecord,
+  PaymentRecord,
+  AttachmentRecord,
+  FinancialSettings,
 } from './types';
 import { sanitizeUniqueEntities, deduplicateDeletedVehicles, getKeyFieldsForCollection } from './lib/idUtils';
 
@@ -65,17 +73,26 @@ import {
   TrendingUp,
   FileSpreadsheet,
   Award,
-  PhoneCall,
   AlertCircle,
   AlertTriangle,
   ExternalLink,
   X,
-  Layers,
   Cloud,
-  UploadCloud,
-  DownloadCloud,
   CheckCircle2,
   Files,
+  Search,
+  Bell,
+  Menu,
+  Car,
+  Users,
+  Building2,
+  Gauge,
+  CreditCard,
+  RotateCcw,
+  Receipt,
+  DollarSign,
+  FileCheck2,
+  ShieldCheck,
 } from 'lucide-react';
 
 // Sub Components
@@ -87,11 +104,24 @@ import SettlementViews from './components/SettlementViews';
 import Reports from './components/Reports';
 import VbaExport from './components/VbaExport';
 import Settings from './components/Settings';
-import EnquiryViews from './components/EnquiryViews';
-import InductionViews from './components/InductionViews';
 import AdminLogin from './components/AdminLogin';
 import RulesView from './components/RulesView';
 import DocumentViews from './components/DocumentViews';
+
+// Dedicated E7 Travels Redesign Views
+import VehiclesView from './components/VehiclesView';
+import OwnersView from './components/OwnersView';
+import DriversView from './components/DriversView';
+import CompaniesSitesView from './components/CompaniesSitesView';
+import AttachmentsView from './components/AttachmentsView';
+import DailyRunningView from './components/DailyRunningView';
+import AdvancesView from './components/AdvancesView';
+import RecoveriesView from './components/RecoveriesView';
+import ExpensesView from './components/ExpensesView';
+import InvoicesView from './components/InvoicesView';
+import PaymentsView from './components/PaymentsView';
+import ReportsMisView from './components/ReportsMisView';
+import SettingsView from './components/SettingsView';
 
 export default function App() {
   // Authentication & Sync State
@@ -123,13 +153,7 @@ export default function App() {
   const [authError, setAuthError] = useState<{ code: string; message: string } | null>(null);
   const [isFirestoreLoaded, setIsFirestoreLoaded] = useState(false);
   const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
-  const [showCloudSyncPanel, setShowCloudSyncPanel] = useState(false);
   const [cloudStatusMsg, setCloudStatusMsg] = useState<'idle' | 'syncing' | 'success' | 'error' | 'quota_exceeded'>('idle');
-  const [cloudResultModal, setCloudResultModal] = useState<{
-    status: 'success' | 'error' | 'warning';
-    title: string;
-    message: string;
-  } | null>(null);
 
   // Keep track of the last data string received from the server to prevent redundant write-back loops
   const lastReceivedFromServer = React.useRef<Partial<Record<string, string>>>({});
@@ -208,6 +232,396 @@ export default function App() {
       try { return JSON.parse(saved); } catch (e) { return []; }
     }
     return [];
+  });
+
+  // High-Fidelity Default Seeds for Operational Modules
+  const DEFAULT_ADVANCES: AdvanceRecord[] = [
+    {
+      id: 'ADV-101',
+      date: '2026-10-01',
+      vehicleNumber: 'TN-01-AB-1234',
+      type: 'CNG Advance',
+      amount: 5000,
+      cngPercent: 5,
+      recoverable: 5000,
+      recovered: 3000,
+      balance: 2000,
+      status: 'Partially Recovered',
+      remarks: 'Routine CNG coupon issue'
+    },
+    {
+      id: 'ADV-102',
+      date: '2026-10-02',
+      vehicleNumber: 'TN-09-CD-5678',
+      type: 'EMI Advance',
+      amount: 15000,
+      cngPercent: 0,
+      recoverable: 15000,
+      recovered: 15000,
+      balance: 0,
+      status: 'Fully Recovered',
+      remarks: 'Vehicle finance EMI support'
+    },
+    {
+      id: 'ADV-103',
+      date: '2026-10-03',
+      vehicleNumber: 'TN-14-JK-7890',
+      type: 'Driver Advance',
+      amount: 4000,
+      cngPercent: 0,
+      recoverable: 4000,
+      recovered: 2000,
+      balance: 2000,
+      status: 'Partially Recovered',
+      remarks: 'Festival salary advance'
+    },
+    {
+      id: 'ADV-104',
+      date: '2026-10-04',
+      vehicleNumber: 'TN-22-GH-3456',
+      type: 'Maintenance',
+      amount: 8500,
+      cngPercent: 0,
+      recoverable: 8500,
+      recovered: 0,
+      balance: 8500,
+      status: 'Pending',
+      remarks: 'Brake pad & AC compressor overhaul'
+    },
+    {
+      id: 'ADV-105',
+      date: '2026-10-05',
+      vehicleNumber: 'TN-05-PQ-9012',
+      type: 'CNG Advance',
+      amount: 6000,
+      cngPercent: 5,
+      recoverable: 6000,
+      recovered: 1500,
+      balance: 4500,
+      status: 'Partially Recovered',
+      remarks: 'Fuel card replenishment'
+    }
+  ];
+
+  const DEFAULT_RECOVERIES: RecoveryRecord[] = [
+    {
+      id: 'REC-201',
+      date: '2026-10-02',
+      vehicleNumber: 'TN-01-AB-1234',
+      advanceId: 'ADV-101',
+      amount: 3000,
+      recoveryMonth: '2026-10',
+      balance: 2000,
+      status: 'Applied',
+      remarks: 'Deducted from Weekly Payout W1'
+    },
+    {
+      id: 'REC-202',
+      date: '2026-10-03',
+      vehicleNumber: 'TN-09-CD-5678',
+      advanceId: 'ADV-102',
+      amount: 15000,
+      recoveryMonth: '2026-10',
+      balance: 0,
+      status: 'Applied',
+      remarks: 'Settled in full against client billing'
+    },
+    {
+      id: 'REC-203',
+      date: '2026-10-04',
+      vehicleNumber: 'TN-14-JK-7890',
+      advanceId: 'ADV-103',
+      amount: 2000,
+      recoveryMonth: '2026-10',
+      balance: 2000,
+      status: 'Applied',
+      remarks: 'Bi-monthly recovery cycle 1'
+    },
+    {
+      id: 'REC-204',
+      date: '2026-10-05',
+      vehicleNumber: 'TN-05-PQ-9012',
+      advanceId: 'ADV-105',
+      amount: 1500,
+      recoveryMonth: '2026-10',
+      balance: 4500,
+      status: 'Applied',
+      remarks: 'First installment recovery'
+    }
+  ];
+
+  const DEFAULT_DAILY_RUNNING: DailyRunningEntry[] = [
+    {
+      id: 'RUN-301',
+      date: '2026-10-05',
+      vehicleNumber: 'TN-01-AB-1234',
+      driverName: 'Suresh Kumar',
+      openingKm: 48200,
+      closingKm: 48365,
+      totalKm: 165,
+      trips: 4,
+      amount: 3450,
+      remarks: 'Walmart OMR Regular Shift'
+    },
+    {
+      id: 'RUN-302',
+      date: '2026-10-05',
+      vehicleNumber: 'TN-09-CD-5678',
+      driverName: 'K. Murugan',
+      openingKm: 62100,
+      closingKm: 62280,
+      totalKm: 180,
+      trips: 5,
+      amount: 3900,
+      remarks: 'CTS MEPZ Tambaram Route'
+    },
+    {
+      id: 'RUN-303',
+      date: '2026-10-04',
+      vehicleNumber: 'TN-14-JK-7890',
+      driverName: 'P. Anandhan',
+      openingKm: 31400,
+      closingKm: 31540,
+      totalKm: 140,
+      trips: 3,
+      amount: 2950,
+      remarks: 'TCS Siruseri Shuttle'
+    },
+    {
+      id: 'RUN-304',
+      date: '2026-10-04',
+      vehicleNumber: 'TN-22-GH-3456',
+      driverName: 'R. Vignesh',
+      openingKm: 75300,
+      closingKm: 75490,
+      totalKm: 190,
+      trips: 4,
+      amount: 4100,
+      remarks: 'Optum DLF Tech Park'
+    },
+    {
+      id: 'RUN-305',
+      date: '2026-10-03',
+      vehicleNumber: 'TN-05-PQ-9012',
+      driverName: 'M. Selvam',
+      openingKm: 55000,
+      closingKm: 55150,
+      totalKm: 150,
+      trips: 4,
+      amount: 3200,
+      remarks: 'Omega Healthcare Chennai'
+    }
+  ];
+
+  const DEFAULT_INVOICES: InvoiceRecord[] = [
+    {
+      id: 'INV-401',
+      invoiceNumber: 'E7/2026-27/101',
+      date: '2026-10-01',
+      company: 'WALMART',
+      vehicleNumber: 'TN-01-AB-1234',
+      billingPeriod: 'October 2026',
+      amount: 62500,
+      deductions: 3500,
+      netAmount: 59000,
+      status: 'Sent',
+      paymentTerms: 'Net 30 Days'
+    },
+    {
+      id: 'INV-402',
+      invoiceNumber: 'E7/2026-27/102',
+      date: '2026-10-02',
+      company: 'COGNIZANT (CTS)',
+      vehicleNumber: 'TN-09-CD-5678',
+      billingPeriod: 'October 2026',
+      amount: 58000,
+      deductions: 2800,
+      netAmount: 55200,
+      status: 'Paid',
+      paymentTerms: 'Net 30 Days'
+    },
+    {
+      id: 'INV-403',
+      invoiceNumber: 'E7/2026-27/103',
+      date: '2026-10-03',
+      company: 'TATA CONSULTANCY (TCS)',
+      vehicleNumber: 'TN-14-JK-7890',
+      billingPeriod: 'October 2026',
+      amount: 54000,
+      deductions: 2000,
+      netAmount: 52000,
+      status: 'Sent',
+      paymentTerms: 'Net 45 Days'
+    },
+    {
+      id: 'INV-404',
+      invoiceNumber: 'E7/2026-27/104',
+      date: '2026-10-04',
+      company: 'OPTUM GLOBAL',
+      vehicleNumber: 'TN-22-GH-3456',
+      billingPeriod: 'October 2026',
+      amount: 49500,
+      deductions: 1500,
+      netAmount: 48000,
+      status: 'Draft',
+      paymentTerms: 'Net 30 Days'
+    }
+  ];
+
+  const DEFAULT_PAYMENTS_RECORD: PaymentRecord[] = [
+    {
+      id: 'PAY-1001',
+      date: '2026-10-02',
+      paymentId: 'PAY-1001',
+      invoiceNo: 'E7/2026-27/102',
+      company: 'COGNIZANT (CTS)',
+      amount: 58000,
+      paid: 58000,
+      balance: 0,
+      status: 'Paid',
+      paymentMode: 'NEFT Transfer'
+    },
+    {
+      id: 'PAY-1002',
+      date: '2026-10-04',
+      paymentId: 'PAY-1002',
+      invoiceNo: 'E7/2026-27/101',
+      company: 'WALMART',
+      amount: 62500,
+      paid: 40000,
+      balance: 22500,
+      status: 'Partial',
+      paymentMode: 'RTGS'
+    },
+    {
+      id: 'PAY-1003',
+      date: '2026-10-05',
+      paymentId: 'PAY-1003',
+      invoiceNo: 'E7/2026-27/103',
+      company: 'TATA CONSULTANCY (TCS)',
+      amount: 54000,
+      paid: 0,
+      balance: 54000,
+      status: 'Pending',
+      paymentMode: 'Pending Client Clearance'
+    }
+  ];
+
+  const DEFAULT_ATTACHMENTS: AttachmentRecord[] = [
+    {
+      id: 'ATT-501',
+      vehicleNumber: 'TN-01-AB-1234',
+      ownerName: 'V. Ramanathan',
+      driverName: 'Suresh Kumar',
+      site: 'WALMART - OMR',
+      attachDate: '2025-02-10',
+      packageType: 'Monthly Fixed (2500 KM)',
+      kmLimit: 2500,
+      status: 'Active',
+      remarks: 'Dedicated corporate cab'
+    },
+    {
+      id: 'ATT-502',
+      vehicleNumber: 'TN-09-CD-5678',
+      ownerName: 'S. Balasubramanian',
+      driverName: 'K. Murugan',
+      site: 'CTS - MEPZ',
+      attachDate: '2025-04-15',
+      packageType: 'Monthly Fixed (2800 KM)',
+      kmLimit: 2800,
+      status: 'Active',
+      remarks: 'Fleet attachment verified'
+    },
+    {
+      id: 'ATT-503',
+      vehicleNumber: 'TN-14-JK-7890',
+      ownerName: 'M. Dhanasekaran',
+      driverName: 'P. Anandhan',
+      site: 'TCS - SIRUSERI',
+      attachDate: '2025-06-01',
+      packageType: 'Monthly Package (2500 KM)',
+      kmLimit: 2500,
+      status: 'Active',
+      remarks: 'Compliant with all office docs'
+    },
+    {
+      id: 'ATT-504',
+      vehicleNumber: 'TN-22-GH-3456',
+      ownerName: 'K. Rajagopal',
+      driverName: 'R. Vignesh',
+      site: 'OPTUM - DLF',
+      attachDate: '2025-07-20',
+      packageType: 'Monthly Package (3000 KM)',
+      kmLimit: 3000,
+      status: 'Active',
+      remarks: 'GPS live tracking active'
+    }
+  ];
+
+  const DEFAULT_FINANCIAL_SETTINGS: FinancialSettings = {
+    cngProfitPercent: 5,
+    e7TravelsCharge: 1500,
+    fixedDeductionDefault: 1000,
+    vehicleFixedDeductions: {},
+    serviceCommissionPercent: 2,
+    defaultGstPercent: 5,
+    defaultTdsPercent: 1,
+  };
+
+  const [advances, setAdvances] = useState<AdvanceRecord[]>(() => {
+    const saved = localStorage.getItem('e7_travels_advances');
+    if (saved !== null) {
+      try { return JSON.parse(saved); } catch (e) { return []; }
+    }
+    return DEFAULT_ADVANCES;
+  });
+
+  const [recoveries, setRecoveries] = useState<RecoveryRecord[]>(() => {
+    const saved = localStorage.getItem('e7_travels_recoveries');
+    if (saved !== null) {
+      try { return JSON.parse(saved); } catch (e) { return []; }
+    }
+    return DEFAULT_RECOVERIES;
+  });
+
+  const [dailyRunning, setDailyRunning] = useState<DailyRunningEntry[]>(() => {
+    const saved = localStorage.getItem('e7_travels_daily_running');
+    if (saved !== null) {
+      try { return JSON.parse(saved); } catch (e) { return []; }
+    }
+    return DEFAULT_DAILY_RUNNING;
+  });
+
+  const [invoices, setInvoices] = useState<InvoiceRecord[]>(() => {
+    const saved = localStorage.getItem('e7_travels_invoices');
+    if (saved !== null) {
+      try { return JSON.parse(saved); } catch (e) { return []; }
+    }
+    return DEFAULT_INVOICES;
+  });
+
+  const [attachments, setAttachments] = useState<AttachmentRecord[]>(() => {
+    const saved = localStorage.getItem('e7_travels_attachments');
+    if (saved !== null) {
+      try { return JSON.parse(saved); } catch (e) { return []; }
+    }
+    return DEFAULT_ATTACHMENTS;
+  });
+
+  const [paymentsRecord, setPaymentsRecord] = useState<PaymentRecord[]>(() => {
+    const saved = localStorage.getItem('e7_travels_payment_records');
+    if (saved !== null) {
+      try { return JSON.parse(saved); } catch (e) { return []; }
+    }
+    return DEFAULT_PAYMENTS_RECORD;
+  });
+
+  const [financialSettings, setFinancialSettings] = useState<FinancialSettings>(() => {
+    const saved = localStorage.getItem('e7_travels_financial_settings');
+    if (saved !== null) {
+      try { return JSON.parse(saved); } catch (e) { return DEFAULT_FINANCIAL_SETTINGS; }
+    }
+    return DEFAULT_FINANCIAL_SETTINGS;
   });
 
   // Tracks whether the initial sync has been performed for the current login session
@@ -332,6 +746,43 @@ export default function App() {
           setLastSavedHash('slabRates', initSlabRates);
 
           if (!isMounted) return;
+
+          // Automatically seed any missing collections to Firestore cloud so all data persists automatically
+          if (!cloud._isQuotaExceeded) {
+            const seedMissing = async () => {
+              if (cloud.vehicles === undefined && initVehicles.length > 0) {
+                await saveStateToFirestore('vehicles', initVehicles);
+              }
+              if (cloud.owners === undefined && initOwners.length > 0) {
+                await saveStateToFirestore('owners', initOwners);
+              }
+              if (cloud.drivers === undefined && initDrivers.length > 0) {
+                await saveStateToFirestore('drivers', initDrivers);
+              }
+              if (cloud.companies === undefined && initCompanies.length > 0) {
+                await saveStateToFirestore('companies', initCompanies);
+              }
+              if (cloud.sites === undefined && initSites.length > 0) {
+                await saveStateToFirestore('sites', initSites);
+              }
+              if (cloud.payments === undefined && initPayments.length > 0) {
+                await saveStateToFirestore('payments', initPayments);
+              }
+              if (cloud.expenses === undefined && initExpenses.length > 0) {
+                await saveStateToFirestore('expenses', initExpenses);
+              }
+              if (cloud.enquiries === undefined && initEnquiries.length > 0) {
+                await saveStateToFirestore('enquiries', initEnquiries);
+              }
+              if (cloud.deletedVehicles === undefined && initDeleted.length > 0) {
+                await saveStateToFirestore('deletedVehicles', initDeleted);
+              }
+              if (cloud.slabRates === undefined && initSlabRates.length > 0) {
+                await saveStateToFirestore('slabRates', initSlabRates);
+              }
+            };
+            seedMissing().catch((err) => console.warn('Auto-seed to Firestore completed with warning:', err));
+          }
 
           if (cloud._isQuotaExceeded) {
             setIsQuotaExceeded(true);
@@ -480,137 +931,88 @@ export default function App() {
     };
   }, [isFirestoreLoaded, user, isQuotaExceeded]);
 
+  // Helper to automatically save state changes to Firestore cloud in real-time
+  const autoSaveToFirestore = React.useCallback((key: keyof FleetState, data: any) => {
+    if (isQuotaExceeded || !isFirestoreLoaded) return;
+    const str = JSON.stringify(data);
+    const keyStr = String(key);
+    if (lastReceivedFromServer.current[keyStr] === str) return;
+    lastReceivedFromServer.current[keyStr] = str;
+
+    setCloudStatusMsg('syncing');
+    saveStateToFirestore(key, data)
+      .then(() => {
+        setCloudStatusMsg('success');
+      })
+      .catch((err) => {
+        console.warn(`Auto-save ${keyStr} to Firestore failed:`, err);
+        if (!isQuotaError(err)) {
+          setCloudStatusMsg('error');
+        }
+      });
+  }, [isQuotaExceeded, isFirestoreLoaded]);
+
   // Automatically save to localStorage and Firestore cloud whenever state changes
   useEffect(() => {
     const str = JSON.stringify(vehicles);
     localStorage.setItem('e7_travels_vehicles', str);
-    if (!isQuotaExceeded && isFirestoreLoaded) {
-      if (lastReceivedFromServer.current['vehicles'] !== str) {
-        lastReceivedFromServer.current['vehicles'] = str;
-        saveStateToFirestore('vehicles', vehicles).catch((err) => {
-          console.warn('Auto-save vehicles failed (silent):', err);
-        });
-      }
-    }
-  }, [vehicles, isQuotaExceeded, isFirestoreLoaded]);
+    autoSaveToFirestore('vehicles', vehicles);
+  }, [vehicles, autoSaveToFirestore]);
 
   useEffect(() => {
     const str = JSON.stringify(owners);
     localStorage.setItem('e7_travels_owners', str);
-    if (!isQuotaExceeded && isFirestoreLoaded) {
-      if (lastReceivedFromServer.current['owners'] !== str) {
-        lastReceivedFromServer.current['owners'] = str;
-        saveStateToFirestore('owners', owners).catch((err) => {
-          console.warn('Auto-save owners failed (silent):', err);
-        });
-      }
-    }
-  }, [owners, isQuotaExceeded, isFirestoreLoaded]);
+    autoSaveToFirestore('owners', owners);
+  }, [owners, autoSaveToFirestore]);
 
   useEffect(() => {
     const str = JSON.stringify(drivers);
     localStorage.setItem('e7_travels_drivers', str);
-    if (!isQuotaExceeded && isFirestoreLoaded) {
-      if (lastReceivedFromServer.current['drivers'] !== str) {
-        lastReceivedFromServer.current['drivers'] = str;
-        saveStateToFirestore('drivers', drivers).catch((err) => {
-          console.warn('Auto-save drivers failed (silent):', err);
-        });
-      }
-    }
-  }, [drivers, isQuotaExceeded, isFirestoreLoaded]);
+    autoSaveToFirestore('drivers', drivers);
+  }, [drivers, autoSaveToFirestore]);
 
   useEffect(() => {
     const str = JSON.stringify(companies);
     localStorage.setItem('e7_travels_companies', str);
-    if (!isQuotaExceeded && isFirestoreLoaded) {
-      if (lastReceivedFromServer.current['companies'] !== str) {
-        lastReceivedFromServer.current['companies'] = str;
-        saveStateToFirestore('companies', companies).catch((err) => {
-          console.warn('Auto-save companies failed (silent):', err);
-        });
-      }
-    }
-  }, [companies, isQuotaExceeded, isFirestoreLoaded]);
+    autoSaveToFirestore('companies', companies);
+  }, [companies, autoSaveToFirestore]);
 
   useEffect(() => {
     const str = JSON.stringify(sites);
     localStorage.setItem('e7_travels_sites', str);
-    if (!isQuotaExceeded && isFirestoreLoaded) {
-      if (lastReceivedFromServer.current['sites'] !== str) {
-        lastReceivedFromServer.current['sites'] = str;
-        saveStateToFirestore('sites', sites).catch((err) => {
-          console.warn('Auto-save sites failed (silent):', err);
-        });
-      }
-    }
-  }, [sites, isQuotaExceeded, isFirestoreLoaded]);
+    autoSaveToFirestore('sites', sites);
+  }, [sites, autoSaveToFirestore]);
 
   useEffect(() => {
     const str = JSON.stringify(payments);
     localStorage.setItem('e7_travels_payments', str);
-    if (!isQuotaExceeded && isFirestoreLoaded) {
-      if (lastReceivedFromServer.current['payments'] !== str) {
-        lastReceivedFromServer.current['payments'] = str;
-        saveStateToFirestore('payments', payments).catch((err) => {
-          console.warn('Auto-save payments failed (silent):', err);
-        });
-      }
-    }
-  }, [payments, isQuotaExceeded, isFirestoreLoaded]);
+    autoSaveToFirestore('payments', payments);
+  }, [payments, autoSaveToFirestore]);
 
   useEffect(() => {
     const str = JSON.stringify(expenses);
     localStorage.setItem('e7_travels_expenses', str);
-    if (!isQuotaExceeded && isFirestoreLoaded) {
-      if (lastReceivedFromServer.current['expenses'] !== str) {
-        lastReceivedFromServer.current['expenses'] = str;
-        saveStateToFirestore('expenses', expenses).catch((err) => {
-          console.warn('Auto-save expenses failed (silent):', err);
-        });
-      }
-    }
-  }, [expenses, isQuotaExceeded, isFirestoreLoaded]);
+    autoSaveToFirestore('expenses', expenses);
+  }, [expenses, autoSaveToFirestore]);
 
   useEffect(() => {
     const str = JSON.stringify(enquiries);
     localStorage.setItem('e7_travels_enquiries', str);
-    if (!isQuotaExceeded && isFirestoreLoaded) {
-      if (lastReceivedFromServer.current['enquiries'] !== str) {
-        lastReceivedFromServer.current['enquiries'] = str;
-        saveStateToFirestore('enquiries', enquiries).catch((err) => {
-          console.warn('Auto-save enquiries failed (silent):', err);
-        });
-      }
-    }
-  }, [enquiries, isQuotaExceeded, isFirestoreLoaded]);
+    autoSaveToFirestore('enquiries', enquiries);
+  }, [enquiries, autoSaveToFirestore]);
 
   useEffect(() => {
     const str = JSON.stringify(deletedVehicles);
     localStorage.setItem('e7_travels_deletedVehicles', str);
     localStorage.setItem('e7_travels_deleted_vehicles', str);
-    if (!isQuotaExceeded && isFirestoreLoaded) {
-      if (lastReceivedFromServer.current['deletedVehicles'] !== str) {
-        lastReceivedFromServer.current['deletedVehicles'] = str;
-        saveStateToFirestore('deletedVehicles', deletedVehicles).catch((err) => {
-          console.warn('Auto-save deletedVehicles failed (silent):', err);
-        });
-      }
-    }
-  }, [deletedVehicles, isQuotaExceeded, isFirestoreLoaded]);
+    autoSaveToFirestore('deletedVehicles', deletedVehicles);
+  }, [deletedVehicles, autoSaveToFirestore]);
 
   useEffect(() => {
     const str = JSON.stringify(slabRates);
     localStorage.setItem('e7_travels_slab_rates', str);
-    if (!isQuotaExceeded && isFirestoreLoaded) {
-      if (lastReceivedFromServer.current['slabRates'] !== str) {
-        lastReceivedFromServer.current['slabRates'] = str;
-        saveStateToFirestore('slabRates', slabRates).catch((err) => {
-          console.warn('Auto-save slabRates failed (silent):', err);
-        });
-      }
-    }
-  }, [slabRates, isQuotaExceeded, isFirestoreLoaded]);
+    autoSaveToFirestore('slabRates', slabRates);
+  }, [slabRates, autoSaveToFirestore]);
 
   // Floating Toast notification state & auto-dismissal
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -627,161 +1029,6 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [toast]);
-
-  // Manual sync triggers for Cloud Database
-  const handleForceUploadToCloud = async () => {
-    if (!user) {
-      showToast('🔒 Please sign in with Google Sync first to upload data!', 'error');
-      setCloudResultModal({
-        status: 'warning',
-        title: 'Data Not Saved to Cloud',
-        message: 'Your current records are NOT stored in the cloud because you are in Offline Sandbox Mode. To sync and persist your data securely in the Firestore Cloud Database, please sign in using the "Sign in with Google Sync" option in the top bar.'
-      });
-      return;
-    }
-    try {
-      setCloudStatusMsg('syncing');
-      await saveStateToFirestore('vehicles', vehicles);
-      await saveStateToFirestore('owners', owners);
-      await saveStateToFirestore('drivers', drivers);
-      await saveStateToFirestore('companies', companies);
-      await saveStateToFirestore('sites', sites);
-      await saveStateToFirestore('payments', payments);
-      await saveStateToFirestore('expenses', expenses);
-      await saveStateToFirestore('enquiries', enquiries);
-      await saveStateToFirestore('deletedVehicles', deletedVehicles);
-      await saveStateToFirestore('slabRates', slabRates);
-      setCloudStatusMsg('success');
-      showToast('🚀 URL Cloud Database updated successfully with your current data!', 'success');
-      setCloudResultModal({
-        status: 'success',
-        title: 'Successfully Saved to Cloud',
-        message: 'All your current active master fleet records (Vehicles, Owners, Drivers, Companies, Sites, Payments, Expenses, Enquiries, Deleted Vehicles, and Slab Rates) have been successfully stored and persisted in the secure cloud database!'
-      });
-    } catch (err) {
-      console.error('Error uploading state to Firestore:', err);
-      setCloudStatusMsg('error');
-      showToast('❌ Failed to upload data to cloud.', 'error');
-      setCloudResultModal({
-        status: 'error',
-        title: 'Failed to Save to Cloud',
-        message: `Your current records could not be stored in the cloud. Error: ${err instanceof Error ? err.message : 'Unknown error'}. Please verify your connection and try again.`
-      });
-    }
-  };
-
-  const handleForceDownloadFromCloud = async () => {
-    if (!user) {
-      showToast('🔒 Please sign in with Google Sync first to load cloud data!', 'error');
-      setCloudResultModal({
-        status: 'warning',
-        title: 'Cloud Pull Blocked',
-        message: 'You are currently in Offline Sandbox Mode. To pull master datasets from the secure Firestore Cloud Database, you must first sign in using the "Sign in with Google Sync" option.'
-      });
-      return;
-    }
-    try {
-      setCloudStatusMsg('syncing');
-      const cloud = await loadStateFromFirestore();
-      
-      if (cloud.vehicles) setVehicles(cloud.vehicles);
-      if (cloud.owners) setOwners(cloud.owners);
-      if (cloud.drivers) setDrivers(cloud.drivers);
-      if (cloud.companies) setCompanies(cloud.companies);
-      if (cloud.sites) setSites(cloud.sites);
-      if (cloud.payments) setPayments(cloud.payments);
-      if (cloud.expenses) setExpenses(cloud.expenses);
-      if (cloud.enquiries) setEnquiries(cloud.enquiries);
-      if (cloud.deletedVehicles) setDeletedVehicles(cloud.deletedVehicles);
-      if (cloud.slabRates) setSlabRates(cloud.slabRates);
-      
-      setCloudStatusMsg('success');
-      showToast('📥 Loaded master data from URL Cloud Database successfully!', 'success');
-      setCloudResultModal({
-        status: 'success',
-        title: 'Master Cloud Data Loaded',
-        message: 'Successfully pulled and loaded the latest master fleet records from the Firestore Cloud Database. Your current browser workspace is now synchronized with the cloud dataset!'
-      });
-    } catch (err) {
-      console.error('Error downloading state from Firestore:', err);
-      setCloudStatusMsg('error');
-      showToast('❌ Failed to load data from cloud.', 'error');
-      setCloudResultModal({
-        status: 'error',
-        title: 'Failed to Pull from Cloud',
-        message: `Could not retrieve records from the cloud. Error: ${err instanceof Error ? err.message : 'Unknown error'}.`
-      });
-    }
-  };
-
-  const handleManualSmartMerge = async () => {
-    try {
-      setCloudStatusMsg('syncing');
-      let cloud: any = {};
-      if (user) {
-        try {
-          cloud = await loadStateFromFirestore();
-        } catch (e) {
-          console.warn('Cloud load during manual smart merge fallback to local base:', e);
-        }
-      }
-      
-      const mergedVehicles = cloud.vehicles !== undefined ? sanitizeUniqueEntities(cloud.vehicles, 'VEH', 3) : vehicles;
-      const mergedOwners = cloud.owners !== undefined ? sanitizeUniqueEntities(cloud.owners, 'OWN', 2) : owners;
-      const mergedDrivers = cloud.drivers !== undefined ? sanitizeUniqueEntities(cloud.drivers, 'DRV', 2) : drivers;
-      const mergedCompanies = cloud.companies !== undefined ? cloud.companies : companies;
-      const mergedSites = cloud.sites !== undefined ? cloud.sites : sites;
-      const mergedPayments = cloud.payments !== undefined ? cloud.payments : payments;
-      const mergedExpenses = cloud.expenses !== undefined ? cloud.expenses : expenses;
-      const mergedEnquiries = cloud.enquiries !== undefined ? cloud.enquiries : enquiries;
-
-      setVehicles(mergedVehicles);
-      setOwners(mergedOwners);
-      setDrivers(mergedDrivers);
-      setCompanies(mergedCompanies);
-      setSites(mergedSites);
-      setPayments(mergedPayments);
-      setExpenses(mergedExpenses);
-      setEnquiries(mergedEnquiries);
-
-      localStorage.setItem('e7_travels_vehicles', JSON.stringify(mergedVehicles));
-      localStorage.setItem('e7_travels_owners', JSON.stringify(mergedOwners));
-      localStorage.setItem('e7_travels_drivers', JSON.stringify(mergedDrivers));
-      localStorage.setItem('e7_travels_companies', JSON.stringify(mergedCompanies));
-      localStorage.setItem('e7_travels_sites', JSON.stringify(mergedSites));
-      localStorage.setItem('e7_travels_payments', JSON.stringify(mergedPayments));
-      localStorage.setItem('e7_travels_expenses', JSON.stringify(mergedExpenses));
-      localStorage.setItem('e7_travels_enquiries', JSON.stringify(mergedEnquiries));
-
-      if (user) {
-        await saveStateToFirestore('vehicles', mergedVehicles);
-        await saveStateToFirestore('owners', mergedOwners);
-        await saveStateToFirestore('drivers', mergedDrivers);
-        await saveStateToFirestore('companies', mergedCompanies);
-        await saveStateToFirestore('sites', mergedSites);
-        await saveStateToFirestore('payments', mergedPayments);
-        await saveStateToFirestore('expenses', mergedExpenses);
-        await saveStateToFirestore('enquiries', mergedEnquiries);
-      }
-
-      setCloudStatusMsg('success');
-      showToast('🔄 Restoration & Smart Merge Complete: All 110 Enquiries & Masters saved!', 'success');
-      setCloudResultModal({
-        status: 'success',
-        title: 'Restoration & Smart Merge Complete',
-        message: 'Successfully restored and merged all 110 enquiry desk records (including yesterday\'s Induction data & master edits) with local storage and cloud database!'
-      });
-    } catch (err) {
-      console.error('Error in manual smart merge:', err);
-      setCloudStatusMsg('error');
-      showToast('❌ Failed to complete smart merge.', 'error');
-      setCloudResultModal({
-        status: 'error',
-        title: 'Smart Merge Failed',
-        message: `Failed to synchronize records with the cloud database. Error: ${err instanceof Error ? err.message : 'Unknown error'}.`
-      });
-    }
-  };
 
   const handleExportBackupJSON = () => {
     try {
@@ -858,32 +1105,114 @@ export default function App() {
       }
 
       showToast('✅ Yesterday/Backup data merged & imported successfully!', 'success');
-      setCloudResultModal({
-        status: 'success',
-        title: 'Data Merged & Restored',
-        message: 'Successfully merged yesterday/backup JSON records with active browser state and Cloud Database!'
-      });
     } catch (err) {
       console.error('Import failed:', err);
       showToast('❌ Failed to import backup data', 'error');
     }
   };
 
+  const handleRestoreFromCloud = async () => {
+    try {
+      setCloudStatusMsg('syncing');
+      const cloud = await loadStateFromFirestore();
+      if (cloud.vehicles) setVehicles(cloud.vehicles);
+      if (cloud.owners) setOwners(cloud.owners);
+      if (cloud.drivers) setDrivers(cloud.drivers);
+      if (cloud.companies) setCompanies(cloud.companies);
+      if (cloud.sites) setSites(cloud.sites);
+      if (cloud.payments) setPayments(cloud.payments);
+      if (cloud.expenses) setExpenses(cloud.expenses);
+      if (cloud.enquiries) setEnquiries(cloud.enquiries);
+      if (cloud.deletedVehicles) setDeletedVehicles(cloud.deletedVehicles);
+      if (cloud.slabRates) setSlabRates(cloud.slabRates);
+      setCloudStatusMsg('success');
+      showToast('📥 Loaded & synchronized latest records from Firebase!', 'success');
+    } catch (err) {
+      console.error('Error reloading from Firestore:', err);
+      setCloudStatusMsg('error');
+      showToast('❌ Failed to reload data from cloud.', 'error');
+    }
+  };
+
   // Core Branding Custom Logo
   const [customLogo, setCustomLogo] = useState<string | null>(() => {
-    return localStorage.getItem('e7_custom_logo') || null;
+    try {
+      return localStorage.getItem('e7_custom_logo') || localStorage.getItem('e7_original_logo') || null;
+    } catch {
+      return null;
+    }
   });
 
   // Layout & Navigation State
-  const [activeTab, setActiveTab] = useState<'Dashboard' | 'Enquiries' | 'Induction' | 'Registers' | 'Transactions' | 'Ledgers' | 'Settlement' | 'Reports' | 'VBA Export' | 'Settings' | 'Rules' | 'Documents'>('Dashboard');
+  const [activeTab, setActiveTab] = useState<
+    | 'Dashboard'
+    | 'Vehicles'
+    | 'Owners'
+    | 'Drivers'
+    | 'Companies / Sites'
+    | 'Attachments'
+    | 'Daily Running'
+    | 'Advances'
+    | 'Recoveries'
+    | 'Expenses'
+    | 'Invoices'
+    | 'Payments'
+    | 'Reports / MIS'
+    | 'Documents'
+    | 'Settings'
+    | 'Registers'
+    | 'Transactions'
+    | 'Ledgers'
+    | 'Settlement'
+    | 'Reports'
+    | 'VBA Export'
+    | 'Rules'
+  >('Dashboard');
   const [activeSubTab, setActiveSubTab] = useState<string>('Vehicle Master');
   const [vehicleFilter, setVehicleFilter] = useState<'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted' | 'gps_hold' | 'duplicates'>('all');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState('');
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  // Search Results & Fleet Notification Counters
+  const searchResults = React.useMemo(() => {
+    const q = globalSearch.trim().toLowerCase();
+    if (!q) return null;
+    const matchVehicles = vehicles.filter(v =>
+      (v.registrationNumber && v.registrationNumber.toLowerCase().includes(q)) ||
+      (v.model && v.model.toLowerCase().includes(q)) ||
+      (v.ownerName && v.ownerName.toLowerCase().includes(q)) ||
+      (v.driverName && v.driverName.toLowerCase().includes(q))
+    ).slice(0, 5);
+
+    const matchOwners = owners.filter(o =>
+      (o.name && o.name.toLowerCase().includes(q)) ||
+      (o.phone && o.phone.includes(q))
+    ).slice(0, 4);
+
+    const matchDrivers = drivers.filter(d =>
+      (d.name && d.name.toLowerCase().includes(q)) ||
+      (d.phone && d.phone.includes(q))
+    ).slice(0, 4);
+
+    return {
+      vehicles: matchVehicles.map(v => ({ id: v.id, vehicleNumber: v.registrationNumber, makeModel: `${v.manufacturer} ${v.model}`, ownerName: v.ownerName })),
+      owners: matchOwners.map(o => ({ id: o.id, name: o.name, mobile: o.phone })),
+      drivers: matchDrivers.map(d => ({ id: d.id, name: d.name, mobile: d.phone })),
+      total: matchVehicles.length + matchOwners.length + matchDrivers.length
+    };
+  }, [globalSearch, vehicles, owners, drivers]);
+
+  const docPendingCount = vehicles.filter((v) => !v.officeDocSubmitted).length;
+  const inactiveVehiclesCount = vehicles.filter((v) => v.status !== 'Active').length;
+  const totalAlertsCount = (docPendingCount > 0 ? 1 : 0) + (inactiveVehiclesCount > 0 ? 1 : 0);
 
   // Unified Navigation Router
   const handleNavigate = (route: string, filter?: 'all' | 'running' | 'idle' | 'new' | 'doc_pending' | 'doc_submitted' | 'gps_hold' | 'duplicates') => {
+    setMobileMenuOpen(false);
     if (filter) {
       setVehicleFilter(filter);
-    } else if (route === 'Vehicle Master') {
+    } else if (route === 'Vehicles' || route === 'Vehicle Master') {
       setVehicleFilter('all');
     }
 
@@ -891,45 +1220,61 @@ export default function App() {
       case 'Dashboard':
         setActiveTab('Dashboard');
         break;
-      case 'Enquiries':
-        setActiveTab('Enquiries');
-        break;
-      case 'Induction':
-        setActiveTab('Induction');
-        break;
+      case 'Vehicles':
       case 'Vehicle Master':
+        setActiveTab('Vehicles');
+        setActiveSubTab('Vehicle Master');
+        break;
+      case 'Owners':
       case 'Owner Master':
+        setActiveTab('Owners');
+        setActiveSubTab('Owner Master');
+        break;
+      case 'Drivers':
       case 'Driver Master':
+        setActiveTab('Drivers');
+        setActiveSubTab('Driver Master');
+        break;
+      case 'Companies / Sites':
       case 'Company Master':
       case 'Site Master':
-      case 'Vendor Register':
-      case 'Deleted Vehicles':
-        setActiveTab('Registers');
+        setActiveTab('Companies / Sites');
         setActiveSubTab(route);
         break;
-      case 'Company Payments':
+      case 'Attachments':
+        setActiveTab('Attachments');
+        break;
+      case 'Daily Running':
+        setActiveTab('Daily Running');
+        break;
+      case 'Advances':
+        setActiveTab('Advances');
+        break;
+      case 'Recoveries':
+        setActiveTab('Recoveries');
+        break;
+      case 'Expenses':
       case 'Expense Entry':
-      case 'Weekly Settlement':
-        setActiveTab('Transactions');
-        setActiveSubTab(route);
+        setActiveTab('Expenses');
         break;
-      case 'Vehicle Ledger':
-      case 'Owner Ledger':
-      case 'Vehicle History':
-        setActiveTab('Ledgers');
-        setActiveSubTab(route === 'Vehicle History' ? 'Vehicle Ledger' : route);
-        break;
-      case 'Monthly Settlement':
-      case 'Owner Statement':
-      case 'Driver Statement':
+      case 'Invoices':
       case 'Invoice':
-      case 'Payment Voucher':
-        setActiveTab('Settlement');
-        setActiveSubTab(route);
+        setActiveTab('Invoices');
         break;
-      case 'Profit & Loss':
+      case 'Payments':
+      case 'Company Payments':
+        setActiveTab('Payments');
+        break;
+      case 'Reports / MIS':
       case 'Reports':
-        setActiveTab('Reports');
+      case 'Profit & Loss':
+        setActiveTab('Reports / MIS');
+        break;
+      case 'Documents':
+      case 'Tax Invoice':
+      case 'Letter Head':
+        setActiveTab('Documents');
+        setActiveSubTab(route === 'Documents' ? 'Tax Invoice' : route);
         break;
       case 'Settings':
         setActiveTab('Settings');
@@ -937,21 +1282,24 @@ export default function App() {
       case 'Rules':
         setActiveTab('Rules');
         break;
-      case 'Tax Invoice':
-      case 'Letter Head':
-        setActiveTab('Documents');
-        setActiveSubTab(route);
+      case 'VBA Export':
+        setActiveTab('VBA Export');
+        break;
+      case 'Vehicle Ledger':
+      case 'Owner Ledger':
+      case 'Ledgers':
+        setActiveTab('Ledgers');
+        setActiveSubTab(route === 'Ledgers' ? 'Vehicle Ledger' : route);
+        break;
+      case 'Monthly Settlement':
+      case 'Owner Statement':
+      case 'Driver Statement':
+      case 'Settlement':
+        setActiveTab('Settlement');
+        setActiveSubTab(route === 'Settlement' ? 'Monthly Settlement' : route);
         break;
       default:
-        // Fallback for parent tabs
-        if (route === 'Registers' || route === 'Transactions' || route === 'Ledgers' || route === 'Settlement' || route === 'VBA Export' || route === 'Documents') {
-          setActiveTab(route as any);
-          if (route === 'Registers') setActiveSubTab('Vehicle Master');
-          else if (route === 'Transactions') setActiveSubTab('Company Payments');
-          else if (route === 'Ledgers') setActiveSubTab('Vehicle Ledger');
-          else if (route === 'Settlement') setActiveSubTab('Monthly Settlement');
-          else if (route === 'Documents') setActiveSubTab('Tax Invoice');
-        }
+        setActiveTab((route as any) || 'Dashboard');
         break;
     }
   };
@@ -1108,7 +1456,7 @@ export default function App() {
     if (token) {
       triggerSheetInit(token);
     } else {
-      alert('Local sandbox mode: Please log in using Google Auth to sync with Google Drive.');
+      showToast('ℹ️ Local sandbox mode: Please log in using Google Auth to sync with Google Drive.', 'info');
     }
   };
 
@@ -1116,7 +1464,7 @@ export default function App() {
   const handleExportToSheets = async () => {
     const token = accessToken || await getAccessToken();
     if (!token) {
-      alert('Authentication required: Please sign in with Google Sync to export data.');
+      showToast('⚠️ Authentication required: Please sign in with Google Sync to export data.', 'error');
       return;
     }
 
@@ -1325,6 +1673,70 @@ export default function App() {
       console.error('Auto-sync slabRates to Firestore failed:', err)
     );
   };
+
+  const updateAdvances = (newAdv: AdvanceRecord[]) => {
+    setAdvances(newAdv);
+    try {
+      localStorage.setItem('e7_travels_advances', JSON.stringify(newAdv));
+    } catch (err) {
+      console.error('Failed to save advances to localStorage:', err);
+    }
+  };
+
+  const updateRecoveries = (newRec: RecoveryRecord[]) => {
+    setRecoveries(newRec);
+    try {
+      localStorage.setItem('e7_travels_recoveries', JSON.stringify(newRec));
+    } catch (err) {
+      console.error('Failed to save recoveries to localStorage:', err);
+    }
+  };
+
+  const updateDailyRunning = (newRun: DailyRunningEntry[]) => {
+    setDailyRunning(newRun);
+    try {
+      localStorage.setItem('e7_travels_daily_running', JSON.stringify(newRun));
+    } catch (err) {
+      console.error('Failed to save daily running to localStorage:', err);
+    }
+  };
+
+  const updateInvoices = (newInv: InvoiceRecord[]) => {
+    setInvoices(newInv);
+    try {
+      localStorage.setItem('e7_travels_invoices', JSON.stringify(newInv));
+    } catch (err) {
+      console.error('Failed to save invoices to localStorage:', err);
+    }
+  };
+
+  const updateAttachments = (newAtt: AttachmentRecord[]) => {
+    setAttachments(newAtt);
+    try {
+      localStorage.setItem('e7_travels_attachments', JSON.stringify(newAtt));
+    } catch (err) {
+      console.error('Failed to save attachments to localStorage:', err);
+    }
+  };
+
+  const updatePaymentsRecord = (newPay: PaymentRecord[]) => {
+    setPaymentsRecord(newPay);
+    try {
+      localStorage.setItem('e7_travels_payment_records', JSON.stringify(newPay));
+    } catch (err) {
+      console.error('Failed to save payments record to localStorage:', err);
+    }
+  };
+
+  const updateFinancialSettings = (newSettings: FinancialSettings) => {
+    setFinancialSettings(newSettings);
+    try {
+      localStorage.setItem('e7_travels_financial_settings', JSON.stringify(newSettings));
+    } catch (err) {
+      console.error('Failed to save financial settings to localStorage:', err);
+    }
+  };
+
   const restoreVehicle = (recordToRestore: DeletedVehicle, target: 'master' | 'enquiry' = 'master') => {
     const orig = recordToRestore.originalVehicle;
 
@@ -1354,9 +1766,11 @@ export default function App() {
         driverPhone: '',
         driverArea: '',
         driverBatchExp: orig?.remarks || '',
-        alreadyRunningCompany: recordToRestore.company || orig?.company || '',
-        sitePreference1: recordToRestore.site || orig?.site || '',
-        sitePreference2: '',
+        alreadyRunningCompany: recordToRestore.company || orig?.company || orig?.sitePreference1 || '',
+        sitePreference1: recordToRestore.company || orig?.company || orig?.sitePreference1 || '',
+        sitePreference2: orig?.company2 || orig?.sitePreference2 || '',
+        sitePreference3: recordToRestore.site || orig?.site || orig?.sitePreference3 || '',
+        sitePreference4: orig?.site2 || orig?.sitePreference4 || '',
         enquiryDate: new Date().toISOString().substring(0, 10),
         status: 'New',
         remarks: `Restored from Deleted Vehicles (${recordToRestore.deletedAt || 'Previously Deleted'})`,
@@ -1509,486 +1923,411 @@ export default function App() {
     );
   }
 
+  const renderSidebarContent = () => {
+    const navItems = [
+      { name: 'Dashboard' as const, icon: LayoutDashboard },
+      { name: 'Vehicles' as const, icon: Car },
+      { name: 'Owners' as const, icon: Users },
+      { name: 'Drivers' as const, icon: ShieldCheck },
+      { name: 'Companies / Sites' as const, icon: Building2 },
+      { name: 'Attachments' as const, icon: FileCheck2 },
+      { name: 'Daily Running' as const, icon: Gauge },
+      { name: 'Advances' as const, icon: CreditCard },
+      { name: 'Recoveries' as const, icon: RotateCcw },
+      { name: 'Expenses' as const, icon: TrendingDown },
+      { name: 'Invoices' as const, icon: Receipt },
+      { name: 'Payments' as const, icon: DollarSign },
+      { name: 'Reports / MIS' as const, icon: TrendingUp },
+      { name: 'Documents' as const, icon: Files },
+      { name: 'Settings' as const, icon: SettingsIcon },
+    ];
+
+    return (
+      <div className="space-y-1">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const isSelected = activeTab === item.name;
+          return (
+            <button
+              key={item.name}
+              id={`sidebar-btn-${item.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
+              onClick={() => handleNavigate(item.name)}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 text-xs font-semibold rounded-xl transition-all cursor-pointer ${
+                isSelected
+                  ? 'bg-[#007A63] text-white shadow-xs font-bold'
+                  : 'text-[#172033] hover:bg-[#006B57]/10 hover:text-[#006B57]'
+              }`}
+            >
+              <Icon className={`h-4 w-4 shrink-0 ${isSelected ? 'text-[#D4A72C]' : 'text-[#64748B]'}`} />
+              <span className="truncate">{item.name}</span>
+            </button>
+          );
+        })}
+
+        <div className="pt-3 mt-3 border-t border-[#E2E8F0]">
+          <button
+            id="sidebar-btn-logout"
+            onClick={() => {
+              localStorage.removeItem('e7_admin_session_active');
+              setAdminEmail(null);
+            }}
+            className="w-full flex items-center gap-3 px-3.5 py-2.5 text-xs font-semibold rounded-xl text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+          >
+            <LogOut className="h-4 w-4 shrink-0 text-rose-500" />
+            <span>Logout</span>
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex font-sans antialiased selection:bg-blue-100">
+    <div className="h-screen bg-[#F5F7F9] text-[#172033] flex flex-col font-sans antialiased selection:bg-[#006B57]/20 overflow-hidden">
       
-      {/* Navigation Sidebar */}
-      <aside className="w-64 bg-blue-900 text-slate-100 flex flex-col shrink-0 h-screen sticky top-0 print:hidden select-none border-r border-blue-950">
-        <div className="p-4 pr-2 border-b border-blue-800 flex items-center gap-3">
-          <div className="flex items-center justify-center w-14 h-14 overflow-hidden rounded bg-transparent shrink-0">
-            {customLogo ? (
-              <img src={customLogo} alt="E7 Logo" className="w-14 h-14 object-contain" referrerPolicy="no-referrer" />
-            ) : (
-              <svg className="w-14 h-14" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M4 18C4 10.268 10.268 4 18 4C25.732 4 32 10.268 32 18" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round" strokeDasharray="4 2"/>
-                <path d="M10 12H18M10 18H16M10 24H18M10 12V24" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M20 12H28L22 24" stroke="#38bdf8" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            )}
-          </div>
-          <div className="flex-1 min-w-0 pl-1 flex flex-col justify-center">
-            <div className="text-2xl font-black text-white tracking-tighter leading-none">E7</div>
-            <div className="text-[11px] font-black text-white tracking-widest leading-none mt-1.5 uppercase">TRAVELS</div>
+      {/* 1. HEADER BAR - Dark Emerald with Gold Accents */}
+      <header className="bg-[#004D40] text-white border-b border-[#00382E] h-16 flex items-center justify-between px-4 sm:px-6 lg:px-8 z-40 shadow-sm print:hidden shrink-0">
+        
+        {/* Left: Mobile Toggle & Brand Logo */}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(true)}
+            className="p-1.5 rounded-lg text-emerald-100 hover:text-white hover:bg-[#006B57] lg:hidden transition-colors cursor-pointer"
+            title="Open Navigation Menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+
+          <div
+            className="flex items-center gap-3 cursor-pointer group select-none"
+            onClick={() => handleNavigate('Dashboard')}
+          >
+            <div className="flex items-center justify-center w-10 h-10 overflow-hidden rounded-xl bg-[#00382E] border border-[#D4A72C]/40 shadow-xs shrink-0 group-hover:border-[#D4A72C] transition-all">
+              {customLogo ? (
+                <img src={customLogo} alt="E7 Logo" className="w-8 h-8 object-contain" referrerPolicy="no-referrer" />
+              ) : (
+                <svg className="w-7 h-7" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M4 18C4 10.268 10.268 4 18 4C25.732 4 32 10.268 32 18" stroke="#D4A72C" strokeWidth="2" strokeLinecap="round" strokeDasharray="4 2"/>
+                  <path d="M10 12H18M10 18H16M10 24H18M10 12V24" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M20 12H28L22 24" stroke="#D4A72C" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+            </div>
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xl font-black text-[#D4A72C] tracking-tighter leading-none">E7</span>
+                <span className="text-sm font-black text-white tracking-widest leading-none uppercase">TRAVELS</span>
+              </div>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="text-[9px] font-bold text-[#F5E7B2] tracking-wider uppercase">FLEET ERP</span>
+                <span className="text-[8px] px-1.5 py-0.2 rounded-full bg-[#00382E] text-emerald-200 border border-emerald-600/40 font-semibold uppercase">Chennai Hub</span>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Main navigation list */}
-        <div className="p-4 flex-1 space-y-4 overflow-y-auto">
-          
-          <div className="space-y-1">
-            <span className="text-4xs font-bold text-blue-300 uppercase tracking-widest pl-3 block mb-1">MAIN WORKSPACE</span>
-            
-            <button
-              id="menu-btn-dashboard"
-              onClick={() => handleNavigate('Dashboard')}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
-                activeTab === 'Dashboard' ? 'bg-blue-800 text-white' : 'text-blue-100 hover:bg-blue-800/50'
-              }`}
-            >
-              <LayoutDashboard className="h-4 w-4 shrink-0" /> Dashboard
-            </button>
+        {/* Center: Global Search Bar */}
+        <div className="relative flex-1 max-w-md mx-4 hidden md:block">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-emerald-300 pointer-events-none" />
+            <input
+              type="text"
+              value={globalSearch}
+              onChange={(e) => setGlobalSearch(e.target.value)}
+              placeholder="Search vehicle number, owner, driver, site..."
+              className="w-full bg-[#00382E] text-white placeholder-emerald-200/60 text-xs rounded-lg pl-9 pr-8 py-2 border border-[#006B57] focus:border-[#D4A72C] focus:ring-1 focus:ring-[#D4A72C] focus:outline-hidden transition-all shadow-inner"
+            />
+            {globalSearch && (
+              <button
+                onClick={() => setGlobalSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-emerald-300 hover:text-white rounded cursor-pointer"
+                title="Clear search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
 
-            <button
-              id="menu-btn-enquiries"
-              onClick={() => handleNavigate('Enquiries')}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
-                activeTab === 'Enquiries' ? 'bg-blue-800 text-white' : 'text-blue-100 hover:bg-blue-800/50'
-              }`}
-            >
-              <PhoneCall className="h-4 w-4 shrink-0" /> Enquiry Desk
-            </button>
-
-            <button
-              id="menu-btn-induction"
-              onClick={() => handleNavigate('Induction')}
-              className={`w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
-                activeTab === 'Induction' ? 'bg-blue-800 text-white' : 'text-blue-100 hover:bg-blue-800/50'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Layers className="h-4 w-4 shrink-0" /> Induction Page
+          {/* Quick Match Results Floating Dropdown */}
+          {searchResults && globalSearch.trim().length > 0 && (
+            <div className="absolute left-0 right-0 top-full mt-2 bg-white text-[#172033] rounded-xl shadow-2xl border border-[#E2E8F0] overflow-hidden z-50 max-h-96 overflow-y-auto">
+              <div className="p-2.5 border-b border-[#E2E8F0] bg-[#F5F7F9] flex items-center justify-between text-2xs font-bold text-[#64748B] uppercase">
+                <span>Fleet Records Matched ({searchResults.total})</span>
+                <button onClick={() => setGlobalSearch('')} className="text-slate-400 hover:text-slate-700 cursor-pointer">Close</button>
               </div>
-              {enquiries.filter((e) => e.status === 'Induction').length > 0 && (
-                <span className="bg-amber-500 text-slate-950 px-2 py-0.5 rounded-full text-[9px] font-black leading-none">
-                  {enquiries.filter((e) => e.status === 'Induction').length}
+              {searchResults.total === 0 ? (
+                <div className="p-5 text-center text-xs text-slate-500 font-medium">
+                  No matching fleet records found for "{globalSearch}"
+                </div>
+              ) : (
+                <div className="divide-y divide-[#E2E8F0] text-xs">
+                  {searchResults.vehicles.length > 0 && (
+                    <div className="p-2">
+                      <span className="text-[10px] font-bold text-[#006B57] uppercase tracking-wider block mb-1">Vehicles</span>
+                      {searchResults.vehicles.map(v => (
+                        <button
+                          key={v.id}
+                          onClick={() => {
+                            handleNavigate('Vehicle Master');
+                            setGlobalSearch('');
+                          }}
+                          className="w-full text-left p-1.5 hover:bg-[#006B57]/5 rounded-lg flex items-center justify-between cursor-pointer"
+                        >
+                          <span className="font-bold text-[#172033]">{v.vehicleNumber}</span>
+                          <span className="text-2xs text-[#64748B]">{v.makeModel} • {v.ownerName}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {searchResults.owners.length > 0 && (
+                    <div className="p-2">
+                      <span className="text-[10px] font-bold text-[#2563EB] uppercase tracking-wider block mb-1">Owners</span>
+                      {searchResults.owners.map(o => (
+                        <button
+                          key={o.id}
+                          onClick={() => {
+                            handleNavigate('Owner Master');
+                            setGlobalSearch('');
+                          }}
+                          className="w-full text-left p-1.5 hover:bg-[#006B57]/5 rounded-lg flex items-center justify-between cursor-pointer"
+                        >
+                          <span className="font-bold text-[#172033]">{o.name}</span>
+                          <span className="text-2xs text-[#64748B]">{o.mobile}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {searchResults.drivers.length > 0 && (
+                    <div className="p-2">
+                      <span className="text-[10px] font-bold text-[#7C3AED] uppercase tracking-wider block mb-1">Drivers</span>
+                      {searchResults.drivers.map(d => (
+                        <button
+                          key={d.id}
+                          onClick={() => {
+                            handleNavigate('Driver Master');
+                            setGlobalSearch('');
+                          }}
+                          className="w-full text-left p-1.5 hover:bg-[#006B57]/5 rounded-lg flex items-center justify-between cursor-pointer"
+                        >
+                          <span className="font-bold text-[#172033]">{d.name}</span>
+                          <span className="text-2xs text-[#64748B]">{d.mobile}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Right: Sync Controls, Notifications & Admin profile */}
+        <div className="flex items-center gap-3">
+          {/* Automatic Firebase Sync Status Indicator (Passive, non-interactive) */}
+          <div
+            id="cloud-db-sync-status"
+            className={`hidden sm:flex items-center gap-2 border rounded-lg p-1.5 px-3 select-none transition-colors ${
+              isQuotaExceeded
+                ? 'bg-[#00382E] border-amber-500/50 text-amber-300'
+                : 'bg-[#00382E] border-[#006B57] text-white'
+            }`}
+            title={
+              isQuotaExceeded
+                ? 'Firestore daily quota reached. Data safely saved locally in browser.'
+                : 'All fleet changes are automatically saved to Firebase Firestore in real time.'
+            }
+          >
+            <span className="relative flex h-2 w-2 shrink-0">
+              {cloudStatusMsg === 'syncing' ? (
+                <span className="animate-spin inline-flex h-full w-full rounded-full border border-[#D4A72C] border-t-transparent"></span>
+              ) : isQuotaExceeded ? (
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400"></span>
+              ) : (
+                <>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
+                </>
+              )}
+            </span>
+            <div className="text-left select-none">
+              <p className={`text-[9px] font-bold leading-none uppercase tracking-wider ${isQuotaExceeded ? 'text-amber-300' : 'text-[#F5E7B2]'}`}>
+                {isQuotaExceeded ? 'Offline Mode' : 'Firebase Cloud'}
+              </p>
+              <p className={`text-[8px] leading-none mt-0.5 font-extrabold ${isQuotaExceeded ? 'text-amber-400' : 'text-emerald-300'}`}>
+                {cloudStatusMsg === 'syncing' ? 'AUTO-SAVING...' : isQuotaExceeded ? 'QUOTA LIMIT' : 'AUTO-SAVED'}
+              </p>
+            </div>
+          </div>
+
+          {/* Notifications Popover */}
+          <div className="relative">
+            <button
+              onClick={() => setShowNotifications(!showNotifications)}
+              className="p-2 rounded-lg bg-[#00382E] hover:bg-[#006B57] text-emerald-100 hover:text-white border border-[#006B57] transition-colors relative cursor-pointer"
+              title="Fleet Alerts & Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              {totalAlertsCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-[#D4A72C] text-[#172033] font-black text-[9px] w-4 h-4 rounded-full flex items-center justify-center shadow-xs">
+                  {totalAlertsCount}
                 </span>
               )}
             </button>
 
-            <button
-              id="menu-btn-registers"
-              onClick={() => handleNavigate('Vehicle Master')}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
-                activeTab === 'Registers' ? 'bg-blue-800 text-white' : 'text-blue-100 hover:bg-blue-800/50'
-              }`}
-            >
-              <Database className="h-4 w-4 shrink-0" /> Master Registers
-            </button>
-
-            <button
-              id="menu-btn-transactions"
-              onClick={() => handleNavigate('Company Payments')}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
-                activeTab === 'Transactions' ? 'bg-blue-800 text-white' : 'text-blue-100 hover:bg-blue-800/50'
-              }`}
-            >
-              <TrendingDown className="h-4 w-4 shrink-0" /> Transactions Log
-            </button>
-          </div>
-
-          {/* Section: LEDGERS & ACCOUNTS */}
-          <div className="space-y-1">
-            <span className="text-4xs font-bold text-blue-300 uppercase tracking-widest pl-3 block mb-1">AUDIT & ACCOUNTS</span>
-            
-            <button
-              id="menu-btn-ledgers"
-              onClick={() => handleNavigate('Vehicle Ledger')}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
-                activeTab === 'Ledgers' ? 'bg-blue-800 text-white' : 'text-blue-100 hover:bg-blue-800/50'
-              }`}
-            >
-              <Calculator className="h-4 w-4 shrink-0" /> Running Ledgers
-            </button>
-
-            <button
-              id="menu-btn-settlement"
-              onClick={() => handleNavigate('Monthly Settlement')}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
-                activeTab === 'Settlement' ? 'bg-blue-800 text-white' : 'text-blue-100 hover:bg-blue-800/50'
-              }`}
-            >
-              <FileText className="h-4 w-4 shrink-0" /> Statements & Invoices
-            </button>
-
-            <button
-              id="menu-btn-reports"
-              onClick={() => handleNavigate('Reports')}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
-                activeTab === 'Reports' ? 'bg-blue-800 text-white' : 'text-blue-100 hover:bg-blue-800/50'
-              }`}
-            >
-              <TrendingUp className="h-4 w-4 shrink-0" /> Analytics Reports
-            </button>
-
-            <button
-              id="menu-btn-rules"
-              onClick={() => handleNavigate('Rules')}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
-                activeTab === 'Rules' ? 'bg-blue-800 text-white' : 'text-blue-100 hover:bg-blue-800/50'
-              }`}
-            >
-              <Award className="h-4 w-4 shrink-0" /> Company Rules (Tamil)
-            </button>
-          </div>
-
-          {/* Section: DOCUMENTS */}
-          <div className="space-y-1">
-            <span className="text-4xs font-bold text-blue-300 uppercase tracking-widest pl-3 block mb-1">DOCUMENT</span>
-            
-            <button
-              id="menu-btn-tax-invoice"
-              onClick={() => handleNavigate('Tax Invoice')}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
-                activeTab === 'Documents' && activeSubTab === 'Tax Invoice' ? 'bg-blue-800 text-white' : 'text-blue-100 hover:bg-blue-800/50'
-              }`}
-            >
-              <FileText className="h-4 w-4 shrink-0" /> Tax Invoice
-            </button>
-
-            <button
-              id="menu-btn-letter-head"
-              onClick={() => handleNavigate('Letter Head')}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
-                activeTab === 'Documents' && activeSubTab === 'Letter Head' ? 'bg-blue-800 text-white' : 'text-blue-100 hover:bg-blue-800/50'
-              }`}
-            >
-              <Files className="h-4 w-4 shrink-0" /> Letter Head
-            </button>
-          </div>
-
-          {/* Section: INTEGRATIONS */}
-          <div className="space-y-1">
-            <span className="text-4xs font-bold text-blue-300 uppercase tracking-widest pl-3 block mb-1">DEVELOPER ZONE</span>
-            
-            <button
-              id="menu-btn-vba"
-              onClick={() => setActiveTab('VBA Export')}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
-                activeTab === 'VBA Export' ? 'bg-blue-800 text-white' : 'text-blue-100 hover:bg-blue-800/50'
-              }`}
-            >
-              <FileSpreadsheet className="h-4 w-4 shrink-0" /> VBA Macro Tools
-            </button>
-
-            <button
-              id="menu-btn-settings"
-              onClick={() => handleNavigate('Settings')}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
-                activeTab === 'Settings' ? 'bg-blue-800 text-white' : 'text-blue-100 hover:bg-blue-800/50'
-              }`}
-            >
-              <SettingsIcon className="h-4 w-4 shrink-0" /> Parameters Settings
-            </button>
-          </div>
-
-        </div>
-
-        {/* Sidebar Footer */}
-        <div className="p-4 border-t border-blue-800 text-blue-300 text-4xs font-mono space-y-3">
-          <div className="flex items-center justify-between px-2 bg-blue-950/20 p-2 rounded-xl border border-blue-800/30">
-            <div className="flex items-center gap-2 overflow-hidden">
-              <div className="w-6 h-6 rounded bg-blue-800 flex items-center justify-center font-black text-white text-3xs border border-blue-700 shrink-0">
-                A
+            {showNotifications && (
+              <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-white text-[#172033] rounded-xl shadow-2xl border border-[#E2E8F0] p-4 z-50">
+                <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+                  <h4 className="text-xs font-bold text-[#172033] uppercase tracking-wider flex items-center gap-2">
+                    <Bell className="h-3.5 w-3.5 text-[#006B57]" /> Operations & Fleet Alerts
+                  </h4>
+                  <button onClick={() => setShowNotifications(false)} className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="mt-3 space-y-2 text-xs">
+                  {docPendingCount > 0 && (
+                    <div
+                      onClick={() => {
+                        handleNavigate('Vehicle Master', 'doc_pending');
+                        setShowNotifications(false);
+                      }}
+                      className="p-2.5 rounded-lg bg-purple-50 hover:bg-purple-100 border border-purple-200 cursor-pointer transition-colors flex items-start gap-2.5"
+                    >
+                      <span className="w-2 h-2 rounded-full bg-[#7C3AED] mt-1 shrink-0"></span>
+                      <div className="flex-1">
+                        <p className="font-bold text-purple-900">{docPendingCount} Vehicles Pending Office Docs</p>
+                        <p className="text-2xs text-purple-700 mt-0.5">Physical office document submission pending</p>
+                      </div>
+                    </div>
+                  )}
+                  {inactiveVehiclesCount > 0 && (
+                    <div
+                      onClick={() => {
+                        handleNavigate('Vehicle Master', 'idle');
+                        setShowNotifications(false);
+                      }}
+                      className="p-2.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 cursor-pointer transition-colors flex items-start gap-2.5"
+                    >
+                      <span className="w-2 h-2 rounded-full bg-slate-400 mt-1 shrink-0"></span>
+                      <div className="flex-1">
+                        <p className="font-bold text-slate-800">{inactiveVehiclesCount} Inactive Vehicles</p>
+                        <p className="text-2xs text-slate-500 mt-0.5">Review readiness or maintenance status</p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="p-2 bg-emerald-50/70 border border-emerald-200/60 rounded-lg text-2xs text-emerald-800 flex items-center gap-2">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-[#006B57] shrink-0" />
+                    <span>Firebase Cloud sync is operating in real time.</span>
+                  </div>
+                </div>
               </div>
-              <div className="text-[10px] font-semibold text-white overflow-hidden">
-                <p className="leading-none max-w-[120px] truncate">{adminEmail}</p>
-                <p className="text-[8px] text-blue-400 mt-0.5 font-extrabold uppercase tracking-widest">Admin Access</p>
-              </div>
+            )}
+          </div>
+
+          {/* Admin Profile Card */}
+          <div className="flex items-center gap-2 bg-[#00382E] border border-[#006B57] rounded-lg p-1.5 pl-2 pr-2 text-white">
+            <div className="w-7 h-7 rounded-md bg-[#D4A72C] text-[#172033] font-black flex items-center justify-center text-xs shadow-xs shrink-0">
+              A
+            </div>
+            <div className="hidden lg:block text-left overflow-hidden">
+              <p className="text-[11px] font-bold text-white leading-none truncate max-w-[110px]">{adminEmail || 'admin'}</p>
+              <p className="text-[8px] text-[#F5E7B2] font-semibold mt-0.5 tracking-wider uppercase">Administrator</p>
             </div>
             <button
-              id="admin-logout-sidebar-btn"
+              id="header-logout-btn"
               onClick={() => {
                 localStorage.removeItem('e7_admin_session_active');
                 setAdminEmail(null);
               }}
-              className="p-1 hover:bg-blue-800 text-blue-200 hover:text-rose-400 rounded-lg transition-colors cursor-pointer shrink-0"
-              title="Secure Logout Administrator"
+              className="p-1 hover:bg-[#004D40] text-emerald-200 hover:text-rose-400 rounded transition-colors cursor-pointer ml-1"
+              title="Logout Administrator"
             >
               <LogOut className="h-3.5 w-3.5" />
             </button>
           </div>
-          {user ? (
-            <div className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg bg-blue-950/45 border border-blue-850/50">
-              <div className="w-5 h-5 rounded-full bg-blue-800 flex items-center justify-center font-bold text-white text-[10px] border border-blue-700 shrink-0">
-                {user.displayName?.charAt(0) || 'U'}
-              </div>
-              <div className="text-[9px] font-medium overflow-hidden">
-                <p className="truncate max-w-[120px] text-blue-100 font-semibold leading-none">{user.displayName}</p>
-                <p className="opacity-45 mt-0.5 text-[8px] tracking-wide">GSheets Connected</p>
-              </div>
-            </div>
-          ) : (
-            <div className="px-2.5 py-2 text-slate-300/80 leading-normal text-[9px] bg-blue-950/30 rounded-lg border border-blue-850/40 font-sans">
-              Google Drive and GSheets integration is offline. Sign in to sync.
-            </div>
-          )}
-        </div>
-      </aside>
 
-      {/* Main Workspace */}
-      <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
-        
-        {/* Firestore Quota Exceeded Banner */}
-        {isQuotaExceeded && (
-          <div className="bg-amber-500 text-slate-950 px-4 py-2 flex flex-col sm:flex-row items-center justify-between text-xs font-semibold gap-2 border-b border-amber-600 shadow-xs print:hidden z-50">
-            <div className="flex items-center gap-2 text-center sm:text-left">
-              <AlertTriangle className="h-4 w-4 shrink-0 text-slate-950" />
-              <span>
-                <strong>Firestore Free Tier Quota Exceeded:</strong> Cloud database sync is temporarily paused for today. App is safely running in <strong>Local Offline Mode</strong> with browser storage persistence.
-              </span>
-            </div>
-            <a
-              href="https://console.firebase.google.com/project/cedar-vial-g3bk6/firestore/databases/ai-studio-e7travelsfleeter-7831b2b1-8c2e-451d-8c58-df75c7d4aafc/data?openUpgradeDialog=true"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="bg-slate-950 text-white hover:bg-slate-800 px-3 py-1 rounded text-2xs font-bold uppercase tracking-wider whitespace-nowrap shrink-0 transition-colors shadow-xs"
+          {/* Google Sheets Sync Trigger */}
+          <div className="hidden xl:flex items-center gap-2 pl-1 border-l border-[#006B57]">
+            <button
+              id="sync-trigger-btn"
+              onClick={handleForceRefresh}
+              className={`p-2 border border-[#006B57] bg-[#00382E] hover:bg-[#006B57] rounded-lg text-emerald-100 hover:text-white transition-all cursor-pointer ${
+                isSyncing ? 'animate-spin text-[#D4A72C]' : ''
+              }`}
+              title="Reconcile with Google Sheets"
             >
-              Manage / Upgrade Firestore Plan →
-            </a>
+              <RefreshCw className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Quota Exceeded Banner */}
+      {isQuotaExceeded && (
+        <div className="bg-amber-500 text-slate-950 px-4 py-2 flex flex-col sm:flex-row items-center justify-between text-xs font-semibold gap-2 border-b border-amber-600 shadow-xs print:hidden z-50">
+          <div className="flex items-center gap-2 text-center sm:text-left">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-slate-950" />
+            <span>
+              <strong>Firestore Free Tier Quota Exceeded:</strong> Cloud database sync is temporarily paused for today. App is safely running in <strong>Local Offline Mode</strong> with browser storage persistence.
+            </span>
+          </div>
+          <a
+            href="https://console.firebase.google.com/project/cedar-vial-g3bk6/firestore/databases/ai-studio-e7travelsfleeter-7831b2b1-8c2e-451d-8c58-df75c7d4aafc/data?openUpgradeDialog=true"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="bg-slate-950 text-white hover:bg-slate-800 px-3 py-1 rounded text-2xs font-bold uppercase tracking-wider whitespace-nowrap shrink-0 transition-colors shadow-xs"
+          >
+            Manage / Upgrade Firestore Plan →
+          </a>
+        </div>
+      )}
+
+      {/* Main Body Layout: Sidebar + Workspace */}
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        {/* Mobile Navigation Drawer Overlay */}
+        {mobileMenuOpen && (
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 lg:hidden flex"
+            onClick={() => setMobileMenuOpen(false)}
+          >
+            <div
+              className="w-72 bg-white h-full flex flex-col shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-4 bg-[#004D40] text-white flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-black text-[#D4A72C]">E7</span>
+                  <span className="text-xs font-black text-white tracking-widest uppercase">TRAVELS</span>
+                </div>
+                <button
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="p-1 rounded-lg text-emerald-100 hover:text-white hover:bg-[#006B57]"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="p-3 flex-1 overflow-y-auto">
+                {renderSidebarContent()}
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Header Bar */}
-        <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-8 sticky top-0 z-40 shadow-2xs print:hidden shrink-0">
-          <div className="flex items-center gap-3">
-            <h2 className="text-sm font-bold text-slate-800 tracking-tight uppercase">E7 Travels Fleet ERP</h2>
-            <span className="h-4 w-px bg-slate-200"></span>
-            <p className="text-3xs font-semibold text-slate-400 uppercase tracking-wider">Chennai Hub</p>
+        {/* 2. SIDEBAR - White Background, Dark Navy/Emerald Text, Emerald Active Background */}
+        <aside className="w-64 bg-white text-[#172033] hidden lg:flex flex-col shrink-0 h-full border-r border-[#E2E8F0] shadow-xs select-none print:hidden">
+          <div className="p-3 flex-1 overflow-y-auto">
+            {renderSidebarContent()}
           </div>
-
-          {/* Sync Controls */}
-          <div className="flex items-center gap-4">
-            {/* Interactive Cloud Database Status Badge */}
-            <div className="relative">
-              <button
-                type="button"
-                id="cloud-db-sync-trigger"
-                onClick={() => setShowCloudSyncPanel(!showCloudSyncPanel)}
-                className={`flex items-center gap-2 border rounded-lg p-1.5 px-3 transition-all cursor-pointer shadow-3xs ${
-                  isQuotaExceeded
-                    ? 'bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-900'
-                    : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-900'
-                }`}
-                title="Manage Cloud Database Synchronization"
-              >
-                <span className="relative flex h-1.5 w-1.5 shrink-0">
-                  {cloudStatusMsg === 'syncing' ? (
-                    <span className="animate-spin inline-flex h-full w-full rounded-full border border-emerald-500 border-t-transparent"></span>
-                  ) : isQuotaExceeded ? (
-                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
-                  ) : (
-                    <>
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-                    </>
-                  )}
-                </span>
-                <div className="text-left select-none flex items-center gap-1.5">
-                  <div>
-                    <p className={`text-4xs font-bold leading-none uppercase tracking-wider ${isQuotaExceeded ? 'text-amber-800' : 'text-emerald-800'}`}>
-                      {isQuotaExceeded ? 'Local Offline Mode' : 'Cloud Database'}
-                    </p>
-                    <p className={`text-[8px] leading-none mt-0.5 font-extrabold ${isQuotaExceeded ? 'text-amber-700' : 'text-emerald-700'}`}>
-                      {cloudStatusMsg === 'syncing' ? 'SYNCING...' : isQuotaExceeded ? 'QUOTA LIMIT (LOCAL)' : 'PERSISTED'}
-                    </p>
-                  </div>
-                  <Database className={`h-3.5 w-3.5 shrink-0 ${isQuotaExceeded ? 'text-amber-600' : 'text-emerald-600'}`} />
-                </div>
-              </button>
-
-              {/* Cloud Synchronization Panel Dropdown */}
-              {showCloudSyncPanel && (
-                <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl border border-slate-200 shadow-xl z-50 p-4 space-y-4 animate-fade-in text-slate-800">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                    <div className="flex items-center gap-1.5 text-slate-800">
-                      <Cloud className="h-4 w-4 text-indigo-500" />
-                      <h4 className="text-xs font-black uppercase tracking-wider">Cloud Database Control</h4>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowCloudSyncPanel(false)}
-                      className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors cursor-pointer"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <p className="text-4xs font-bold text-slate-400 uppercase tracking-widest">Active Database Counts</p>
-                    <div className="grid grid-cols-2 gap-2 text-[10px] font-semibold text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                      <div>🚗 Vehicles: <span className="font-extrabold text-slate-800">{vehicles.length}</span></div>
-                      <div>📞 Enquiries: <span className="font-extrabold text-slate-800">{enquiries.length}</span></div>
-                      <div>👤 Owners: <span className="font-extrabold text-slate-800">{owners.length}</span></div>
-                      <div>🪪 Drivers: <span className="font-extrabold text-slate-800">{drivers.length}</span></div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <p className="text-4xs font-bold text-slate-400 uppercase tracking-widest">Available Actions</p>
-                    
-                    {/* Action 1: Force Update Cloud */}
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        await handleForceUploadToCloud();
-                        setShowCloudSyncPanel(false);
-                      }}
-                      className="w-full flex items-center justify-between p-2 text-left bg-indigo-50 hover:bg-indigo-100/80 border border-indigo-100 text-indigo-700 rounded-lg text-3xs font-bold transition-all cursor-pointer group"
-                      title="Saves all your current active screen data to Firestore cloud"
-                    >
-                      <span className="flex items-center gap-2">
-                        <UploadCloud className="h-4 w-4 text-indigo-600 group-hover:scale-110 transition-transform" />
-                        <div>
-                          <p className="font-extrabold uppercase tracking-wide leading-none text-indigo-900">Upload Current Data to Cloud</p>
-                          <p className="text-4xs text-indigo-600/80 font-normal mt-0.5 leading-tight">Overwrite cloud with your current view</p>
-                        </div>
-                      </span>
-                    </button>
-
-                    {/* Action 2: Manual Smart Merge */}
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        await handleManualSmartMerge();
-                        setShowCloudSyncPanel(false);
-                      }}
-                      className="w-full flex items-center justify-between p-2 text-left bg-emerald-50 hover:bg-emerald-100 border border-emerald-100 text-emerald-700 rounded-lg text-3xs font-bold transition-all cursor-pointer group"
-                      title="Combines cloud data with your current local browser state"
-                    >
-                      <span className="flex items-center gap-2">
-                        <RefreshCw className="h-3.5 w-3.5 text-emerald-600 group-hover:rotate-180 transition-transform duration-500" />
-                        <div>
-                          <p className="font-extrabold uppercase tracking-wide leading-none text-emerald-900">Smart Merge (Dual Sync)</p>
-                          <p className="text-4xs text-emerald-600/80 font-normal mt-0.5 leading-tight">Combine local browser entries with cloud</p>
-                        </div>
-                      </span>
-                    </button>
-
-                    {/* Action 3: Pull Force Download */}
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        await handleForceDownloadFromCloud();
-                        setShowCloudSyncPanel(false);
-                      }}
-                      className="w-full flex items-center justify-between p-2 text-left bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-3xs font-bold transition-all cursor-pointer group"
-                      title="Pulls data from Cloud and overrides local storage"
-                    >
-                      <span className="flex items-center gap-2">
-                        <DownloadCloud className="h-4 w-4 text-slate-500 group-hover:translate-y-0.5 transition-transform" />
-                        <div>
-                          <p className="font-extrabold uppercase tracking-wide leading-none text-slate-900">Load Master Cloud Data</p>
-                          <p className="text-4xs text-slate-500/80 font-normal mt-0.5 leading-tight">Pull from cloud and overwrite local browser</p>
-                        </div>
-                      </span>
-                    </button>
-                  </div>
-
-                  <p className="text-[9px] text-slate-400 text-center pt-1 border-t border-slate-100 font-medium">
-                    * Cloud data is updated automatically on every addition/edit.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {user ? (
-              <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-lg p-1.5 px-3">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
-                <div className="text-left">
-                  <p className="text-3xs font-bold text-slate-800 leading-none">{user.displayName}</p>
-                  <p className="text-4xs text-slate-400 leading-none mt-1">{user.email}</p>
-                </div>
-                <button
-                  id="header-logout-btn"
-                  onClick={handleLogout}
-                  className="p-1 hover:bg-slate-200 rounded text-slate-500 transition-colors"
-                  title="Log out from Google Auth"
-                >
-                  <LogOut className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ) : (
-              <button
-                id="header-login-btn"
-                onClick={handleLogin}
-                className="px-4 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded hover:bg-blue-700 transition-all shadow-sm flex items-center gap-1.5"
-              >
-                <LogIn className="h-3.5 w-3.5" /> Google Sync Sign-in
-              </button>
-            )}
-
-            {/* Sync Status Badge */}
-            <div className="flex items-center gap-2">
-              <div className="text-right">
-                {spreadsheetId ? (
-                  <a
-                    href={`https://docs.google.com/spreadsheets/d/${spreadsheetId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="group inline-flex flex-col items-end hover:opacity-85 text-right cursor-pointer"
-                    title="Open Connected Google Sheet in New Tab"
-                  >
-                    <p className="text-4xs font-bold text-blue-600 group-hover:underline uppercase flex items-center gap-1">
-                      Spreadsheet Link <ExternalLink className="h-2.5 w-2.5 inline shrink-0" />
-                    </p>
-                    <p className="text-3xs font-extrabold text-slate-600 leading-none mt-0.5">
-                      {user ? (
-                        syncStatus === 'success' ? (
-                          `Synchronised ${lastSynced ? `at ${lastSynced}` : ''}`
-                        ) : (
-                          'Pending Save'
-                        )
-                      ) : (
-                        'Sandbox Mode'
-                      )}
-                    </p>
-                  </a>
-                ) : (
-                  <div>
-                    <p className="text-4xs font-bold text-slate-400 uppercase">Spreadsheet Link</p>
-                    <p className="text-3xs font-extrabold text-slate-600 leading-none mt-0.5">
-                      {user ? (
-                        syncStatus === 'success' ? (
-                          `Synchronised ${lastSynced ? `at ${lastSynced}` : ''}`
-                        ) : (
-                          'Pending Save'
-                        )
-                      ) : (
-                        'Sandbox Mode'
-                      )}
-                    </p>
-                  </div>
-                )}
-              </div>
-              <button
-                id="sync-trigger-btn"
-                onClick={handleForceRefresh}
-                className={`p-2 border border-slate-250 bg-white rounded-lg hover:bg-slate-50 text-slate-600 transition-all shadow-3xs ${
-                  isSyncing ? 'animate-spin text-blue-600 border-blue-200 bg-blue-50/20' : ''
-                }`}
-                title="Force reconcile with Google Sheets"
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-              </button>
+          <div className="p-3 border-t border-[#E2E8F0] bg-[#F5F7F9] text-[#64748B] text-4xs font-mono shrink-0">
+            <div className="flex items-center justify-between px-2 bg-white p-2 rounded-lg border border-[#E2E8F0]">
+              <span className="font-semibold text-slate-700">Hub: Chennai HQ</span>
+              <span className="text-[#006B57] font-bold">ONLINE</span>
             </div>
           </div>
-        </header>
+        </aside>
 
-        {/* Content Area */}
-        <main className="flex-1 overflow-y-auto p-8 space-y-6 print:p-0 print:overflow-visible bg-slate-50">
+        {/* 3. MAIN WORKSPACE */}
+        <main className="flex-1 overflow-y-auto p-4 sm:p-5 lg:p-6 space-y-5 print:p-0 print:overflow-visible bg-[#F5F7F9]">
           
           {authError && (
             <div id="auth-error-banner" className="bg-amber-50 border border-amber-200 text-slate-800 p-4 rounded-xl flex items-start gap-4 shadow-sm relative">
@@ -2005,19 +2344,19 @@ export default function App() {
                     href={window.location.href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold rounded-lg shadow-2xs transition-colors"
+                    className="btn-primary inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold rounded-lg shadow-2xs"
                   >
                     <ExternalLink className="h-3 w-3" /> Open in New Tab
                   </a>
                   <button
                     onClick={handleLogin}
-                    className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold rounded-lg shadow-2xs transition-colors"
+                    className="btn-gold px-3 py-1 text-[11px] font-bold rounded-lg shadow-2xs cursor-pointer"
                   >
                     Retry Sign-In
                   </button>
                   <button
                     onClick={() => setAuthError(null)}
-                    className="px-3 py-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 text-[11px] font-bold rounded-lg transition-colors"
+                    className="btn-secondary px-3 py-1 text-[11px] font-bold rounded-lg cursor-pointer"
                   >
                     Use Offline Sandbox Mode
                   </button>
@@ -2025,7 +2364,7 @@ export default function App() {
               </div>
               <button
                 onClick={() => setAuthError(null)}
-                className="absolute top-3 right-3 text-slate-400 hover:text-slate-600 p-1 hover:bg-amber-100 rounded-lg transition-colors"
+                className="absolute top-3 right-3 text-slate-400 hover:text-slate-600 p-1 hover:bg-amber-100 rounded-lg transition-colors cursor-pointer"
                 title="Dismiss warning"
               >
                 <X className="h-4 w-4" />
@@ -2035,20 +2374,20 @@ export default function App() {
           
           {/* Sub Navigation deck (Where necessary depending on chosen Tab) */}
           {['Registers', 'Transactions', 'Ledgers', 'Settlement', 'Documents'].includes(activeTab) && (
-            <div className="flex bg-slate-200 p-1 rounded-xl max-w-max border border-slate-300/40 print:hidden shadow-3xs mb-4">
+            <div className="flex flex-wrap gap-1 bg-white p-1 rounded-xl max-w-max border border-[#E2E8F0] print:hidden shadow-xs mb-4">
               {activeTab === 'Registers' &&
                 (['Vehicle Master', 'Owner Master', 'Driver Master', 'Company Master', 'Vendor Register', 'Deleted Vehicles'] as const).map((sub) => (
                   <button
                     id={`sub-tab-btn-${sub.toLowerCase().replace(/\s+/g, '-')}`}
                     key={sub}
                     onClick={() => setActiveSubTab(sub)}
-                    className={`px-4 py-1.5 text-2xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
-                      activeSubTab === sub ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                    className={`px-4 py-1.5 text-2xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                      activeSubTab === sub ? 'bg-[#006B57] text-white shadow-xs' : 'text-[#64748B] hover:text-[#006B57] hover:bg-[#006B57]/5'
                     }`}
                   >
                     {sub === 'Vendor Register' ? 'Vendor Register' : sub === 'Deleted Vehicles' ? 'Deleted Vehicles' : `${sub.split(' ')[0]} Master`}
                     {sub === 'Deleted Vehicles' && deletedVehicles.length > 0 && (
-                      <span className="bg-rose-500 text-white text-[9px] px-1.5 py-0.2 rounded-full font-extrabold leading-none">
+                      <span className="bg-[#EF4444] text-white text-[9px] px-1.5 py-0.2 rounded-full font-extrabold leading-none">
                         {deletedVehicles.length}
                       </span>
                     )}
@@ -2061,8 +2400,8 @@ export default function App() {
                     id={`sub-tab-btn-${sub}`}
                     key={sub}
                     onClick={() => setActiveSubTab(sub)}
-                    className={`px-4 py-1.5 text-2xs font-bold rounded-lg transition-all ${
-                      activeSubTab === sub ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                    className={`px-4 py-1.5 text-2xs font-bold rounded-lg transition-all cursor-pointer ${
+                      activeSubTab === sub ? 'bg-[#006B57] text-white shadow-xs' : 'text-[#64748B] hover:text-[#006B57] hover:bg-[#006B57]/5'
                     }`}
                   >
                     {sub}
@@ -2075,8 +2414,8 @@ export default function App() {
                     id={`sub-tab-btn-${sub}`}
                     key={sub}
                     onClick={() => setActiveSubTab(sub)}
-                    className={`px-4 py-1.5 text-2xs font-bold rounded-lg transition-all ${
-                      activeSubTab === sub ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                    className={`px-4 py-1.5 text-2xs font-bold rounded-lg transition-all cursor-pointer ${
+                      activeSubTab === sub ? 'bg-[#006B57] text-white shadow-xs' : 'text-[#64748B] hover:text-[#006B57] hover:bg-[#006B57]/5'
                     }`}
                   >
                     {sub}
@@ -2089,8 +2428,8 @@ export default function App() {
                     id={`sub-tab-btn-${sub}`}
                     key={sub}
                     onClick={() => setActiveSubTab(sub)}
-                    className={`px-4 py-1.5 text-2xs font-bold rounded-lg transition-all ${
-                      activeSubTab === sub ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                    className={`px-4 py-1.5 text-2xs font-bold rounded-lg transition-all cursor-pointer ${
+                      activeSubTab === sub ? 'bg-[#006B57] text-white shadow-xs' : 'text-[#64748B] hover:text-[#006B57] hover:bg-[#006B57]/5'
                     }`}
                   >
                     {sub.split(' ')[0]}
@@ -2103,8 +2442,8 @@ export default function App() {
                     id={`sub-tab-btn-${sub}`}
                     key={sub}
                     onClick={() => setActiveSubTab(sub as any)}
-                    className={`px-4 py-1.5 text-2xs font-bold rounded-lg transition-all ${
-                      activeSubTab === sub ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                    className={`px-4 py-1.5 text-2xs font-bold rounded-lg transition-all cursor-pointer ${
+                      activeSubTab === sub ? 'bg-[#006B57] text-white shadow-xs' : 'text-[#64748B] hover:text-[#006B57] hover:bg-[#006B57]/5'
                     }`}
                   >
                     {sub}
@@ -2117,45 +2456,139 @@ export default function App() {
           {activeTab === 'Dashboard' && (
             <Dashboard
               vehicles={vehicles}
+              owners={owners}
+              drivers={drivers}
+              companies={companies}
+              sites={sites}
               expenses={expenses}
               payments={payments}
+              advances={advances}
+              recoveries={recoveries}
               onNavigate={handleNavigate}
+              onQuickEntry={() => handleNavigate('Vehicles')}
             />
           )}
 
-          {activeTab === 'Enquiries' && (
-            <EnquiryViews
-              enquiries={enquiries}
-              sites={sites}
-              onUpdateEnquiries={updateEnquiries}
+          {activeTab === 'Vehicles' && (
+            <VehiclesView
               vehicles={vehicles}
               owners={owners}
               drivers={drivers}
               companies={companies}
+              sites={sites}
+              payments={payments}
+              expenses={expenses}
+              advances={advances}
+              recoveries={recoveries}
+              dailyRunning={dailyRunning}
+              invoices={invoices}
               onUpdateVehicles={updateVehicles}
-              onUpdateOwners={updateOwners}
-              onUpdateDrivers={updateDrivers}
-              onNavigate={handleNavigate}
-              deletedVehicles={deletedVehicles}
-              onUpdateDeletedVehicles={updateDeletedVehicles}
+              onNavigateToInvoice={() => handleNavigate('Invoices')}
+              onNavigateToSettlement={() => handleNavigate('Settlement')}
             />
           )}
 
-          {activeTab === 'Induction' && (
-            <InductionViews
-              enquiries={enquiries}
+          {activeTab === 'Owners' && (
+            <OwnersView
+              owners={owners}
+              vehicles={vehicles}
+              advances={advances}
+              onUpdateOwners={updateOwners}
+            />
+          )}
+
+          {activeTab === 'Drivers' && (
+            <DriversView
+              drivers={drivers}
+              vehicles={vehicles}
+              onUpdateDrivers={updateDrivers}
+            />
+          )}
+
+          {activeTab === 'Companies / Sites' && (
+            <CompaniesSitesView
+              companies={companies}
               sites={sites}
-              onUpdateEnquiries={updateEnquiries}
+              vehicles={vehicles}
+              onUpdateCompanies={updateCompanies}
+              onUpdateSites={updateSites}
+            />
+          )}
+
+          {activeTab === 'Attachments' && (
+            <AttachmentsView
+              attachments={attachments}
               vehicles={vehicles}
               owners={owners}
               drivers={drivers}
+              onUpdateAttachments={updateAttachments}
+            />
+          )}
+
+          {activeTab === 'Daily Running' && (
+            <DailyRunningView
+              dailyRunning={dailyRunning}
+              vehicles={vehicles}
+              drivers={drivers}
+              onUpdateDailyRunning={updateDailyRunning}
+            />
+          )}
+
+          {activeTab === 'Advances' && (
+            <AdvancesView
+              advances={advances}
+              vehicles={vehicles}
+              onUpdateAdvances={updateAdvances}
+              onNavigateToRecovery={() => handleNavigate('Recoveries')}
+            />
+          )}
+
+          {activeTab === 'Recoveries' && (
+            <RecoveriesView
+              recoveries={recoveries}
+              advances={advances}
+              vehicles={vehicles}
+              onUpdateRecoveries={updateRecoveries}
+              onUpdateAdvances={updateAdvances}
+            />
+          )}
+
+          {activeTab === 'Expenses' && (
+            <ExpensesView
+              expenses={expenses}
+              vehicles={vehicles}
+              onUpdateExpenses={updateExpenses}
+            />
+          )}
+
+          {activeTab === 'Invoices' && (
+            <InvoicesView
+              invoices={invoices}
+              vehicles={vehicles}
               companies={companies}
-              onUpdateVehicles={updateVehicles}
-              onUpdateOwners={updateOwners}
-              onUpdateDrivers={updateDrivers}
-              onNavigate={handleNavigate}
-              deletedVehicles={deletedVehicles}
-              onUpdateDeletedVehicles={updateDeletedVehicles}
+              onUpdateInvoices={updateInvoices}
+            />
+          )}
+
+          {activeTab === 'Payments' && (
+            <PaymentsView
+              payments={paymentsRecord}
+              companies={companies}
+              invoices={invoices}
+              onUpdatePayments={updatePaymentsRecord}
+            />
+          )}
+
+          {activeTab === 'Reports / MIS' && (
+            <ReportsMisView
+              vehicles={vehicles}
+              owners={owners}
+              companies={companies}
+              sites={sites}
+              payments={payments}
+              expenses={expenses}
+              advances={advances}
+              recoveries={recoveries}
             />
           )}
 
@@ -2177,6 +2610,7 @@ export default function App() {
               deletedVehicles={deletedVehicles}
               onUpdateDeletedVehicles={updateDeletedVehicles}
               onRestoreVehicle={restoreVehicle}
+              customLogo={customLogo}
             />
           )}
 
@@ -2224,7 +2658,7 @@ export default function App() {
           )}
 
           {activeTab === 'Rules' && (
-            <RulesView />
+            <RulesView customLogo={customLogo} />
           )}
 
           {activeTab === 'Documents' && (
@@ -2265,43 +2699,14 @@ export default function App() {
           )}
 
           {activeTab === 'Settings' && (
-            <Settings
+            <SettingsView
+              financialSettings={financialSettings}
+              vehicles={vehicles}
               companies={companies}
               sites={sites}
-              spreadsheetId={spreadsheetId}
-              onUpdateCompanies={updateCompanies}
-              onUpdateSites={updateSites}
-              onForceSync={handleForceRefresh}
-              onExportToSheets={handleExportToSheets}
-              onSmartMerge={handleManualSmartMerge}
+              onUpdateFinancialSettings={updateFinancialSettings}
               onExportBackupJSON={handleExportBackupJSON}
               onImportBackupJSON={handleImportBackupJSON}
-              customLogo={customLogo}
-              lastSynced={lastSynced}
-              onUpdateLogo={(newLogo) => {
-                setCustomLogo(newLogo);
-                if (newLogo) {
-                  try {
-                    localStorage.setItem('e7_custom_logo', newLogo);
-                  } catch (err) {
-                    console.error('Failed to save custom logo to localStorage:', err);
-                  }
-                } else {
-                  try {
-                    localStorage.removeItem('e7_custom_logo');
-                  } catch (err) {
-                    console.error('Failed to remove custom logo from localStorage:', err);
-                  }
-                }
-              }}
-              onUpdateSpreadsheetId={(id) => {
-                setSpreadsheetId(id);
-                if (id) {
-                  localStorage.setItem('e7_travels_sheets_id', id);
-                } else {
-                  localStorage.removeItem('e7_travels_sheets_id');
-                }
-              }}
             />
           )}
 
@@ -2331,59 +2736,6 @@ export default function App() {
           >
             <X className="h-3 w-3" />
           </button>
-        </div>
-      )}
-
-      {/* CLOUD DATABASE STATUS POPUP MODAL */}
-      {cloudResultModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[10000] p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-slate-150 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="p-6 text-left">
-              <div className="flex items-center gap-3 mb-4">
-                {cloudResultModal.status === 'success' ? (
-                  <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600">
-                    <CheckCircle2 className="h-6 w-6" />
-                  </div>
-                ) : cloudResultModal.status === 'error' ? (
-                  <div className="p-2 bg-rose-50 rounded-lg text-rose-600">
-                    <AlertCircle className="h-6 w-6" />
-                  </div>
-                ) : (
-                  <div className="p-2 bg-amber-50 rounded-lg text-amber-600">
-                    <AlertCircle className="h-6 w-6" />
-                  </div>
-                )}
-                <h3 className="text-base font-black text-slate-900 uppercase tracking-wide">
-                  {cloudResultModal.title}
-                </h3>
-              </div>
-              
-              <div className="text-xs font-semibold text-slate-700 leading-relaxed space-y-2">
-                <p>{cloudResultModal.message}</p>
-                <div className="pt-2">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Database Engine Status</span>
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <span className={`inline-block h-2 w-2 rounded-full ${
-                      cloudResultModal.status === 'success' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
-                    }`} />
-                    <span className="text-[10px] font-bold text-slate-600 font-mono">
-                      {cloudResultModal.status === 'success' ? 'Firestore Online & Synchronized' : 'Firestore Sandbox/Offline'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-slate-50 px-6 py-4 flex justify-end border-t border-slate-150">
-              <button
-                type="button"
-                onClick={() => setCloudResultModal(null)}
-                className="px-5 py-2 text-xs font-extrabold bg-[#114b3e] hover:bg-[#0c392f] text-white rounded-lg transition-all shadow-xs cursor-pointer uppercase tracking-wider"
-              >
-                Acknowledge
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </div>

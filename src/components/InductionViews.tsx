@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Enquiry, Site, Vehicle, Owner, Driver, Company, DeletedVehicle, detectManufacturer } from '../types';
 import { generateUniqueOwnerId, generateUniqueDriverId, generateUniqueVehicleId } from '../lib/idUtils';
+import PrintJoiningForm from './PrintJoiningForm';
+import { renderCommonSiteOptions } from '../lib/siteOptions';
+import { printDocument } from '../utils/printService';
 import {
   Layers,
   Search,
@@ -46,6 +49,7 @@ interface InductionViewsProps {
   onNavigate?: (route: string) => void;
   deletedVehicles?: DeletedVehicle[];
   onUpdateDeletedVehicles?: (newDeletedVehicles: DeletedVehicle[]) => void;
+  customLogo?: string | null;
 }
 
 export default function InductionViews({
@@ -60,6 +64,7 @@ export default function InductionViews({
   onUpdateOwners,
   onUpdateDrivers,
   onNavigate,
+  customLogo,
 }: InductionViewsProps) {
   // Helper to extract clean Owner Name and Phone Number for Induction view
   const getOwnerDisplayDetails = (enq: Enquiry) => {
@@ -169,6 +174,7 @@ export default function InductionViews({
   >('date-desc');
 
   const [editingEnq, setEditingEnq] = useState<Enquiry | null>(null);
+  const [selectedEnquiryForFormPrint, setSelectedEnquiryForFormPrint] = useState<Enquiry | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [deletingEnqId, setDeletingEnqId] = useState<string | null>(null);
   const [restoringEnqId, setRestoringEnqId] = useState<string | null>(null);
@@ -855,8 +861,14 @@ export default function InductionViews({
               ownerName: finalOwnerName || v.ownerName,
               driverId: finalDriverId,
               driverName: finalDriverName || v.driverName,
-              company: promoteForm.company || v.company,
-              site: promoteForm.site || v.site,
+              company: promoteForm.company || promotingEnquiry?.sitePreference1 || v.company,
+              site: promoteForm.site || promotingEnquiry?.sitePreference3 || v.site,
+              company2: promotingEnquiry?.sitePreference2 || v.company2 || '',
+              site2: promotingEnquiry?.sitePreference4 || v.site2 || '',
+              sitePreference1: promoteForm.company || promotingEnquiry?.sitePreference1 || v.sitePreference1 || v.company,
+              sitePreference2: promotingEnquiry?.sitePreference2 || v.sitePreference2 || v.company2 || '',
+              sitePreference3: promoteForm.site || promotingEnquiry?.sitePreference3 || v.sitePreference3 || v.site,
+              sitePreference4: promotingEnquiry?.sitePreference4 || v.sitePreference4 || v.site2 || '',
               joiningDate: promoteForm.joiningDate || v.joiningDate,
               status: 'Active' as const,
               insuranceExpiry: promotingEnquiry?.insuranceExpiry || v.insuranceExpiry,
@@ -889,8 +901,14 @@ export default function InductionViews({
         ownerName: finalOwnerName || 'Unknown Owner',
         driverId: finalDriverId,
         driverName: finalDriverName || 'Unknown Driver',
-        company: promoteForm.company || '',
-        site: promoteForm.site || '',
+        company: promoteForm.company || promotingEnquiry?.sitePreference1 || '',
+        site: promoteForm.site || promotingEnquiry?.sitePreference3 || '',
+        company2: promotingEnquiry?.sitePreference2 || '',
+        site2: promotingEnquiry?.sitePreference4 || '',
+        sitePreference1: promoteForm.company || promotingEnquiry?.sitePreference1 || '',
+        sitePreference2: promotingEnquiry?.sitePreference2 || '',
+        sitePreference3: promoteForm.site || promotingEnquiry?.sitePreference3 || '',
+        sitePreference4: promotingEnquiry?.sitePreference4 || '',
         joiningDate: promoteForm.joiningDate || new Date().toISOString().substring(0, 10),
         status: 'Active',
         emiAmount: 0,
@@ -1010,83 +1028,48 @@ export default function InductionViews({
       `;
     }).join('');
 
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Active Vehicle Induction Report - E7 Travels</title>
-        <style>
-          @page { size: A4 landscape; margin: 12mm; }
-          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #0f172a; margin: 0; padding: 16px; background-color: #ffffff; }
-          .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #334155; padding-bottom: 12px; margin-bottom: 16px; }
-          .title { font-size: 20px; font-weight: 900; letter-spacing: -0.5px; color: #1e1b4b; text-transform: uppercase; }
-          .subtitle { font-size: 12px; color: #475569; font-weight: 700; margin-top: 2px; }
-          .meta { text-align: right; font-size: 11px; color: #64748b; }
-          table { width: 100%; border-collapse: collapse; text-align: left; }
-          th { background-color: #f8fafc; border-bottom: 2px solid #cbd5e1; padding: 10px 12px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: #475569; font-family: monospace; }
-          .footer { margin-top: 20px; text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 8px; }
-          @media print {
-            .no-print { display: none !important; }
-            body { padding: 0; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="no-print" style="margin-bottom: 16px; padding: 12px 16px; background: #e0e7ff; border: 1px solid #c7d2fe; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-          <span style="font-weight: 800; font-size: 13px; color: #3730a3;">🖨️ Active Vehicle Induction Report - Print Preview</span>
-          <button onclick="window.print()" style="padding: 8px 16px; background: #4338ca; color: white; font-weight: 800; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">Click to Print (Ctrl+P)</button>
+    const innerContent = `
+      <div class="header" style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #334155; padding-bottom: 12px; margin-bottom: 16px;">
+        <div>
+          <div style="font-size: 20px; font-weight: 900; letter-spacing: -0.5px; color: #1e1b4b; text-transform: uppercase;">E7 TRAVELS FLEET MANAGEMENT</div>
+          <div style="font-size: 12px; color: #475569; font-weight: 700; margin-top: 2px;">ACTIVE VEHICLE INDUCTION REGISTER</div>
         </div>
-
-        <div class="header">
-          <div>
-            <div class="title">E7 TRAVELS FLEET MANAGEMENT</div>
-            <div class="subtitle">ACTIVE VEHICLE INDUCTION REGISTER</div>
-          </div>
-          <div class="meta">
-            <div><strong>Generated:</strong> ${new Date().toLocaleString()}</div>
-            <div><strong>Active Inductions:</strong> ${filtered.length} Vehicles</div>
-          </div>
+        <div style="text-align: right; font-size: 11px; color: #64748b;">
+          <div><strong>Generated:</strong> ${new Date().toLocaleString()}</div>
+          <div><strong>Active Inductions:</strong> ${filtered.length} Vehicles</div>
         </div>
+      </div>
 
-        <table>
-          <thead>
-            <tr>
-              <th>ENQ ID</th>
-              <th>CAR NO</th>
-              <th>OWNER NAME & NUMBER</th>
-              <th>DRIVER & NUMBER</th>
-              <th>LOCATION / AREA</th>
-              <th>SITE PREFERENCE</th>
-              <th>INDUCTION DATE</th>
-              <th>STATUS</th>
-              <th>COMMENTS</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${printRows || '<tr><td colspan="9" style="padding: 20px; text-align: center; color: #94a3b8;">No active induction records found.</td></tr>'}
-          </tbody>
-        </table>
+      <table style="width: 100%; border-collapse: collapse; text-align: left;">
+        <thead>
+          <tr style="background-color: #f8fafc; border-bottom: 2px solid #cbd5e1;">
+            <th style="padding: 10px 12px; font-size: 10px; font-weight: 800; text-transform: uppercase; font-family: monospace;">ENQ ID</th>
+            <th style="padding: 10px 12px; font-size: 10px; font-weight: 800; text-transform: uppercase; font-family: monospace;">CAR NO</th>
+            <th style="padding: 10px 12px; font-size: 10px; font-weight: 800; text-transform: uppercase; font-family: monospace;">OWNER NAME & NUMBER</th>
+            <th style="padding: 10px 12px; font-size: 10px; font-weight: 800; text-transform: uppercase; font-family: monospace;">DRIVER & NUMBER</th>
+            <th style="padding: 10px 12px; font-size: 10px; font-weight: 800; text-transform: uppercase; font-family: monospace;">LOCATION / AREA</th>
+            <th style="padding: 10px 12px; font-size: 10px; font-weight: 800; text-transform: uppercase; font-family: monospace;">SITE PREFERENCE</th>
+            <th style="padding: 10px 12px; font-size: 10px; font-weight: 800; text-transform: uppercase; font-family: monospace;">INDUCTION DATE</th>
+            <th style="padding: 10px 12px; font-size: 10px; font-weight: 800; text-transform: uppercase; font-family: monospace;">STATUS</th>
+            <th style="padding: 10px 12px; font-size: 10px; font-weight: 800; text-transform: uppercase; font-family: monospace;">COMMENTS</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${printRows || '<tr><td colspan="9" style="padding: 20px; text-align: center; color: #94a3b8;">No active induction records found.</td></tr>'}
+        </tbody>
+      </table>
 
-        <div class="footer">
-          E7 Travels Fleet Operations &bull; Confidential Official Report &bull; Page 1 of 1
-        </div>
-
-        <script>
-          window.onload = function() {
-            setTimeout(function() {
-              window.print();
-            }, 500);
-          };
-        </script>
-      </body>
-      </html>
+      <div style="margin-top: 20px; text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 8px;">
+        E7 Travels Fleet Operations &bull; Confidential Official Report &bull; Page 1 of 1
+      </div>
     `;
 
-    const printWin = window.open('', '_blank');
-    if (printWin) {
-      printWin.document.write(html);
-      printWin.document.close();
-    }
+    printDocument({
+      title: `E7_Travels_Active_Induction_Register_${new Date().toISOString().substring(0, 10)}`,
+      contentHtml: innerContent,
+      paperSize: 'A4Landscape',
+      openInNewTab: false,
+    });
   };
 
   return (
@@ -1506,6 +1489,14 @@ export default function InductionViews({
                       <td className="py-3 px-3 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
                           <button
+                            onClick={() => setSelectedEnquiryForFormPrint(enq)}
+                            className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-[10px] font-extrabold flex items-center gap-1 transition-all cursor-pointer"
+                            title="Print Vehicle Joining Application Form"
+                          >
+                            <Printer className="h-3 w-3 text-blue-600" />
+                            <span>Form</span>
+                          </button>
+                          <button
                             onClick={() => handleOpenEditCompanyModal(enq)}
                             className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-[10px] font-extrabold flex items-center gap-1 transition-all cursor-pointer"
                             title="Edit Company Preference"
@@ -1636,6 +1627,13 @@ export default function InductionViews({
 
                       {/* Big Action Buttons */}
                       <div className="flex gap-1.5 flex-wrap">
+                        <button
+                          onClick={() => setSelectedEnquiryForFormPrint(enq)}
+                          className="px-2 py-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 rounded-xl text-2xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer shadow-3xs"
+                          title="Print Vehicle Joining Application Form"
+                        >
+                          <Printer className="h-3.5 w-3.5 text-blue-600" /> Print Form
+                        </button>
                         <button
                           onClick={() => handleOpenEdit(enq)}
                           className="flex-1 min-w-[75px] px-2 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-700 text-2xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer shadow-3xs"
@@ -3051,6 +3049,20 @@ export default function InductionViews({
             </form>
           </div>
         </div>
+      )}
+
+      {/* Vehicle Joining Application Form Print Modal */}
+      {selectedEnquiryForFormPrint && (
+        <PrintJoiningForm
+          enquiry={selectedEnquiryForFormPrint}
+          owners={owners}
+          vehicles={vehicles}
+          drivers={drivers}
+          companies={companies}
+          sites={sites}
+          customLogo={customLogo}
+          onClose={() => setSelectedEnquiryForFormPrint(null)}
+        />
       )}
     </div>
   );

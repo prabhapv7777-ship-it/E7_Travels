@@ -21,8 +21,13 @@ import {
   XCircle,
   FileSpreadsheet,
   ExternalLink,
+  Printer,
+  FileText,
+  Sliders,
+  Check,
 } from 'lucide-react';
 import { Company, Site } from '../types';
+import { printTestDriverSlip } from '../utils/printService';
 
 interface SettingsProps {
   companies: Company[];
@@ -571,7 +576,7 @@ export default function Settings({
                 <button
                   type="button"
                   onClick={handleSaveSpreadsheetId}
-                  className="flex-1 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-4xs font-extrabold rounded-md shadow-3xs transition-all uppercase tracking-wider cursor-pointer"
+                  className="flex-1 px-3 py-1 bg-[#006B57] hover:bg-[#004D40] text-white text-4xs font-extrabold rounded-md shadow-3xs transition-all uppercase tracking-wider cursor-pointer"
                 >
                   Connect Sheet
                 </button>
@@ -611,7 +616,7 @@ export default function Settings({
               <button
                 id="btn-store-local-to-sheets"
                 onClick={onExportToSheets}
-                className="w-full px-3 py-1.5 text-2xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-md shadow-3xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                className="w-full px-3 py-1.5 text-2xs font-bold bg-[#006B57] hover:bg-[#004D40] text-white rounded-md shadow-3xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
               >
                 <FileSpreadsheet className="h-3.5 w-3.5" /> Save Current Data to Google Sheet
               </button>
@@ -815,7 +820,7 @@ export default function Settings({
                 id="btn-add-client-settings"
                 type="button"
                 onClick={handleOpenAddClient}
-                className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-md font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                className="px-3 py-1.5 text-xs bg-[#006B57] hover:bg-[#004D40] text-white rounded-md font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors"
               >
                 <Plus className="h-3.5 w-3.5" /> Add Client
               </button>
@@ -914,7 +919,7 @@ export default function Settings({
             <button
               id="set-site-submit"
               type="submit"
-              className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-md font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors"
+              className="px-3 py-1.5 text-xs bg-[#006B57] hover:bg-[#004D40] text-white rounded-md font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors"
             >
               <Plus className="h-3.5 w-3.5" /> Add Hub
             </button>
@@ -948,6 +953,61 @@ export default function Settings({
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      </div>
+
+      {/* PRINTER DRIVER & SPOOLER DESTINATION DIAGNOSTICS */}
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-3xs">
+        <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-slate-50 to-white">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-blue-600/10 text-blue-700 rounded-xl border border-blue-600/20">
+              <Printer className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-tight">Printer Driver & Destination Synchronization</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Diagnose and synchronize print jobs directly with Windows / macOS / Linux printer spoolers and PDF engines</p>
+            </div>
+          </div>
+          <button
+            id="btn-print-test-slip"
+            onClick={() => printTestDriverSlip()}
+            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <Printer className="h-4 w-4 text-emerald-400" />
+            Print Test Calibration Slip
+          </button>
+        </div>
+
+        <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">Document Title Spooling</span>
+              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-extrabold rounded-full">ACTIVE</span>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Every document (Joining Form, Vehicle Report, Letterhead, Settlement) automatically syncs the exact file name directly to the printer destination header.
+            </p>
+          </div>
+
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">Isolated Print Engine</span>
+              <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-extrabold rounded-full">ENABLED</span>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Documents are rendered in clean, isolated DOM scopes, preventing dashboard sidebars, buttons, or navigation headers from appearing on printed copies.
+            </p>
+          </div>
+
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">Driver Formatting</span>
+              <span className="px-2 py-0.5 bg-purple-100 text-purple-800 text-[10px] font-extrabold rounded-full">A4 & THERMAL</span>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Precision CSS pagination rules applied for standard A4 portrait/landscape and 80mm POS thermal slips with high-contrast monochrome contrast.
+            </p>
           </div>
         </div>
       </div>
@@ -1244,7 +1304,7 @@ export default function Settings({
                     <button
                       type="submit"
                       onClick={() => setIsSpellingAction(false)}
-                      className="px-3.5 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all shadow-xs cursor-pointer"
+                      className="px-3.5 py-2 text-xs font-semibold bg-[#006B57] hover:bg-[#004D40] text-white rounded-lg transition-all shadow-xs cursor-pointer"
                     >
                       Update Details
                     </button>
@@ -1252,7 +1312,7 @@ export default function Settings({
                 ) : (
                   <button
                     type="submit"
-                    className="px-4 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all shadow-xs cursor-pointer"
+                    className="px-4 py-2 text-xs font-semibold bg-[#006B57] hover:bg-[#004D40] text-white rounded-lg transition-all shadow-xs cursor-pointer"
                   >
                     Add Client
                   </button>

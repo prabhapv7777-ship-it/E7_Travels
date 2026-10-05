@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Enquiry, Site } from '../types';
 import { Printer, X, Filter, Check, FileText } from 'lucide-react';
+import { printDocument } from '../utils/printService';
 
 function formatDateToDDMMYYYY(dateStr: string | undefined | null): string {
   if (!dateStr || !dateStr.trim()) return '';
@@ -192,11 +193,21 @@ export default function PrintEnquiryReport({
     };
   }, []);
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     try {
       setPrintError(false);
-      window.focus();
-      window.print();
+      const docTitle = `E7_Travels_Enquiry_Report_${statusFilter.toUpperCase()}_${new Date().toISOString().substring(0, 10)}`;
+      if (printAreaRef.current) {
+        await printDocument({
+          title: docTitle,
+          element: printAreaRef.current,
+          paperSize: orientation === 'landscape' ? 'A4Landscape' : 'A4',
+          openInNewTab: false,
+        });
+      } else {
+        window.focus();
+        window.print();
+      }
     } catch (err) {
       console.error('Print failed:', err);
       setPrintError(true);
@@ -661,7 +672,7 @@ export default function PrintEnquiryReport({
                 )}
                 <div>
                   <h1 className="font-serif font-black tracking-wider text-amber-600 uppercase leading-none" style={{ fontSize: '18px' }}>
-                    E7 TRAVELS
+                    E7 TOURS & TRAVELS
                   </h1>
                   <p className="text-[9px] text-slate-500 mt-1 uppercase font-bold tracking-widest">Chennai Fleet Hub & Operator</p>
                 </div>

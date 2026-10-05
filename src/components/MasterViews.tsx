@@ -31,6 +31,8 @@ import {
   Zap,
   X,
   FileSpreadsheet,
+  UserCheck,
+  Sparkles,
 } from 'lucide-react';
 import {
   Vehicle,
@@ -52,26 +54,9 @@ import PrintJoiningForm from './PrintJoiningForm';
 import PrintVehicleReport from './PrintVehicleReport';
 import PrintLetterpadSubmissionSlip from './PrintLetterpadSubmissionSlip';
 import { getVendorBadge, VENDOR_SITE_MAP } from './Settings';
-import { exportToExcel, exportToPDF } from '../lib/exportUtils';
-
-const formatCombinedEmergency = (name?: string, rel?: string, num?: string) => {
-  const parts: string[] = [];
-  if (name && rel) {
-    parts.push(`${name} (${rel})`);
-  } else if (name) {
-    parts.push(name);
-  } else if (rel) {
-    parts.push(rel);
-  }
-
-  if (num) {
-    if (parts.length > 0) {
-      return `${parts.join(' ')} - ${num}`;
-    }
-    return num;
-  }
-  return parts.join(' ');
-};
+import { exportToExcel, exportMultiSheetExcel, exportToPDF } from '../lib/exportUtils';
+import { renderCommonSiteOptions, getCommonSiteOptions, cleanSiteValue } from '../lib/siteOptions';
+import { parseEmergencyDetails, formatCombinedEmergency, KNOWN_RELATIONS } from '../lib/emergencyUtils';
 
 interface MasterViewsProps {
   vehicles: Vehicle[];
@@ -90,6 +75,7 @@ interface MasterViewsProps {
   deletedVehicles?: DeletedVehicle[];
   onUpdateDeletedVehicles?: (dv: DeletedVehicle[]) => void;
   onRestoreVehicle?: (dv: DeletedVehicle, target?: 'master' | 'enquiry') => void;
+  customLogo?: string | null;
 }
 
 export default function MasterViews({
@@ -109,6 +95,7 @@ export default function MasterViews({
   deletedVehicles = [],
   onUpdateDeletedVehicles = () => {},
   onRestoreVehicle = () => {},
+  customLogo,
 }: MasterViewsProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -117,6 +104,7 @@ export default function MasterViews({
   const [printEnquiry, setPrintEnquiry] = useState<Enquiry | null | undefined>(undefined);
   const [showPrintVehicleReport, setShowPrintVehicleReport] = useState(false);
   const [selectedVendorForFleet, setSelectedVendorForFleet] = useState<string | null>(null);
+  const [vendorModalTab, setVendorModalTab] = useState<'all' | 'running' | 'idle'>('running');
   const [vendorModalSearch, setVendorModalSearch] = useState('');
   
   // Deleted Vehicles view modal states
@@ -263,6 +251,7 @@ export default function MasterViews({
   const [driverForm, setDriverForm] = useState<Partial<Driver>>({});
   const [companyForm, setCompanyForm] = useState<Partial<Company>>({});
   const [siteForm, setSiteForm] = useState<Partial<Site>>({});
+  const [vehicleEditTab, setVehicleEditTab] = useState<'all' | 'car' | 'owner' | 'driver'>('all');
   const [formError, setFormError] = useState<string | null>(null);
 
   const getDaysDiff = (dateStr: string) => {
@@ -305,55 +294,133 @@ export default function MasterViews({
 
   // Helper to map a full Vehicle record into an Enquiry structure for printing
   const mapVehicleToEnquiry = (v: Vehicle): Enquiry => {
-    const o = owners.find(owner => owner.id === v.ownerId);
-    const d = drivers.find(driver => driver.id === v.driverId);
+    const o = owners.find(owner => owner.id === v.ownerId) ||
+              (v.ownerName ? owners.find(owner => owner.name.trim().toLowerCase() === v.ownerName.trim().toLowerCase()) : undefined);
+    const d = drivers.find(driver => driver.id === v.driverId) ||
+              (v.driverName ? drivers.find(driver => driver.name.trim().toLowerCase() === v.driverName.trim().toLowerCase()) : undefined);
+    const assignedSite = cleanSiteValue(v.company || v.sitePreference1);
+    const sitePref2 = cleanSiteValue(v.company2 || v.sitePreference2);
+    const sitePref3 = cleanSiteValue(v.site || v.sitePreference3);
+    const sitePref4 = cleanSiteValue(v.site2 || v.sitePreference4);
+
+    const parsedEm = d ? parseEmergencyDetails(
+      d.emergencyContact,
+      d.emergencyContactName,
+      d.emergencyContactRelation,
+      d.emergencyContactNumber
+    ) : { name: '', relation: '', number: '' };
+
+    const isOwnerSameAsDriver = Boolean(
+      v.driverType === 'Owner-cum-Driver' ||
+      (v.ownerName && v.driverName && v.ownerName.trim().toLowerCase() === v.driverName.trim().toLowerCase()) ||
+      (o && d && o.name.trim().toLowerCase() === d.name.trim().toLowerCase())
+    );
+
     return {
       id: v.id,
       vehicleNumber: v.registrationNumber,
-      vehicleType: `${v.manufacturer} ${v.model}`,
-      vehicleModelYear: String(v.year),
+      vehicleType: `${v.manufacturer} ${v.model}`.trim(),
+      vehicleModelYear: String(v.year || ''),
       vehicleColor: '',
-      ownerNamePhone: o ? `${o.name}-${o.phone}` : v.ownerName,
+      ownerNamePhone: o ? `${o.name}-${o.phone}` : (v.ownerPhone ? `${v.ownerName}-${v.ownerPhone}` : v.ownerName),
       reference: v.remarks ? v.remarks.substring(0, 40) : '',
       driverName: v.driverName,
       driverAge: '',
       driverPhone: d ? d.phone : '',
       driverArea: d ? d.address : '',
       driverBatchExp: d ? d.badgeExpiry : '',
-      alreadyRunningCompany: v.company,
-      sitePreference1: v.site || 'Open Preference',
-      sitePreference2: 'Open Preference',
+      alreadyRunningCompany: assignedSite,
+      sitePreference1: assignedSite,
+      sitePreference2: sitePref2,
+      sitePreference3: sitePref3,
+      sitePreference4: sitePref4,
       enquiryDate: v.joiningDate,
       remarks: v.remarks,
-      inductionType: 'OwnerAttach',
-      ownerId: v.ownerId,
-      ownerName: v.ownerName,
-      ownerMobile: o ? o.phone : '',
-      mfdYear: String(v.year),
+      inductionType: isOwnerSameAsDriver ? 'OwnerAttach' : (v.driverType === 'Company' ? 'DriverAttach' : 'OwnerAttach'),
+      ownerId: o ? o.id : v.ownerId,
+      ownerName: o ? o.name : v.ownerName,
+      ownerMobile: o ? o.phone : (v.ownerPhone || ''),
+      ownerAddress: o ? o.address : (v.ownerAddress || ''),
+      mfdYear: String(v.year || ''),
+      registrationDate: v.registrationDate || v.rcExpiry || '',
       fuelType: v.fuelType,
-      rcExpiry: '',
+      rcExpiry: v.rcExpiry || v.registrationDate || '',
       insuranceExpiry: v.insuranceExpiry,
       permitExpiry: v.permitExpiry,
       fcExpiry: v.fcExpiry,
-      driverAltPhone: '',
-      driverEmail: o ? o.email : '',
+      driverAltPhone: d?.altPhone || '',
+      driverEmail: d?.email || o?.email || '',
+      driverEmergencyContactName: parsedEm.name,
+      driverEmergencyContactNumber: parsedEm.number,
+      driverEmergencyRelation: parsedEm.relation,
       driverAadhaar: d ? d.aadhaar : '',
       driverDlNumber: d ? d.licenceNumber : '',
       driverDlExpiry: d ? d.licenceExpiry : '',
       driverAddress: d ? d.address : '',
-      gpsVendor: '',
-      gpsImei: '',
+      gpsVendor: v.gpsVendor || '',
+      gpsImei: v.gpsImei || '',
       bankName: o ? o.bankName : '',
-      bankAccountHolder: o ? o.name : '',
+      bankAccountHolder: o ? o.name : (v.ownerName || ''),
       bankAccountNumber: o ? o.accountNumber : '',
       bankIfsc: o ? o.ifsc : '',
-      sitePreference3: 'Open Preference',
-      sitePreference4: 'Open Preference',
       status: 'New'
     };
   };
 
   // ----------------- CRUD Action Triggers -----------------
+
+  const handleSetOwnerAsDriver = (enable: boolean) => {
+    if (enable) {
+      const oName = (ownerForm.name || vehicleForm.ownerName || '').trim();
+      const oPhone = (ownerForm.phone || vehicleForm.ownerPhone || '').trim();
+      const oAddress = (ownerForm.address || vehicleForm.ownerAddress || '').trim();
+      const oAadhaar = (ownerForm.aadhaar || '').trim();
+      const oPan = (ownerForm.pan || '').trim();
+      const oEmName = (ownerForm.emergencyContactName || '').trim();
+      const oEmRel = (ownerForm.emergencyContactRelation || '').trim();
+      const oEmNum = (ownerForm.emergencyContactNumber || '').trim();
+
+      // Check if there is an existing driver matching this owner's name or exact phone
+      const matchedD = drivers.find(
+        (d) =>
+          (d.name && oName && d.name.trim().toLowerCase() === oName.toLowerCase()) ||
+          (d.phone && oPhone && d.phone.trim() === oPhone && oPhone.length >= 10)
+      );
+
+      setDriverForm((prev) => ({
+        ...prev,
+        id: matchedD ? matchedD.id : undefined,
+        name: oName,
+        phone: oPhone,
+        address: oAddress || (matchedD?.address || '') || prev.address || '',
+        aadhaar: oAadhaar || (matchedD?.aadhaar || '') || prev.aadhaar || '',
+        pan: oPan || (matchedD?.pan || '') || prev.pan || '',
+        driverType: 'Owner-cum-Driver',
+        licenceNumber: (matchedD?.licenceNumber || '') || prev.licenceNumber || '',
+        licenceExpiry: (matchedD?.licenceExpiry || '') || prev.licenceExpiry || '',
+        badgeNumber: (matchedD?.badgeNumber || '') || prev.badgeNumber || '',
+        badgeExpiry: (matchedD?.badgeExpiry || '') || prev.badgeExpiry || '',
+        salary: matchedD?.salary !== undefined ? matchedD.salary : (prev.salary !== undefined ? prev.salary : 0),
+        status: matchedD?.status || prev.status || 'Active',
+        joiningDate: matchedD?.joiningDate || prev.joiningDate || vehicleForm.joiningDate || new Date().toISOString().substring(0, 10),
+        emergencyContactName: oEmName || (matchedD?.emergencyContactName || '') || prev.emergencyContactName || '',
+        emergencyContactRelation: oEmRel || (matchedD?.emergencyContactRelation || '') || prev.emergencyContactRelation || '',
+        emergencyContactNumber: oEmNum || (matchedD?.emergencyContactNumber || '') || prev.emergencyContactNumber || '',
+        emergencyContact: formatCombinedEmergency(oEmName, oEmRel, oEmNum) || (matchedD?.emergencyContact || '') || prev.emergencyContact || '',
+      }));
+
+      setVehicleForm((prev) => ({
+        ...prev,
+        driverName: oName,
+        driverId: matchedD ? matchedD.id : undefined,
+      }));
+    } else {
+      setDriverForm((prev) => ({
+        ...prev,
+        driverType: 'Owner-Paid',
+      }));
+    }
+  };
 
   const resetForms = () => {
     setVehicleForm({});
@@ -364,22 +431,38 @@ export default function MasterViews({
     setEditingId(null);
     setIsAdding(false);
     setFormError(null);
+    setVehicleEditTab('all');
   };
 
   const handleSaveVehicle = (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
-    // Mandatories check
-    if (!vehicleForm.registrationNumber || !vehicleForm.model || (!vehicleForm.ownerId && !vehicleForm.ownerName) || (!vehicleForm.driverId && !vehicleForm.driverName)) {
-      setFormError('Registration Number, Model, Owner, and Driver are mandatory fields.');
+    const cleanReg = (vehicleForm.registrationNumber || '').trim().toUpperCase();
+    if (!cleanReg) {
+      setFormError('Vehicle Registration Number is mandatory.');
+      return;
+    }
+    if (!vehicleForm.model) {
+      setFormError('Vehicle Model is mandatory.');
+      return;
+    }
+
+    const ownerName = (ownerForm.name || vehicleForm.ownerName || '').trim();
+    if (!ownerName) {
+      setFormError('Owner Name is mandatory.');
+      return;
+    }
+
+    const driverName = (driverForm.name || vehicleForm.driverName || '').trim();
+    if (!driverName) {
+      setFormError('Driver Name is mandatory.');
       return;
     }
 
     // Reg Num Unique Validation
-    const cleanReg = vehicleForm.registrationNumber.trim().toUpperCase();
     const isDuplicate = vehicles.some(
-      (v) => v.registrationNumber.toUpperCase() === cleanReg && v.id !== vehicleForm.id
+      (v) => v.registrationNumber.toUpperCase() === cleanReg && v.id !== vehicleForm.id && v.id !== editingId
     );
 
     if (isDuplicate) {
@@ -387,29 +470,136 @@ export default function MasterViews({
       return;
     }
 
-    const matchedOwner = (vehicleForm.ownerId ? owners.find((o) => o.id === vehicleForm.ownerId) : null) ||
-                         (vehicleForm.ownerName && vehicleForm.ownerName.trim() ? owners.find((o) => o.name && o.name.trim().toLowerCase() === vehicleForm.ownerName.trim().toLowerCase()) : null);
-    const matchedDriver = (vehicleForm.driverId ? drivers.find((d) => d.id === vehicleForm.driverId) : null) ||
-                          (vehicleForm.driverName && vehicleForm.driverName.trim() ? drivers.find((d) => d.name && d.name.trim().toLowerCase() === vehicleForm.driverName.trim().toLowerCase()) : null);
+    // 1. Process & Save Owner Record
+    const cleanOwnerName = ownerName.trim();
+    const existingOwnerByName = owners.find(
+      (o) => o.name && o.name.trim().toLowerCase() === cleanOwnerName.toLowerCase()
+    );
+    const existingOwnerById = ownerForm.id ? owners.find((o) => o.id === ownerForm.id) : null;
 
+    let finalOwnerId: string;
+    let existingOwner: Owner | undefined;
+
+    if (existingOwnerByName) {
+      finalOwnerId = existingOwnerByName.id;
+      existingOwner = existingOwnerByName;
+    } else if (existingOwnerById && existingOwnerById.name.trim().toLowerCase() === cleanOwnerName.toLowerCase()) {
+      finalOwnerId = existingOwnerById.id;
+      existingOwner = existingOwnerById;
+    } else {
+      finalOwnerId = generateUniqueOwnerId(owners);
+      existingOwner = undefined;
+    }
+
+    const ownerRecord: Owner = {
+      id: finalOwnerId,
+      name: cleanOwnerName,
+      phone: (ownerForm.phone || existingOwner?.phone || '').trim(),
+      email: ownerForm.email !== undefined ? ownerForm.email : (existingOwner?.email || ''),
+      address: ownerForm.address !== undefined ? ownerForm.address : (existingOwner?.address || ''),
+      bankName: ownerForm.bankName !== undefined ? ownerForm.bankName : (existingOwner?.bankName || ''),
+      accountNumber: ownerForm.accountNumber !== undefined ? ownerForm.accountNumber : (existingOwner?.accountNumber || ''),
+      ifsc: ownerForm.ifsc !== undefined ? ownerForm.ifsc : (existingOwner?.ifsc || ''),
+      upiId: ownerForm.upiId !== undefined ? ownerForm.upiId : (existingOwner?.upiId || ''),
+      pan: ownerForm.pan !== undefined ? ownerForm.pan : (existingOwner?.pan || ''),
+      aadhaar: ownerForm.aadhaar !== undefined ? ownerForm.aadhaar : (existingOwner?.aadhaar || ''),
+      remarks: ownerForm.remarks !== undefined ? ownerForm.remarks : (existingOwner?.remarks || ''),
+      emergencyContactName: ownerForm.emergencyContactName !== undefined ? ownerForm.emergencyContactName : (existingOwner?.emergencyContactName || ''),
+      emergencyContactNumber: ownerForm.emergencyContactNumber !== undefined ? ownerForm.emergencyContactNumber : (existingOwner?.emergencyContactNumber || ''),
+      emergencyContactRelation: ownerForm.emergencyContactRelation !== undefined ? ownerForm.emergencyContactRelation : (existingOwner?.emergencyContactRelation || ''),
+      comments: existingOwner?.comments || [],
+    };
+
+    let nextOwners: Owner[];
+    if (owners.some((o) => o.id === finalOwnerId)) {
+      nextOwners = owners.map((o) => (o.id === finalOwnerId ? ownerRecord : o));
+    } else {
+      nextOwners = [...owners, ownerRecord];
+    }
+    onUpdateOwners(nextOwners);
+
+    // 2. Process & Save Driver Record
+    const cleanDriverName = driverName.trim();
+    const existingDriverByName = drivers.find(
+      (d) => d.name && d.name.trim().toLowerCase() === cleanDriverName.toLowerCase()
+    );
+    const existingDriverById = driverForm.id ? drivers.find((d) => d.id === driverForm.id) : null;
+
+    let finalDriverId: string;
+    let existingDriver: Driver | undefined;
+
+    if (existingDriverByName) {
+      finalDriverId = existingDriverByName.id;
+      existingDriver = existingDriverByName;
+    } else if (existingDriverById && existingDriverById.name.trim().toLowerCase() === cleanDriverName.toLowerCase()) {
+      finalDriverId = existingDriverById.id;
+      existingDriver = existingDriverById;
+    } else {
+      finalDriverId = generateUniqueDriverId(drivers);
+      existingDriver = undefined;
+    }
+
+    const driverEmName = driverForm.emergencyContactName !== undefined ? driverForm.emergencyContactName : (existingDriver?.emergencyContactName || '');
+    const driverEmNum = driverForm.emergencyContactNumber !== undefined ? driverForm.emergencyContactNumber : (existingDriver?.emergencyContactNumber || '');
+    const driverEmRel = driverForm.emergencyContactRelation !== undefined ? driverForm.emergencyContactRelation : (existingDriver?.emergencyContactRelation || '');
+    const combinedEmergency = formatCombinedEmergency(driverEmName, driverEmRel, driverEmNum) || driverForm.emergencyContact || existingDriver?.emergencyContact || '';
+
+    const driverRecord: Driver = {
+      id: finalDriverId,
+      name: cleanDriverName,
+      phone: (driverForm.phone || existingDriver?.phone || '').trim(),
+      address: driverForm.address !== undefined ? driverForm.address : (existingDriver?.address || ''),
+      badgeNumber: driverForm.badgeNumber !== undefined ? driverForm.badgeNumber : (existingDriver?.badgeNumber || ''),
+      badgeExpiry: driverForm.badgeExpiry !== undefined ? driverForm.badgeExpiry : (existingDriver?.badgeExpiry || ''),
+      licenceNumber: driverForm.licenceNumber !== undefined ? driverForm.licenceNumber : (existingDriver?.licenceNumber || ''),
+      licenceExpiry: driverForm.licenceExpiry !== undefined ? driverForm.licenceExpiry : (existingDriver?.licenceExpiry || ''),
+      aadhaar: driverForm.aadhaar !== undefined ? driverForm.aadhaar : (existingDriver?.aadhaar || ''),
+      pan: driverForm.pan !== undefined ? driverForm.pan : (existingDriver?.pan || ''),
+      salary: driverForm.salary !== undefined ? Number(driverForm.salary) : (existingDriver?.salary || 0),
+      joiningDate: driverForm.joiningDate || existingDriver?.joiningDate || new Date().toISOString().substring(0, 10),
+      status: driverForm.status || existingDriver?.status || 'Active',
+      driverType: driverForm.driverType || existingDriver?.driverType || 'Owner-Paid',
+      emergencyContact: combinedEmergency,
+      emergencyContactName: driverEmName,
+      emergencyContactNumber: driverEmNum,
+      emergencyContactRelation: driverEmRel,
+      comments: existingDriver?.comments || [],
+    };
+
+    let nextDrivers: Driver[];
+    if (drivers.some((d) => d.id === finalDriverId)) {
+      nextDrivers = drivers.map((d) => (d.id === finalDriverId ? driverRecord : d));
+    } else {
+      nextDrivers = [...drivers, driverRecord];
+    }
+    onUpdateDrivers(nextDrivers);
+
+    // 3. Process & Save Vehicle Record
     const vehicleRecord: Vehicle = {
       ...vehicleForm,
-      id: vehicleForm.id || generateUniqueVehicleId(vehicles),
+      id: editingId || vehicleForm.id || generateUniqueVehicleId(vehicles),
       registrationNumber: cleanReg,
-      model: vehicleForm.model,
+      model: vehicleForm.model || 'Unknown',
       manufacturer: vehicleForm.manufacturer || 'Toyota',
       year: Number(vehicleForm.year) || 2022,
+      registrationDate: vehicleForm.registrationDate || '',
       fuelType: vehicleForm.fuelType || 'Diesel',
       transmission: vehicleForm.transmission || 'Manual',
       vehicleType: vehicleForm.vehicleType || 'Sedan',
-      ownerId: matchedOwner ? matchedOwner.id : (vehicleForm.ownerId || 'new'),
-      ownerName: matchedOwner ? matchedOwner.name : (vehicleForm.ownerName || 'Unknown Owner'),
-      driverId: matchedDriver ? matchedDriver.id : (vehicleForm.driverId || 'new'),
-      driverName: matchedDriver ? matchedDriver.name : (vehicleForm.driverName || 'Unknown Driver'),
-      company: vehicleForm.company || '',
-      site: vehicleForm.site || '',
-      company2: vehicleForm.company2 || '',
-      site2: vehicleForm.site2 || '',
+      ownerId: finalOwnerId,
+      ownerName: cleanOwnerName,
+      ownerPhone: ownerRecord.phone,
+      ownerAddress: ownerRecord.address,
+      driverId: finalDriverId,
+      driverName: driverName,
+      company: cleanSiteValue(vehicleForm.company || vehicleForm.sitePreference1),
+      site: cleanSiteValue(vehicleForm.site || vehicleForm.sitePreference3),
+      company2: cleanSiteValue(vehicleForm.company2 || vehicleForm.sitePreference2),
+      site2: cleanSiteValue(vehicleForm.site2 || vehicleForm.sitePreference4),
+      sitePreference1: cleanSiteValue(vehicleForm.company || vehicleForm.sitePreference1),
+      sitePreference2: cleanSiteValue(vehicleForm.company2 || vehicleForm.sitePreference2),
+      sitePreference3: cleanSiteValue(vehicleForm.site || vehicleForm.sitePreference3),
+      sitePreference4: cleanSiteValue(vehicleForm.site2 || vehicleForm.sitePreference4),
       joiningDate: vehicleForm.joiningDate || new Date().toISOString().substring(0, 10),
       status: vehicleForm.status || 'Active',
       emiAmount: Number(vehicleForm.emiAmount) || 0,
@@ -439,11 +629,14 @@ export default function MasterViews({
       gpsReturnedBy: vehicleForm.gpsReturnedBy || '',
     };
 
+    let nextVehicles: Vehicle[];
     if (editingId) {
-      onUpdateVehicles(vehicles.map((v) => (v.id === editingId ? vehicleRecord : v)));
+      nextVehicles = vehicles.map((v) => (v.id === editingId ? vehicleRecord : v));
     } else {
-      onUpdateVehicles([...vehicles, vehicleRecord]);
+      nextVehicles = [...vehicles, vehicleRecord];
     }
+    onUpdateVehicles(nextVehicles);
+
     resetForms();
   };
 
@@ -884,7 +1077,7 @@ export default function MasterViews({
     return (
       v.vendorName.toLowerCase().includes(q) ||
       v.clientSites.some((s) => s.toLowerCase().includes(q)) ||
-      v.runningVehicles.some(
+      v.attachedVehicles.some(
         (veh) =>
           veh.registrationNumber.toLowerCase().includes(q) ||
           veh.driverName.toLowerCase().includes(q) ||
@@ -895,74 +1088,455 @@ export default function MasterViews({
 
   // ----------------- Export Handlers -----------------
   const handleExportExcel = () => {
-    if (activeSubView === 'Vehicle Master') {
-      const headers = [
-        'Vehicle ID',
-        'Registration No',
-        'Vehicle Type',
-        'Manufacturer',
-        'Model',
-        'Owner Name',
-        'Driver Name',
-        'Company',
-        'Site',
-        'Joining Date',
-        'Status',
-        'Insurance Expiry',
-        'FC Expiry',
-        'Permit Expiry',
-        'Fastag No',
-      ];
-      const rows = filteredVehicles.map((v) => [
+    // Helper to generate complete unified row with Vehicle, Owner, and Driver details
+    const getComprehensiveRow = (v: Vehicle) => {
+      const owner = owners.find(
+        (o) => o.id === v.ownerId || (o.name && v.ownerName && o.name.trim().toLowerCase() === v.ownerName.trim().toLowerCase())
+      );
+      const driver = drivers.find(
+        (d) => d.id === v.driverId || (d.name && v.driverName && d.name.trim().toLowerCase() === v.driverName.trim().toLowerCase())
+      );
+      const isOwnerDriver = Boolean(
+        (v.ownerName && v.driverName && v.ownerName.trim().toLowerCase() === v.driverName.trim().toLowerCase()) ||
+        driver?.driverType === 'Owner-cum-Driver'
+      );
+
+      return [
+        // --- VEHICLE DATA ---
         v.id,
         v.registrationNumber,
         v.vehicleType,
         v.manufacturer,
         v.model,
-        v.ownerName || '',
-        v.driverName || '',
-        v.company || '',
-        v.site || '',
-        formatDate(v.joiningDate),
+        v.year || '',
+        formatDate(v.registrationDate),
+        v.fuelType,
+        v.transmission,
         v.status,
+        v.company || '',
+        v.company2 || v.sitePreference2 || '',
+        v.site || v.sitePreference3 || '',
+        v.site2 || v.sitePreference4 || '',
+        formatDate(v.joiningDate),
+        v.fastagNumber || '',
+        v.emiAmount ? Number(v.emiAmount) : 0,
+        formatDate(v.emiDueDate),
         formatDate(v.insuranceExpiry),
         formatDate(v.fcExpiry),
         formatDate(v.permitExpiry),
-        v.fastagNumber || '',
-      ]);
-      exportToExcel('E7_Travels_Vehicle_Master', 'Vehicle Master', headers, rows);
-    } else if (activeSubView === 'Owner Master') {
-      const headers = ['Owner ID', 'Name', 'Phone', 'Address', 'Bank Name', 'Account No', 'IFSC Code', 'UPI ID', 'PAN No', 'Aadhaar No'];
-      const rows = filteredOwners.map((o) => [
-        o.id,
-        o.name,
-        o.phone || '',
-        o.address || '',
-        o.bankName || '',
-        o.accountNumber || '',
-        o.ifsc || '',
-        o.upiId || '',
-        o.pan || '',
-        o.aadhaar || '',
-      ]);
-      exportToExcel('E7_Travels_Owner_Master', 'Owner Master', headers, rows);
-    } else if (activeSubView === 'Driver Master') {
-      const headers = ['Driver ID', 'Name', 'Phone', 'Address', 'Licence No', 'Badge No', 'Aadhaar No', 'Assigned Vehicle', 'Status'];
-      const rows = filteredDrivers.map((d) => {
-        const assignedVeh = vehicles.find((v) => v.driverId === d.id || v.driverName === d.name);
+        formatDate(v.pollutionExpiry),
+        v.paymentCycle || 'Monthly',
+        v.gpsRequired === 'Yes' || v.gpsRequired === true || !!v.gpsVendor ? 'Yes' : 'No',
+        v.gpsVendor || '',
+        v.gpsImei || '',
+        formatDate(v.gpsFittingDate),
+        v.gpsReturned ? 'Returned' : (v.status === 'Inactive' && !!v.gpsVendor ? 'Pending Return' : (v.gpsVendor ? 'Fitted' : 'Not Fitted')),
+        formatDate(v.gpsReturnDate),
+        v.gpsReturnRemarks || '',
+        v.officeDocSubmitted ? 'Submitted' : 'Pending',
+        v.officeDocVendorCompany || '',
+        v.officeDocLetterpadRef || '',
+        formatDate(v.officeDocSubmitDate),
+        v.remarks || '',
+
+        // --- OWNER DATA (FULL) ---
+        owner?.id || v.ownerId || '',
+        owner?.name || v.ownerName || '',
+        owner?.phone || v.ownerPhone || '',
+        owner?.email || '',
+        owner?.address || v.ownerAddress || '',
+        owner?.pan || '',
+        owner?.aadhaar || '',
+        owner?.bankName || '',
+        owner?.accountNumber || '',
+        owner?.ifsc || '',
+        owner?.upiId || '',
+        owner?.emergencyContactName || '',
+        owner?.emergencyContactRelation || '',
+        owner?.emergencyContactNumber || '',
+        owner?.remarks || '',
+
+        // --- DRIVER DATA (FULL) ---
+        driver?.id || v.driverId || '',
+        driver?.name || v.driverName || '',
+        driver?.driverType || (isOwnerDriver ? 'Owner-cum-Driver' : 'Owner-Paid'),
+        driver?.phone || '',
+        driver?.address || '',
+        driver?.licenceNumber || '',
+        formatDate(driver?.licenceExpiry),
+        driver?.badgeNumber || '',
+        formatDate(driver?.badgeExpiry),
+        driver?.aadhaar || '',
+        driver?.pan || '',
+        driver?.status || 'Active',
+        driver?.salary !== undefined ? driver.salary : '',
+        formatDate(driver?.joiningDate),
+        driver ? parseEmergencyDetails(driver.emergencyContact, driver.emergencyContactName, driver.emergencyContactRelation, driver.emergencyContactNumber).name : '',
+        driver ? parseEmergencyDetails(driver.emergencyContact, driver.emergencyContactName, driver.emergencyContactRelation, driver.emergencyContactNumber).relation : '',
+        driver ? parseEmergencyDetails(driver.emergencyContact, driver.emergencyContactName, driver.emergencyContactRelation, driver.emergencyContactNumber).number : '',
+      ];
+    };
+
+    const comprehensiveHeaders = [
+      // VEHICLE
+      'Vehicle ID',
+      'Registration No',
+      'Vehicle Type',
+      'Manufacturer',
+      'Model',
+      'Mfg Year',
+      'Registration Date',
+      'Fuel Type',
+      'Transmission',
+      'Vehicle Status',
+      'Assigned Site (Field 1)',
+      'Site Preference 2',
+      'Site Preference 3',
+      'Site Preference 4',
+      'Joining Date',
+      'Fastag No',
+      'EMI Amount (₹)',
+      'EMI Due Date',
+      'Insurance Expiry',
+      'FC Expiry',
+      'Permit Expiry',
+      'Pollution Expiry',
+      'Payment Cycle',
+      'GPS Required / Fitted',
+      'GPS Vendor',
+      'GPS IMEI No',
+      'GPS Fitting Date',
+      'GPS Return Status',
+      'GPS Return Date',
+      'GPS Return Remarks',
+      'Office Docs Status',
+      'Office Docs Vendor',
+      'Office Docs Letterpad Ref',
+      'Office Docs Submit Date',
+      'Vehicle Remarks',
+
+      // OWNER
+      'Owner ID',
+      'Owner Name',
+      'Owner Mobile Phone',
+      'Owner Email',
+      'Owner Address',
+      'Owner PAN No',
+      'Owner Aadhaar No',
+      'Owner Bank Name',
+      'Owner Account No',
+      'Owner IFSC Code',
+      'Owner UPI ID',
+      'Owner Emergency Contact Name',
+      'Owner Emergency Contact Relation',
+      'Owner Emergency Contact Phone',
+      'Owner Remarks',
+
+      // DRIVER
+      'Driver ID',
+      'Driver Name',
+      'Driver Type',
+      'Driver Mobile Phone',
+      'Driver Address',
+      'Driving Licence No',
+      'Licence Expiry',
+      'Driver Badge No',
+      'Driver Badge Expiry',
+      'Driver Aadhaar No',
+      'Driver PAN No',
+      'Driver Status',
+      'Driver Monthly Salary (₹)',
+      'Driver Joining Date',
+      'Driver Emergency Contact Name',
+      'Driver Emergency Contact Relation',
+      'Driver Emergency Contact Phone',
+    ];
+
+    if (activeSubView === 'Vehicle Master') {
+      const comprehensiveRows = filteredVehicles.map(getComprehensiveRow);
+
+      const vehicleHeaders = [
+        'Vehicle ID',
+        'Registration No',
+        'Vehicle Type',
+        'Manufacturer',
+        'Model',
+        'Mfg Year',
+        'Fuel Type',
+        'Transmission',
+        'Status',
+        'Assigned Site 1',
+        'Site Preference 2',
+        'Site Preference 3',
+        'Site Preference 4',
+        'Owner Name',
+        'Owner Phone',
+        'Driver Name',
+        'Driver Phone',
+        'Driver Type',
+        'Joining Date',
+        'Insurance Expiry',
+        'FC Expiry',
+        'Permit Expiry',
+        'Pollution Expiry',
+        'Fastag No',
+        'EMI Amount (₹)',
+        'EMI Due Date',
+        'GPS Vendor',
+        'GPS IMEI',
+        'Office Docs Status',
+        'Office Docs Ref',
+        'Remarks',
+      ];
+
+      const vehicleRows = filteredVehicles.map((v) => {
+        const o = owners.find(
+          (own) => own.id === v.ownerId || (own.name && v.ownerName && own.name.trim().toLowerCase() === v.ownerName.trim().toLowerCase())
+        );
+        const d = drivers.find(
+          (drv) => drv.id === v.driverId || (drv.name && v.driverName && drv.name.trim().toLowerCase() === v.driverName.trim().toLowerCase())
+        );
+        return [
+          v.id,
+          v.registrationNumber,
+          v.vehicleType,
+          v.manufacturer,
+          v.model,
+          v.year || '',
+          v.fuelType,
+          v.transmission,
+          v.status,
+          v.company || '',
+          v.company2 || v.sitePreference2 || '',
+          v.site || v.sitePreference3 || '',
+          v.site2 || v.sitePreference4 || '',
+          v.ownerName || '',
+          o?.phone || v.ownerPhone || '',
+          v.driverName || '',
+          d?.phone || '',
+          d?.driverType || (v.ownerName && v.driverName && v.ownerName.trim().toLowerCase() === v.driverName.trim().toLowerCase() ? 'Owner-cum-Driver' : 'Owner-Paid'),
+          formatDate(v.joiningDate),
+          formatDate(v.insuranceExpiry),
+          formatDate(v.fcExpiry),
+          formatDate(v.permitExpiry),
+          formatDate(v.pollutionExpiry),
+          v.fastagNumber || '',
+          v.emiAmount ? Number(v.emiAmount) : 0,
+          formatDate(v.emiDueDate),
+          v.gpsVendor || '',
+          v.gpsImei || '',
+          v.officeDocSubmitted ? 'Submitted' : 'Pending',
+          v.officeDocLetterpadRef || '',
+          v.remarks || '',
+        ];
+      });
+
+      const ownerHeaders = [
+        'Owner ID',
+        'Owner Name',
+        'Phone',
+        'Email',
+        'Address',
+        'Bank Name',
+        'Account No',
+        'IFSC Code',
+        'UPI ID',
+        'PAN No',
+        'Aadhaar No',
+        'Emergency Contact',
+        'Attached Vehicles Count',
+        'Attached Vehicle Numbers',
+      ];
+
+      const ownerRows = owners.map((o) => {
+        const attachedVehicles = vehicles.filter((v) => v.ownerId === o.id || (v.ownerName && v.ownerName.trim().toLowerCase() === o.name.trim().toLowerCase()));
+        return [
+          o.id,
+          o.name,
+          o.phone || '',
+          o.email || '',
+          o.address || '',
+          o.bankName || '',
+          o.accountNumber || '',
+          o.ifsc || '',
+          o.upiId || '',
+          o.pan || '',
+          o.aadhaar || '',
+          [o.emergencyContactName, o.emergencyContactRelation, o.emergencyContactNumber].filter(Boolean).join(' - '),
+          attachedVehicles.length,
+          attachedVehicles.map((v) => v.registrationNumber).join(', '),
+        ];
+      });
+
+      const driverHeaders = [
+        'Driver ID',
+        'Driver Name',
+        'Driver Type',
+        'Phone',
+        'Address',
+        'Licence No',
+        'Licence Expiry',
+        'Badge No',
+        'Badge Expiry',
+        'Aadhaar No',
+        'PAN No',
+        'Status',
+        'Monthly Salary',
+        'Joining Date',
+        'Emergency Contact',
+        'Assigned Vehicle Reg No',
+        'Assigned Vehicle Model',
+        'Vehicle Owner Name',
+      ];
+
+      const driverRows = drivers.map((d) => {
+        const assignedVeh = vehicles.find((v) => v.driverId === d.id || (v.driverName && v.driverName.trim().toLowerCase() === d.name.trim().toLowerCase()));
         return [
           d.id,
           d.name,
+          d.driverType || 'Owner-Paid',
           d.phone || '',
           d.address || '',
           d.licenceNumber || '',
+          formatDate(d.licenceExpiry),
           d.badgeNumber || '',
+          formatDate(d.badgeExpiry),
           d.aadhaar || '',
-          assignedVeh?.registrationNumber || '',
+          d.pan || '',
           d.status,
+          d.salary !== undefined ? d.salary : '',
+          formatDate(d.joiningDate),
+          (() => {
+            const pem = parseEmergencyDetails(d.emergencyContact, d.emergencyContactName, d.emergencyContactRelation, d.emergencyContactNumber);
+            return formatCombinedEmergency(pem.name, pem.relation, pem.number);
+          })(),
+          assignedVeh?.registrationNumber || 'Unassigned',
+          assignedVeh ? `${assignedVeh.manufacturer} ${assignedVeh.model}` : '',
+          assignedVeh?.ownerName || '',
         ];
       });
-      exportToExcel('E7_Travels_Driver_Master', 'Driver Master', headers, rows);
+
+      // Export Comprehensive Multi-Sheet Workbook
+      exportMultiSheetExcel('E7_Travels_Master_Register_Complete', [
+        { sheetName: 'Comprehensive Master', headers: comprehensiveHeaders, rows: comprehensiveRows },
+        { sheetName: 'Vehicle Register', headers: vehicleHeaders, rows: vehicleRows },
+        { sheetName: 'Owner Register', headers: ownerHeaders, rows: ownerRows },
+        { sheetName: 'Driver Register', headers: driverHeaders, rows: driverRows },
+      ]);
+    } else if (activeSubView === 'Owner Master') {
+      const headers = [
+        'Owner ID',
+        'Owner Name',
+        'Phone',
+        'Email',
+        'Address',
+        'Bank Name',
+        'Account No',
+        'IFSC Code',
+        'UPI ID',
+        'PAN No',
+        'Aadhaar No',
+        'Emergency Contact Name',
+        'Emergency Contact Relation',
+        'Emergency Contact Phone',
+        'Attached Vehicles Count',
+        'Attached Vehicle Numbers',
+        'Remarks',
+      ];
+      const rows = filteredOwners.map((o) => {
+        const attachedVehicles = vehicles.filter((v) => v.ownerId === o.id || (v.ownerName && v.ownerName.trim().toLowerCase() === o.name.trim().toLowerCase()));
+        return [
+          o.id,
+          o.name,
+          o.phone || '',
+          o.email || '',
+          o.address || '',
+          o.bankName || '',
+          o.accountNumber || '',
+          o.ifsc || '',
+          o.upiId || '',
+          o.pan || '',
+          o.aadhaar || '',
+          o.emergencyContactName || '',
+          o.emergencyContactRelation || '',
+          o.emergencyContactNumber || '',
+          attachedVehicles.length,
+          attachedVehicles.map((v) => v.registrationNumber).join(', '),
+          o.remarks || '',
+        ];
+      });
+
+      const comprehensiveRows = vehicles.map(getComprehensiveRow);
+      exportMultiSheetExcel('E7_Travels_Owner_Master_Register', [
+        { sheetName: 'Owner Master', headers, rows },
+        { sheetName: 'Comprehensive Fleet Master', headers: comprehensiveHeaders, rows: comprehensiveRows },
+      ]);
+    } else if (activeSubView === 'Driver Master') {
+      const headers = [
+        'Driver ID',
+        'Driver Name',
+        'Driver Type',
+        'Phone',
+        'Address',
+        'Licence No',
+        'Licence Expiry',
+        'Badge No',
+        'Badge Expiry',
+        'Aadhaar No',
+        'PAN No',
+        'Status',
+        'Monthly Salary (₹)',
+        'Joining Date',
+        'Emergency Contact Name',
+        'Emergency Contact Relation',
+        'Emergency Contact Phone',
+        'Assigned Vehicle Reg No',
+        'Assigned Vehicle Model',
+        'Vehicle Owner Name',
+        'Vehicle Owner Phone',
+      ];
+      const rows = filteredDrivers.map((d) => {
+        const assignedVeh = vehicles.find((v) => v.driverId === d.id || (v.driverName && v.driverName.trim().toLowerCase() === d.name.trim().toLowerCase()));
+        const owner = assignedVeh ? owners.find((o) => o.id === assignedVeh.ownerId || (o.name && assignedVeh.ownerName && o.name.trim().toLowerCase() === assignedVeh.ownerName.trim().toLowerCase())) : null;
+        return [
+          d.id,
+          d.name,
+          d.driverType || (assignedVeh && assignedVeh.ownerName && d.name && assignedVeh.ownerName.trim().toLowerCase() === d.name.trim().toLowerCase() ? 'Owner-cum-Driver' : 'Owner-Paid'),
+          d.phone || '',
+          d.address || '',
+          d.licenceNumber || '',
+          formatDate(d.licenceExpiry),
+          d.badgeNumber || '',
+          formatDate(d.badgeExpiry),
+          d.aadhaar || '',
+          d.pan || '',
+          d.status,
+          d.salary !== undefined ? d.salary : '',
+          formatDate(d.joiningDate),
+          (() => {
+            const pem = parseEmergencyDetails(d.emergencyContact, d.emergencyContactName, d.emergencyContactRelation, d.emergencyContactNumber);
+            return pem.name;
+          })(),
+          (() => {
+            const pem = parseEmergencyDetails(d.emergencyContact, d.emergencyContactName, d.emergencyContactRelation, d.emergencyContactNumber);
+            return pem.relation;
+          })(),
+          (() => {
+            const pem = parseEmergencyDetails(d.emergencyContact, d.emergencyContactName, d.emergencyContactRelation, d.emergencyContactNumber);
+            return pem.number;
+          })(),
+          assignedVeh?.registrationNumber || 'Unassigned',
+          assignedVeh ? `${assignedVeh.manufacturer} ${assignedVeh.model}` : '',
+          assignedVeh?.ownerName || '',
+          owner?.phone || assignedVeh?.ownerPhone || '',
+        ];
+      });
+
+      const comprehensiveRows = vehicles.map(getComprehensiveRow);
+      exportMultiSheetExcel('E7_Travels_Driver_Master_Register', [
+        { sheetName: 'Driver Master', headers, rows },
+        { sheetName: 'Comprehensive Fleet Master', headers: comprehensiveHeaders, rows: comprehensiveRows },
+      ]);
     } else if (activeSubView === 'Company Master') {
       const headers = ['Company Name', 'Contact Person', 'Phone', 'Email', 'Billing Cycle', 'Payment Terms', 'Address'];
       const rows = filteredCompanies.map((c) => [
@@ -1015,46 +1589,231 @@ export default function MasterViews({
 
   const handleExportPDF = () => {
     if (activeSubView === 'Vehicle Master') {
-      const headers = ['Vehicle ID', 'Reg Number', 'Type', 'Model', 'Owner', 'Driver', 'Company', 'Site', 'Status'];
-      const rows = filteredVehicles.map((v) => [
-        v.id,
-        v.registrationNumber,
-        v.vehicleType,
-        `${v.manufacturer} ${v.model}`,
-        v.ownerName || '-',
-        v.driverName || '-',
-        v.company || '-',
-        v.site || '-',
-        v.status,
-      ]);
-      exportToPDF('E7_Travels_Vehicle_Master', 'E7 Travels - Vehicle Master Register', headers, rows, 'landscape');
+      const headers = [
+        'Vehicle & Reg No',
+        'Deployment & Status',
+        'Compliance & Expiries',
+        'Owner Full Details',
+        'Driver Full Details',
+        'GPS & Office Docs',
+      ];
+
+      const rows = filteredVehicles.map((v) => {
+        const owner = owners.find(
+          (o) => o.id === v.ownerId || (o.name && v.ownerName && o.name.trim().toLowerCase() === v.ownerName.trim().toLowerCase())
+        );
+        const driver = drivers.find(
+          (d) => d.id === v.driverId || (d.name && v.driverName && d.name.trim().toLowerCase() === v.driverName.trim().toLowerCase())
+        );
+        const isOwnerDriver = Boolean(
+          (v.ownerName && v.driverName && v.ownerName.trim().toLowerCase() === v.driverName.trim().toLowerCase()) ||
+          driver?.driverType === 'Owner-cum-Driver'
+        );
+
+        // Vehicle column
+        const vehicleCol = [
+          v.registrationNumber,
+          `ID: ${v.id}`,
+          `${v.manufacturer} ${v.model} (${v.year || '-'})`,
+          `Type: ${v.vehicleType} | ${v.fuelType}`,
+          `Trans: ${v.transmission}`,
+          v.fastagNumber ? `Fastag: ${v.fastagNumber}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n');
+
+        // Deployment column
+        const deployCol = [
+          `Status: ${v.status.toUpperCase()}`,
+          `Site 1: ${v.company || 'Unassigned'}`,
+          v.company2 || v.sitePreference2 ? `Site 2: ${v.company2 || v.sitePreference2}` : '',
+          v.site || v.sitePreference3 ? `Site 3: ${v.site || v.sitePreference3}` : '',
+          v.site2 || v.sitePreference4 ? `Site 4: ${v.site2 || v.sitePreference4}` : '',
+          `Joined: ${formatDate(v.joiningDate) || '-'}`,
+          v.paymentCycle ? `Cycle: ${v.paymentCycle}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n');
+
+        // Compliance & Expiries column
+        const expiriesCol = [
+          `Ins: ${formatDate(v.insuranceExpiry) || '-'}`,
+          `FC: ${formatDate(v.fcExpiry) || '-'}`,
+          `Permit: ${formatDate(v.permitExpiry) || '-'}`,
+          `PUC: ${formatDate(v.pollutionExpiry) || '-'}`,
+          v.emiAmount > 0 ? `EMI: ₹${Number(v.emiAmount).toLocaleString('en-IN')}` : 'No EMI',
+          v.emiDueDate ? `Due: ${formatDate(v.emiDueDate)}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n');
+
+        // Owner column (FULL DATA)
+        const ownerEmg = [owner?.emergencyContactName, owner?.emergencyContactRelation, owner?.emergencyContactNumber]
+          .filter(Boolean)
+          .join(' - ');
+        const ownerCol = [
+          `${owner?.name || v.ownerName || '-'} [${owner?.id || v.ownerId || '-'}]`,
+          `Ph: ${owner?.phone || v.ownerPhone || '-'}`,
+          owner?.address || v.ownerAddress ? `Addr: ${owner?.address || v.ownerAddress}` : '',
+          `PAN: ${owner?.pan || '-'} | Aadh: ${owner?.aadhaar || '-'}`,
+          owner?.bankName ? `Bank: ${owner.bankName}` : '',
+          owner?.accountNumber ? `A/c: ${owner.accountNumber} | IFSC: ${owner.ifsc || '-'}` : '',
+          owner?.upiId ? `UPI: ${owner.upiId}` : '',
+          ownerEmg ? `Emg: ${ownerEmg}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n');
+
+        // Driver column (FULL DATA)
+        const driverEmg = (() => {
+          if (!driver) return '';
+          const pem = parseEmergencyDetails(driver.emergencyContact, driver.emergencyContactName, driver.emergencyContactRelation, driver.emergencyContactNumber);
+          return formatCombinedEmergency(pem.name, pem.relation, pem.number);
+        })();
+        const driverCol = [
+          `${driver?.name || v.driverName || '-'} [${driver?.id || v.driverId || '-'}]`,
+          `Type: ${driver?.driverType || (isOwnerDriver ? 'Owner-cum-Driver' : 'Owner-Paid')}`,
+          `Ph: ${driver?.phone || '-'}`,
+          driver?.licenceNumber ? `DL: ${driver.licenceNumber} (Exp: ${formatDate(driver.licenceExpiry) || '-'})` : 'DL: -',
+          driver?.badgeNumber ? `Badge: ${driver.badgeNumber} (Exp: ${formatDate(driver.badgeExpiry) || '-'})` : '',
+          `PAN: ${driver?.pan || '-'} | Aadh: ${driver?.aadhaar || '-'}`,
+          driver?.address ? `Addr: ${driver.address}` : '',
+          driver?.salary ? `Salary: ₹${Number(driver.salary).toLocaleString('en-IN')}` : '',
+          driverEmg ? `Emg: ${driverEmg}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n');
+
+        // GPS & Docs column
+        const gpsCol = [
+          v.gpsVendor ? `GPS: ${v.gpsVendor}` : (v.gpsRequired === 'Yes' || v.gpsRequired === true ? 'GPS: Required (Pending)' : 'GPS: No'),
+          v.gpsImei ? `IMEI: ${v.gpsImei}` : '',
+          v.gpsFittingDate ? `Fit: ${formatDate(v.gpsFittingDate)}` : '',
+          v.gpsReturned ? 'Return: Yes' : (v.status === 'Inactive' && v.gpsVendor ? 'Return: Pending' : ''),
+          `Docs: ${v.officeDocSubmitted ? `Submitted (${v.officeDocVendorCompany || 'Vendor'})` : 'Pending'}`,
+          v.officeDocLetterpadRef ? `Ref: ${v.officeDocLetterpadRef}` : '',
+          v.officeDocSubmitDate ? `Date: ${formatDate(v.officeDocSubmitDate)}` : '',
+          v.remarks ? `Note: ${v.remarks}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n');
+
+        return [vehicleCol, deployCol, expiriesCol, ownerCol, driverCol, gpsCol];
+      });
+
+      exportToPDF(
+        'E7_Travels_Complete_Fleet_Master_Register',
+        'E7 Travels - Complete Fleet Master Register (Vehicle, Owner & Driver Data)',
+        headers,
+        rows,
+        'landscape',
+        {
+          styles: {
+            fontSize: 6.5,
+            cellPadding: 3,
+            textColor: [30, 41, 59],
+            overflow: 'linebreak',
+          },
+          columnStyles: {
+            0: { cellWidth: 120 },
+            1: { cellWidth: 105 },
+            2: { cellWidth: 105 },
+            3: { cellWidth: 175 },
+            4: { cellWidth: 180 },
+            5: { cellWidth: 115 },
+          },
+        }
+      );
     } else if (activeSubView === 'Owner Master') {
-      const headers = ['Owner ID', 'Name', 'Phone', 'Address', 'Bank Name', 'Account No', 'IFSC'];
-      const rows = filteredOwners.map((o) => [
-        o.id,
-        o.name,
-        o.phone || '-',
-        o.address || '-',
-        o.bankName || '-',
-        o.accountNumber || '-',
-        o.ifsc || '-',
-      ]);
-      exportToPDF('E7_Travels_Owner_Master', 'E7 Travels - Vehicle Owner Register', headers, rows, 'landscape');
-    } else if (activeSubView === 'Driver Master') {
-      const headers = ['Driver ID', 'Name', 'Phone', 'Licence No', 'Aadhaar No', 'Assigned Vehicle', 'Status'];
-      const rows = filteredDrivers.map((d) => {
-        const assignedVeh = vehicles.find((v) => v.driverId === d.id || v.driverName === d.name);
+      const headers = ['Owner Details', 'Contact & Address', 'Banking Information', 'Identity & KYC', 'Emergency Contact', 'Attached Vehicles & Drivers'];
+      const rows = filteredOwners.map((o) => {
+        const attachedVehicles = vehicles.filter((v) => v.ownerId === o.id || (v.ownerName && v.ownerName.trim().toLowerCase() === o.name.trim().toLowerCase()));
+        
+        const attachedVehiclesText = attachedVehicles.length > 0
+          ? attachedVehicles
+              .map((v) => `${v.registrationNumber} (${v.manufacturer} ${v.model}) - Site: ${v.company || '-'} [Driver: ${v.driverName || 'None'}]`)
+              .join('\n')
+          : 'No attached vehicles';
+
         return [
-          d.id,
-          d.name,
-          d.phone || '-',
-          d.licenceNumber || '-',
-          d.aadhaar || '-',
-          assignedVeh?.registrationNumber || '-',
-          d.status,
+          `${o.name}\nID: ${o.id}`,
+          `Ph: ${o.phone || '-'}\nEmail: ${o.email || '-'}\nAddr: ${o.address || '-'}`,
+          `Bank: ${o.bankName || '-'}\nA/c: ${o.accountNumber || '-'}\nIFSC: ${o.ifsc || '-'}\nUPI: ${o.upiId || '-'}`,
+          `PAN: ${o.pan || '-'}\nAadhaar: ${o.aadhaar || '-'}`,
+          [o.emergencyContactName, o.emergencyContactRelation, o.emergencyContactNumber].filter(Boolean).join(' - ') || '-',
+          attachedVehiclesText,
         ];
       });
-      exportToPDF('E7_Travels_Driver_Master', 'E7 Travels - Driver Master Register', headers, rows, 'landscape');
+
+      exportToPDF(
+        'E7_Travels_Owner_Master_Register',
+        'E7 Travels - Vehicle Owner Master Register',
+        headers,
+        rows,
+        'landscape',
+        {
+          styles: {
+            fontSize: 7,
+            cellPadding: 3.5,
+            textColor: [30, 41, 59],
+            overflow: 'linebreak',
+          },
+          columnStyles: {
+            0: { cellWidth: 110 },
+            1: { cellWidth: 140 },
+            2: { cellWidth: 140 },
+            3: { cellWidth: 100 },
+            4: { cellWidth: 110 },
+            5: { cellWidth: 200 },
+          },
+        }
+      );
+    } else if (activeSubView === 'Driver Master') {
+      const headers = ['Driver Details', 'Contact & Address', 'Licence & Badge Info', 'Identity & Salary', 'Emergency Contact', 'Assigned Vehicle & Owner'];
+      const rows = filteredDrivers.map((d) => {
+        const assignedVeh = vehicles.find((v) => v.driverId === d.id || (v.driverName && v.driverName.trim().toLowerCase() === d.name.trim().toLowerCase()));
+        const owner = assignedVeh ? owners.find((o) => o.id === assignedVeh.ownerId || (o.name && assignedVeh.ownerName && o.name.trim().toLowerCase() === assignedVeh.ownerName.trim().toLowerCase())) : null;
+
+        const assignedText = assignedVeh
+          ? `Reg: ${assignedVeh.registrationNumber}\nModel: ${assignedVeh.manufacturer} ${assignedVeh.model}\nSite: ${assignedVeh.company || '-'}\nOwner: ${assignedVeh.ownerName || '-'} (Ph: ${owner?.phone || assignedVeh.ownerPhone || '-'})`
+          : 'Unassigned';
+
+        return [
+          `${d.name}\nID: ${d.id}\nType: ${d.driverType || 'Owner-Paid'}\nStatus: ${d.status}`,
+          `Ph: ${d.phone || '-'}\nAddr: ${d.address || '-'}\nJoined: ${formatDate(d.joiningDate) || '-'}`,
+          `DL: ${d.licenceNumber || '-'} (Exp: ${formatDate(d.licenceExpiry) || '-'})\nBadge: ${d.badgeNumber || '-'} (Exp: ${formatDate(d.badgeExpiry) || '-'})`,
+          `Aadhaar: ${d.aadhaar || '-'}\nPAN: ${d.pan || '-'}\nSalary: ${d.salary ? `₹${Number(d.salary).toLocaleString('en-IN')}` : '-'}`,
+          (() => {
+            const pem = parseEmergencyDetails(d.emergencyContact, d.emergencyContactName, d.emergencyContactRelation, d.emergencyContactNumber);
+            return formatCombinedEmergency(pem.name, pem.relation, pem.number) || '-';
+          })(),
+          assignedText,
+        ];
+      });
+
+      exportToPDF(
+        'E7_Travels_Driver_Master_Register',
+        'E7 Travels - Driver Master Register',
+        headers,
+        rows,
+        'landscape',
+        {
+          styles: {
+            fontSize: 7,
+            cellPadding: 3.5,
+            textColor: [30, 41, 59],
+            overflow: 'linebreak',
+          },
+          columnStyles: {
+            0: { cellWidth: 110 },
+            1: { cellWidth: 130 },
+            2: { cellWidth: 140 },
+            3: { cellWidth: 110 },
+            4: { cellWidth: 110 },
+            5: { cellWidth: 200 },
+          },
+        }
+      );
     } else if (activeSubView === 'Company Master') {
       const headers = ['Company Name', 'Contact Person', 'Phone', 'Email', 'Billing Cycle', 'Payment Terms'];
       const rows = filteredCompanies.map((c) => [
@@ -1218,7 +1977,7 @@ export default function MasterViews({
                 setIsAdding(true);
                 setFormError(null);
               }}
-              className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              className="px-4 py-2 text-sm font-semibold bg-[#006B57] hover:bg-[#004D40] text-white rounded-lg flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
             >
               <Plus className="h-4 w-4" /> {activeSubView === 'Site Master' ? 'Add Campus Site / Hub' : 'Add Record'}
             </button>
@@ -1269,7 +2028,7 @@ export default function MasterViews({
                       ? 'bg-rose-600 border-rose-600 text-white shadow-3xs'
                       : f === 'doc_submitted'
                         ? 'bg-emerald-600 border-emerald-600 text-white shadow-3xs'
-                        : 'bg-blue-600 border-blue-600 text-white shadow-3xs'
+                        : 'bg-[#006B57] border-[#006B57] text-white shadow-3xs'
                     : f === 'gps_hold' && count > 0
                       ? 'bg-rose-50 border-rose-200 text-rose-800 hover:bg-rose-100 font-bold animate-pulse'
                       : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
@@ -1342,544 +2101,1202 @@ export default function MasterViews({
                 </div>
               )}
 
-              {/* VEHICLE MASTER FORM */}
+              {/* VEHICLE MASTER FORM (UNIFIED CAR + OWNER + DRIVER EDIT) */}
               {activeSubView === 'Vehicle Master' && (
-            <form onSubmit={handleSaveVehicle} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Registration Number *</label>
-                <input
-                  id="field-registrationNumber"
-                  type="text"
-                  placeholder="e.g. TN-07-E7-1234"
-                  value={vehicleForm.registrationNumber || ''}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, registrationNumber: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Manufacturer *</label>
-                <input
-                  id="field-manufacturer"
-                  type="text"
-                  value={vehicleForm.manufacturer || ''}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, manufacturer: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Model *</label>
-                <input
-                  id="field-model"
-                  type="text"
-                  value={vehicleForm.model || ''}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, model: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Manufacturing Year</label>
-                <input
-                  id="field-mfd-year"
-                  type="number"
-                  placeholder="e.g. 2023 or 2025"
-                  min={1995}
-                  max={2030}
-                  value={vehicleForm.year || ''}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, year: e.target.value ? Number(e.target.value) : undefined })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-medium"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Fuel Type</label>
-                <select
-                  id="field-fuelType"
-                  value={vehicleForm.fuelType || 'Diesel'}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, fuelType: e.target.value as any })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                >
-                  {FUEL_TYPES.map((f) => (
-                    <option key={f} value={f}>
-                      {f}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Vehicle Type</label>
-                <select
-                  id="field-vehicleType"
-                  value={vehicleForm.vehicleType || 'Sedan'}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, vehicleType: e.target.value as any })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                >
-                  {VEHICLE_TYPES.map((vt) => (
-                    <option key={vt} value={vt}>
-                      {vt}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Associated Owner *</label>
-                <select
-                  id="field-ownerId"
-                  value={
-                    owners.some((o) => o.id === vehicleForm.ownerId)
-                      ? vehicleForm.ownerId
-                      : (vehicleForm.ownerName && vehicleForm.ownerName.trim() ? owners.find((o) => o.name && o.name.trim().toLowerCase() === vehicleForm.ownerName.trim().toLowerCase())?.id : '') || vehicleForm.ownerId || ''
-                  }
-                  onChange={(e) => {
-                    const selId = e.target.value;
-                    const matched = owners.find((o) => o.id === selId);
-                    setVehicleForm({
-                      ...vehicleForm,
-                      ownerId: selId,
-                      ownerName: matched ? matched.name : vehicleForm.ownerName,
-                    });
-                  }}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                >
-                  <option value="">-- Choose Owner --</option>
-                  {owners.map((o, index) => (
-                    <option key={`${o.id}-${index}`} value={o.id}>
-                      {o.name} ({o.id}) {o.phone ? `- ${o.phone}` : ''}
-                    </option>
-                  ))}
-                  {vehicleForm.ownerName && !owners.some((o) => o.id === vehicleForm.ownerId || (o.name && o.name.toLowerCase() === vehicleForm.ownerName.toLowerCase())) && (
-                    <option value={vehicleForm.ownerId || vehicleForm.ownerName}>
-                      {vehicleForm.ownerName} (Current Owner)
-                    </option>
-                  )}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Assigned Driver *</label>
-                <select
-                  id="field-driverId"
-                  value={
-                    drivers.some((d) => d.id === vehicleForm.driverId)
-                      ? vehicleForm.driverId
-                      : (vehicleForm.driverName && vehicleForm.driverName.trim() ? drivers.find((d) => d.name && d.name.trim().toLowerCase() === vehicleForm.driverName.trim().toLowerCase())?.id : '') || vehicleForm.driverId || ''
-                  }
-                  onChange={(e) => {
-                    const selId = e.target.value;
-                    const matched = drivers.find((d) => d.id === selId);
-                    setVehicleForm({
-                      ...vehicleForm,
-                      driverId: selId,
-                      driverName: matched ? matched.name : vehicleForm.driverName,
-                    });
-                  }}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                >
-                  <option value="">-- Choose Driver --</option>
-                  {drivers.map((d, index) => (
-                    <option key={`${d.id}-${index}`} value={d.id}>
-                      {d.name} ({d.id}) {d.phone ? `- ${d.phone}` : ''}
-                    </option>
-                  ))}
-                  {vehicleForm.driverName && !drivers.some((d) => d.id === vehicleForm.driverId || (d.name && d.name.toLowerCase() === vehicleForm.driverName.toLowerCase())) && (
-                    <option value={vehicleForm.driverId || vehicleForm.driverName}>
-                      {vehicleForm.driverName} (Current Assigned Driver)
-                    </option>
-                  )}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Company Client</label>
-                <select
-                  id="field-company"
-                  value={vehicleForm.company || ''}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, company: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-medium"
-                >
-                  <option value="">-- Choose Corporate Client --</option>
-                  {allMasterClients.map((clientName) => {
-                    const matched = companies.find((c) => c.name === clientName || c.companySite === clientName);
-                    const vendor = matched?.vendorName || companyToVendorMap.get(clientName.toLowerCase());
-                    return (
-                      <option key={clientName} value={clientName}>
-                        {clientName} {vendor ? `(Vendor: ${vendor})` : ''}
-                      </option>
-                    );
-                  })}
-                  {vehicleForm.company && !allMasterClients.includes(vehicleForm.company.toUpperCase()) && (
-                    <option value={vehicleForm.company}>{vehicleForm.company} (Custom Client)</option>
-                  )}
-                </select>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {allMasterClients.slice(0, 7).map((cName) => (
-                    <button
-                      key={cName}
-                      type="button"
-                      onClick={() => setVehicleForm({ ...vehicleForm, company: cName })}
-                      className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-colors cursor-pointer ${
-                        vehicleForm.company === cName
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                      }`}
-                    >
-                      {cName}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Company Client 2 (Optional)</label>
-                <select
-                  id="field-company2"
-                  value={vehicleForm.company2 || ''}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, company2: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-medium"
-                >
-                  <option value="">-- Choose Second Corporate Client --</option>
-                  {allMasterClients.map((clientName) => {
-                    const matched = companies.find((c) => c.name === clientName || c.companySite === clientName);
-                    const vendor = matched?.vendorName || companyToVendorMap.get(clientName.toLowerCase());
-                    return (
-                      <option key={clientName} value={clientName}>
-                        {clientName} {vendor ? `(Vendor: ${vendor})` : ''}
-                      </option>
-                    );
-                  })}
-                  {vehicleForm.company2 && !allMasterClients.includes(vehicleForm.company2.toUpperCase()) && (
-                    <option value={vehicleForm.company2}>{vehicleForm.company2} (Custom Client)</option>
-                  )}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Site</label>
-                <select
-                  id="field-site"
-                  value={vehicleForm.site || ''}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, site: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                >
-                  <option value="">-- Choose Site Campus --</option>
-                  {sites.map((s) => (
-                    <option key={s.id} value={s.name}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Site 2 (Optional)</label>
-                <select
-                  id="field-site2"
-                  value={vehicleForm.site2 || ''}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, site2: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                >
-                  <option value="">-- Choose Second Site Campus --</option>
-                  {sites.map((s) => (
-                    <option key={s.id} value={s.name}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">EMI Amount (₹)</label>
-                <input
-                  id="field-emiAmount"
-                  type="number"
-                  value={vehicleForm.emiAmount || ''}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, emiAmount: Number(e.target.value) })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">EMI Due Date</label>
-                <input
-                  id="field-emiDueDate"
-                  type="date"
-                  value={vehicleForm.emiDueDate || ''}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, emiDueDate: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Insurance Expiry</label>
-                <input
-                  id="field-insuranceExpiry"
-                  type="date"
-                  value={vehicleForm.insuranceExpiry || ''}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, insuranceExpiry: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Permit Expiry</label>
-                <input
-                  id="field-permitExpiry"
-                  type="date"
-                  value={vehicleForm.permitExpiry || ''}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, permitExpiry: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">FC Expiry</label>
-                <input
-                  id="field-fcExpiry"
-                  type="date"
-                  value={vehicleForm.fcExpiry || ''}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, fcExpiry: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Pollution Expiry</label>
-                <input
-                  id="field-pollutionExpiry"
-                  type="date"
-                  value={vehicleForm.pollutionExpiry || ''}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, pollutionExpiry: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">FASTag ID / Number</label>
-                <input
-                  id="field-fastagNumber"
-                  type="text"
-                  value={vehicleForm.fastagNumber || ''}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, fastagNumber: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Joining Date</label>
-                <input
-                  id="field-joiningDate"
-                  type="date"
-                  value={vehicleForm.joiningDate || ''}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, joiningDate: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
-                <select
-                  id="field-status"
-                  value={vehicleForm.status || 'Active'}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, status: e.target.value as any })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                >
-                  {VEHICLE_STATUSES.map((st) => (
-                    <option key={st} value={st}>
-                      {st}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Payment Cycle</label>
-                <select
-                  id="field-paymentCycle"
-                  value={vehicleForm.paymentCycle || 'Monthly'}
-                  onChange={(e) => setVehicleForm({ ...vehicleForm, paymentCycle: e.target.value as any })}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                >
-                  <option value="Monthly">Monthly Payment</option>
-                  <option value="Weekly">Weekly Payment</option>
-                </select>
-              </div>
-
-              {/* GPS DEVICE CONFIGURATION & REMOVAL TRACKING */}
-              <div className="md:col-span-3 p-3 bg-indigo-50/60 border border-indigo-200 rounded-xl space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-100 pb-2">
-                  <span className="text-2xs font-extrabold text-indigo-900 uppercase tracking-wider flex items-center gap-1.5">
-                    <Radio className="h-4 w-4 text-indigo-600" />
-                    GPS Tracking Hardware Details
-                  </span>
-                  
-                  {/* ENABLE / DISABLE GPS TOGGLE */}
-                  <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-indigo-200 shadow-3xs">
-                    <span className="text-[10px] font-bold text-slate-600 uppercase px-1.5">
-                      GPS Mandatory?
-                    </span>
-                    <button
-                      type="button"
-                      id="gps-toggle-yes"
-                      onClick={() => setVehicleForm({ ...vehicleForm, gpsRequired: 'Yes' })}
-                      className={`px-2.5 py-0.5 rounded text-[10px] font-black uppercase transition-all cursor-pointer ${
-                        (vehicleForm.gpsRequired === 'Yes' || vehicleForm.gpsRequired === true || (!vehicleForm.gpsRequired && isGpsRequiredForVehicle(vehicleForm)))
-                          ? 'bg-indigo-600 text-white shadow-xs'
-                          : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                      }`}
-                    >
-                      Enabled (Yes)
-                    </button>
-                    <button
-                      type="button"
-                      id="gps-toggle-no"
-                      onClick={() => setVehicleForm({
-                        ...vehicleForm,
-                        gpsRequired: 'No',
-                        gpsReturned: true
-                      })}
-                      className={`px-2.5 py-0.5 rounded text-[10px] font-black uppercase transition-all cursor-pointer ${
-                        (vehicleForm.gpsRequired === 'No' || vehicleForm.gpsRequired === false || (!vehicleForm.gpsRequired && !isGpsRequiredForVehicle(vehicleForm)))
-                          ? 'bg-slate-700 text-white shadow-xs'
-                          : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                      }`}
-                    >
-                      Disabled (Not Mandatory)
-                    </button>
-                  </div>
-                </div>
-
-                {/* IF GPS IS DISABLED / NOT MANDATORY */}
-                {(vehicleForm.gpsRequired === 'No' || vehicleForm.gpsRequired === false || (!vehicleForm.gpsRequired && !isGpsRequiredForVehicle(vehicleForm))) ? (
-                  <div className="p-2.5 bg-slate-100 border border-slate-200 rounded-lg text-xs text-slate-700 flex items-center justify-between gap-2">
+                <form onSubmit={handleSaveVehicle} className="space-y-6">
+                  {/* Sub-tab Navigation */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
+                    <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setVehicleEditTab('all')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                          vehicleEditTab === 'all'
+                            ? 'bg-[#006B57] text-white shadow-3xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                        }`}
+                      >
+                        <FileText className="h-3.5 w-3.5" /> All Sections (Unified)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setVehicleEditTab('car')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                          vehicleEditTab === 'car'
+                            ? 'bg-[#006B57] text-white shadow-3xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                        }`}
+                      >
+                        <Car className="h-3.5 w-3.5" /> 🚗 Car Details
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setVehicleEditTab('owner')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                          vehicleEditTab === 'owner'
+                            ? 'bg-[#006B57] text-white shadow-3xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                        }`}
+                      >
+                        <Users className="h-3.5 w-3.5" /> 👤 Owner Details
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setVehicleEditTab('driver')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                          vehicleEditTab === 'driver'
+                            ? 'bg-[#006B57] text-white shadow-3xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                        }`}
+                      >
+                        <Briefcase className="h-3.5 w-3.5" /> 🪪 Driver Details
+                      </button>
+                    </div>
                     <div className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-slate-400 shrink-0"></span>
-                      <p className="text-2xs font-medium text-slate-600">
-                        GPS tracking is <strong className="font-extrabold text-slate-800 uppercase">Disabled / Not Mandatory</strong> for this vehicle. Changing status to Inactive will <strong className="text-slate-900">NOT hold payments</strong> or require device removal.
-                      </p>
+                      {vehicleForm.registrationNumber && (
+                        <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200">
+                          {vehicleForm.registrationNumber}
+                        </span>
+                      )}
+                      <span className="text-2xs text-slate-500 font-medium">
+                        {editingId ? `Editing Vehicle (${editingId})` : 'New Fleet Entry'}
+                      </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setVehicleForm({ ...vehicleForm, gpsRequired: 'Yes' })}
-                      className="px-2 py-1 text-[10px] font-bold text-indigo-700 bg-white border border-indigo-200 hover:bg-indigo-50 rounded-md transition-colors cursor-pointer shrink-0"
-                    >
-                      Enable GPS
-                    </button>
                   </div>
-                ) : (
-                  <>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <div>
-                        <label className="block text-2xs font-bold text-slate-700 mb-1">GPS Vendor / Provider</label>
-                        <input
-                          id="field-gpsVendor"
-                          type="text"
-                          placeholder="e.g. Autoplant GPS, Fiesta GPS, Fleetx"
-                          value={vehicleForm.gpsVendor || ''}
-                          onChange={(e) => setVehicleForm({ ...vehicleForm, gpsVendor: e.target.value })}
-                          className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-2xs font-bold text-slate-700 mb-1">GPS Device IMEI No.</label>
-                        <input
-                          id="field-gpsImei"
-                          type="text"
-                          placeholder="15-digit IMEI number"
-                          value={vehicleForm.gpsImei || ''}
-                          onChange={(e) => setVehicleForm({ ...vehicleForm, gpsImei: e.target.value })}
-                          className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white font-mono"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-2xs font-bold text-slate-700 mb-1">GPS Fitting Date</label>
-                        <input
-                          id="field-gpsFittingDate"
-                          type="date"
-                          value={vehicleForm.gpsFittingDate || ''}
-                          onChange={(e) => setVehicleForm({ ...vehicleForm, gpsFittingDate: e.target.value })}
-                          className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white"
-                        />
-                      </div>
-                    </div>
 
-                    {/* INACTIVE VEHICLE GPS REMOVAL PROTOCOL */}
-                    {vehicleForm.status === 'Inactive' && (
-                      <div className={`p-3 rounded-lg border text-xs space-y-2.5 transition-all ${
-                        !vehicleForm.gpsReturned
-                          ? 'bg-rose-50 border-rose-300 text-rose-900'
-                          : 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                      }`}>
-                        <div className="flex items-start gap-2">
-                          <AlertTriangle className={`h-4 w-4 shrink-0 mt-0.5 ${!vehicleForm.gpsReturned ? 'text-rose-600 animate-bounce' : 'text-emerald-600'}`} />
-                          <div className="flex-1">
-                            <p className="font-extrabold uppercase tracking-wide text-2xs">
-                              {!vehicleForm.gpsReturned ? '🚨 Payment Held - GPS Device Removal & Return Required' : '✅ GPS Device Returned & Payment Unblocked'}
-                            </p>
-                            <p className="text-[11px] opacity-90 mt-0.5">
-                              {!vehicleForm.gpsReturned
-                                ? 'Vehicle is set to Inactive and has GPS enabled. The installed GPS unit must be removed and returned to the office. Payments will remain ON HOLD until GPS return is recorded.'
-                                : 'GPS device removal has been verified and recorded. Vehicle payments can proceed as per policy.'}
-                            </p>
+                  {/* SECTION 1: CAR / VEHICLE DETAILS */}
+                  {(vehicleEditTab === 'all' || vehicleEditTab === 'car') && (
+                    <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-4 space-y-4">
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                        <div className="flex items-center gap-2">
+                          <span className="p-1.5 bg-blue-100 text-blue-700 rounded-lg">
+                            <Car className="h-4 w-4" />
+                          </span>
+                          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                            1. Car / Vehicle Specifications
+                          </h4>
+                        </div>
+                        <span className="text-2xs font-semibold px-2 py-0.5 rounded bg-blue-100 text-blue-800">
+                          Vehicle Profile
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Registration Number *</label>
+                          <input
+                            id="field-registrationNumber"
+                            type="text"
+                            placeholder="e.g. TN-07-E7-1234"
+                            value={vehicleForm.registrationNumber || ''}
+                            onChange={(e) => setVehicleForm({ ...vehicleForm, registrationNumber: e.target.value.toUpperCase() })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-mono uppercase font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Manufacturer *</label>
+                          <input
+                            id="field-manufacturer"
+                            type="text"
+                            placeholder="e.g. Maruti Suzuki, Toyota"
+                            value={vehicleForm.manufacturer || ''}
+                            onChange={(e) => setVehicleForm({ ...vehicleForm, manufacturer: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Model *</label>
+                          <input
+                            id="field-model"
+                            type="text"
+                            placeholder="e.g. Dzire, Etios, Ertiga"
+                            value={vehicleForm.model || ''}
+                            onChange={(e) => setVehicleForm({ ...vehicleForm, model: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Manufacturing Year</label>
+                          <input
+                            id="field-mfd-year"
+                            type="number"
+                            placeholder="e.g. 2023 or 2025"
+                            min={1995}
+                            max={2030}
+                            value={vehicleForm.year || ''}
+                            onChange={(e) => setVehicleForm({ ...vehicleForm, year: e.target.value ? Number(e.target.value) : undefined })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-medium"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Registration Date</label>
+                          <input
+                            id="field-registrationDate"
+                            type="date"
+                            value={toInputDateFormat(vehicleForm.registrationDate || '')}
+                            onChange={(e) => setVehicleForm({ ...vehicleForm, registrationDate: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-medium"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Fuel Type</label>
+                          <select
+                            id="field-fuelType"
+                            value={vehicleForm.fuelType || 'Diesel'}
+                            onChange={(e) => setVehicleForm({ ...vehicleForm, fuelType: e.target.value as any })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-medium"
+                          >
+                            {FUEL_TYPES.map((f) => (
+                              <option key={f} value={f}>
+                                {f}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Vehicle Type</label>
+                          <select
+                            id="field-vehicleType"
+                            value={vehicleForm.vehicleType || 'Sedan'}
+                            onChange={(e) => setVehicleForm({ ...vehicleForm, vehicleType: e.target.value as any })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-medium"
+                          >
+                            {VEHICLE_TYPES.map((vt) => (
+                              <option key={vt} value={vt}>
+                                {vt}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">Assigned Site:</label>
+                          <select
+                            id="field-company"
+                            value={cleanSiteValue(vehicleForm.company || vehicleForm.sitePreference1)}
+                            onChange={(e) =>
+                              setVehicleForm({
+                                ...vehicleForm,
+                                company: e.target.value,
+                                sitePreference1: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-medium"
+                          >
+                            {renderCommonSiteOptions(
+                              companies,
+                              sites,
+                              cleanSiteValue(vehicleForm.company || vehicleForm.sitePreference1),
+                              false,
+                              '-- Select Assigned Site --'
+                            )}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">Site Preference 2:</label>
+                          <select
+                            id="field-company2"
+                            value={cleanSiteValue(vehicleForm.company2 || vehicleForm.sitePreference2)}
+                            onChange={(e) =>
+                              setVehicleForm({
+                                ...vehicleForm,
+                                company2: e.target.value,
+                                sitePreference2: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-medium"
+                          >
+                            {renderCommonSiteOptions(
+                              companies,
+                              sites,
+                              cleanSiteValue(vehicleForm.company2 || vehicleForm.sitePreference2),
+                              false,
+                              '-- None / Empty --'
+                            )}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">Site Preference 3:</label>
+                          <select
+                            id="field-site"
+                            value={cleanSiteValue(vehicleForm.site || vehicleForm.sitePreference3)}
+                            onChange={(e) =>
+                              setVehicleForm({
+                                ...vehicleForm,
+                                site: e.target.value,
+                                sitePreference3: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-medium"
+                          >
+                            {renderCommonSiteOptions(
+                              companies,
+                              sites,
+                              cleanSiteValue(vehicleForm.site || vehicleForm.sitePreference3),
+                              false,
+                              '-- None / Empty --'
+                            )}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">Site Preference 4:</label>
+                          <select
+                            id="field-site2"
+                            value={cleanSiteValue(vehicleForm.site2 || vehicleForm.sitePreference4)}
+                            onChange={(e) =>
+                              setVehicleForm({
+                                ...vehicleForm,
+                                site2: e.target.value,
+                                sitePreference4: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-medium"
+                          >
+                            {renderCommonSiteOptions(
+                              companies,
+                              sites,
+                              cleanSiteValue(vehicleForm.site2 || vehicleForm.sitePreference4),
+                              false,
+                              '-- None / Empty --'
+                            )}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Monthly EMI Amount (₹)</label>
+                          <input
+                            id="field-emiAmount"
+                            type="number"
+                            placeholder="e.g. 18500"
+                            value={vehicleForm.emiAmount !== undefined ? vehicleForm.emiAmount : ''}
+                            onChange={(e) => setVehicleForm({ ...vehicleForm, emiAmount: Number(e.target.value) })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">EMI Due Date</label>
+                          <input
+                            id="field-emiDueDate"
+                            type="date"
+                            value={toInputDateFormat(vehicleForm.emiDueDate || '')}
+                            onChange={(e) => setVehicleForm({ ...vehicleForm, emiDueDate: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Insurance Expiry</label>
+                          <input
+                            id="field-insuranceExpiry"
+                            type="date"
+                            value={toInputDateFormat(vehicleForm.insuranceExpiry || '')}
+                            onChange={(e) => setVehicleForm({ ...vehicleForm, insuranceExpiry: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Permit Expiry</label>
+                          <input
+                            id="field-permitExpiry"
+                            type="date"
+                            value={toInputDateFormat(vehicleForm.permitExpiry || '')}
+                            onChange={(e) => setVehicleForm({ ...vehicleForm, permitExpiry: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Fitness Certificate (FC) Expiry</label>
+                          <input
+                            id="field-fcExpiry"
+                            type="date"
+                            value={toInputDateFormat(vehicleForm.fcExpiry || '')}
+                            onChange={(e) => setVehicleForm({ ...vehicleForm, fcExpiry: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Pollution (PUCC) Expiry</label>
+                          <input
+                            id="field-pollutionExpiry"
+                            type="date"
+                            value={toInputDateFormat(vehicleForm.pollutionExpiry || '')}
+                            onChange={(e) => setVehicleForm({ ...vehicleForm, pollutionExpiry: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">FASTag ID / Tag Number</label>
+                          <input
+                            id="field-fastagNumber"
+                            type="text"
+                            placeholder="e.g. NETC-FASTAG-987654"
+                            value={vehicleForm.fastagNumber || ''}
+                            onChange={(e) => setVehicleForm({ ...vehicleForm, fastagNumber: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Fleet Joining Date</label>
+                          <input
+                            id="field-joiningDate"
+                            type="date"
+                            value={toInputDateFormat(vehicleForm.joiningDate || '')}
+                            onChange={(e) => setVehicleForm({ ...vehicleForm, joiningDate: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Fleet Status</label>
+                          <select
+                            id="field-status"
+                            value={vehicleForm.status || 'Active'}
+                            onChange={(e) => setVehicleForm({ ...vehicleForm, status: e.target.value as any })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-bold"
+                          >
+                            {VEHICLE_STATUSES.map((s) => (
+                              <option key={s} value={s}>
+                                {s}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Payment Billing Cycle</label>
+                          <select
+                            id="field-paymentCycle"
+                            value={vehicleForm.paymentCycle || 'Monthly'}
+                            onChange={(e) => setVehicleForm({ ...vehicleForm, paymentCycle: e.target.value as any })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-medium"
+                          >
+                            <option value="Monthly">Monthly</option>
+                            <option value="Weekly">Weekly (15 Days)</option>
+                          </select>
+                        </div>
+                        <div className="sm:col-span-2 md:col-span-3">
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Vehicle Remarks / Notes</label>
+                          <input
+                            id="field-remarks"
+                            type="text"
+                            placeholder="e.g. Clean vehicle, AC working fine, VIP trips enabled"
+                            value={vehicleForm.remarks || ''}
+                            onChange={(e) => setVehicleForm({ ...vehicleForm, remarks: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                          />
+                        </div>
+                      </div>
+
+                      {/* GPS Device Tracking Sub-Panel */}
+                      <div className="mt-2 p-3 bg-white rounded-lg border border-slate-200 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Radio className="h-4 w-4 text-indigo-600" />
+                            <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                              GPS Device Hardware Tracking
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xs font-semibold text-slate-500">GPS Installed:</span>
+                            <button
+                              type="button"
+                              onClick={() => setVehicleForm({
+                                ...vehicleForm,
+                                gpsRequired: vehicleForm.gpsRequired === 'No' || vehicleForm.gpsRequired === false ? 'Yes' : 'No'
+                              })}
+                              className={`px-2.5 py-1 text-2xs font-extrabold rounded-md border transition-colors cursor-pointer ${
+                                vehicleForm.gpsRequired === 'No' || vehicleForm.gpsRequired === false
+                                  ? 'bg-slate-100 text-slate-600 border-slate-300'
+                                  : 'bg-indigo-600 text-white border-indigo-600 shadow-3xs'
+                              }`}
+                            >
+                              {vehicleForm.gpsRequired === 'No' || vehicleForm.gpsRequired === false ? 'NO (Exempt)' : 'YES (Required)'}
+                            </button>
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200/60">
-                          <label className="sm:col-span-3 flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-300 cursor-pointer hover:bg-slate-50">
-                            <input
-                              type="checkbox"
-                              checked={!!vehicleForm.gpsReturned}
-                              onChange={(e) => setVehicleForm({
-                                ...vehicleForm,
-                                gpsReturned: e.target.checked,
-                                gpsReturnDate: e.target.checked ? (vehicleForm.gpsReturnDate || new Date().toISOString().substring(0, 10)) : ''
-                              })}
-                              className="h-4 w-4 text-indigo-600 rounded cursor-pointer"
-                            />
-                            <span className="font-bold text-slate-800 text-2xs uppercase">
-                              Confirm: GPS Hardware Unit Removed and Handed Over to Office
-                            </span>
-                          </label>
+                        {(vehicleForm.gpsRequired === undefined || vehicleForm.gpsRequired === 'Yes' || vehicleForm.gpsRequired === true) && (
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
+                            <div>
+                              <label className="block text-2xs font-bold text-slate-600 mb-1">GPS Vendor / Brand</label>
+                              <input
+                                id="field-gpsVendor"
+                                type="text"
+                                placeholder="e.g. Autoplant GPS, Fiesta GPS, Fleetx"
+                                value={vehicleForm.gpsVendor || ''}
+                                onChange={(e) => setVehicleForm({ ...vehicleForm, gpsVendor: e.target.value })}
+                                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md bg-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-2xs font-bold text-slate-600 mb-1">GPS Device IMEI No.</label>
+                              <input
+                                id="field-gpsImei"
+                                type="text"
+                                placeholder="15-digit IMEI number"
+                                value={vehicleForm.gpsImei || ''}
+                                onChange={(e) => setVehicleForm({ ...vehicleForm, gpsImei: e.target.value })}
+                                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md bg-white font-mono"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-2xs font-bold text-slate-600 mb-1">GPS Installation Date</label>
+                              <input
+                                id="field-gpsFittingDate"
+                                type="date"
+                                value={toInputDateFormat(vehicleForm.gpsFittingDate || '')}
+                                onChange={(e) => setVehicleForm({ ...vehicleForm, gpsFittingDate: e.target.value })}
+                                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md bg-white"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
-                          {vehicleForm.gpsReturned && (
-                            <>
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-600 mb-0.5">GPS Return Date</label>
-                                <input
-                                  type="date"
-                                  value={vehicleForm.gpsReturnDate || ''}
-                                  onChange={(e) => setVehicleForm({ ...vehicleForm, gpsReturnDate: e.target.value })}
-                                  className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-md bg-white font-mono"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Received / Handled By</label>
-                                <input
-                                  type="text"
-                                  placeholder="e.g. Office Admin / Garage Manager"
-                                  value={vehicleForm.gpsReturnedBy || ''}
-                                  onChange={(e) => setVehicleForm({ ...vehicleForm, gpsReturnedBy: e.target.value })}
-                                  className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-md bg-white"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Return Remarks</label>
-                                <input
-                                  type="text"
-                                  placeholder="e.g. Handed over device at Navalur office"
-                                  value={vehicleForm.gpsReturnRemarks || ''}
-                                  onChange={(e) => setVehicleForm({ ...vehicleForm, gpsReturnRemarks: e.target.value })}
-                                  className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-md bg-white"
-                                />
-                              </div>
-                            </>
-                          )}
+                  {/* SECTION 2: OWNER PARTNER DETAILS */}
+                  {(vehicleEditTab === 'all' || vehicleEditTab === 'owner') && (
+                    <div className="bg-amber-50/40 border border-amber-200 rounded-xl p-4 space-y-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-amber-200">
+                        <div className="flex items-center gap-2">
+                          <span className="p-1.5 bg-amber-100 text-amber-800 rounded-lg">
+                            <Users className="h-4 w-4" />
+                          </span>
+                          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                            2. Linked Owner Partner Information
+                          </h4>
+                        </div>
+                        <span className="text-2xs font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200">
+                          Auto-saved to Owner Master
+                        </span>
+                      </div>
+
+                      {/* Owner Quick Select Dropdown */}
+                      <div className="bg-white p-3 rounded-lg border border-amber-200/80">
+                        <label className="block text-xs font-bold text-slate-700 mb-1">
+                          Select Existing Owner or Fill Details Below
+                        </label>
+                        <select
+                          id="field-owner-select-picker"
+                          value={
+                            ownerForm.id ||
+                            (owners.some((o) => o.id === vehicleForm.ownerId)
+                              ? vehicleForm.ownerId
+                              : owners.find((o) => o.name && ownerForm.name && o.name.trim().toLowerCase() === ownerForm.name.trim().toLowerCase())?.id || '')
+                          }
+                          onChange={(e) => {
+                            const selId = e.target.value;
+                            if (!selId) {
+                              setOwnerForm({
+                                name: '',
+                                phone: '',
+                                email: '',
+                                address: '',
+                                bankName: '',
+                                accountNumber: '',
+                                ifsc: '',
+                                upiId: '',
+                                pan: '',
+                                aadhaar: '',
+                                emergencyContactName: '',
+                                emergencyContactRelation: '',
+                                emergencyContactNumber: '',
+                              });
+                              setVehicleForm((prev) => ({ ...prev, ownerId: '', ownerName: '' }));
+                              if (driverForm.driverType === 'Owner-cum-Driver') {
+                                setDriverForm((prev) => ({
+                                  ...prev,
+                                  name: '',
+                                  phone: '',
+                                  address: '',
+                                  aadhaar: '',
+                                  pan: '',
+                                  emergencyContactName: '',
+                                  emergencyContactRelation: '',
+                                  emergencyContactNumber: '',
+                                  emergencyContact: '',
+                                }));
+                                setVehicleForm((prev) => ({ ...prev, driverName: '' }));
+                              }
+                              return;
+                            }
+                            const matched = owners.find((o) => o.id === selId);
+                            if (matched) {
+                              setOwnerForm({ ...matched });
+                              setVehicleForm((prev) => ({ ...prev, ownerId: matched.id, ownerName: matched.name }));
+                              if (driverForm.driverType === 'Owner-cum-Driver') {
+                                setDriverForm((prev) => ({
+                                  ...prev,
+                                  name: matched.name,
+                                  phone: matched.phone,
+                                  address: matched.address || prev.address,
+                                  aadhaar: matched.aadhaar || prev.aadhaar,
+                                  pan: matched.pan || prev.pan,
+                                  emergencyContactName: matched.emergencyContactName || prev.emergencyContactName,
+                                  emergencyContactRelation: matched.emergencyContactRelation || prev.emergencyContactRelation,
+                                  emergencyContactNumber: matched.emergencyContactNumber || prev.emergencyContactNumber,
+                                  emergencyContact: formatCombinedEmergency(matched.emergencyContactName, matched.emergencyContactRelation, matched.emergencyContactNumber) || prev.emergencyContact,
+                                }));
+                                setVehicleForm((prev) => ({ ...prev, driverName: matched.name }));
+                              }
+                            }
+                          }}
+                          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500 bg-white font-medium"
+                        >
+                          <option value="">➕ [Create / Enter New Owner Record]</option>
+                          {owners.map((o, index) => (
+                            <option key={`${o.id}-${index}`} value={o.id}>
+                              {o.name} ({o.id}) {o.phone ? `- 📞 ${o.phone}` : ''} {o.bankName ? `[${o.bankName}]` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Owner Full Name *</label>
+                          <input
+                            id="field-owner-name"
+                            type="text"
+                            placeholder="e.g. Rajesh Kumar"
+                            value={ownerForm.name || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              const matchedOwner = owners.find((o) => o.name && o.name.trim().toLowerCase() === val.trim().toLowerCase());
+                              setOwnerForm((prev) => ({
+                                ...prev,
+                                id: matchedOwner ? matchedOwner.id : undefined,
+                                name: val,
+                                phone: matchedOwner ? matchedOwner.phone : prev.phone,
+                              }));
+                              setVehicleForm((prev) => ({
+                                ...prev,
+                                ownerName: val,
+                                ownerId: matchedOwner ? matchedOwner.id : undefined,
+                              }));
+                              if (driverForm.driverType === 'Owner-cum-Driver') {
+                                const matchedDriver = drivers.find((d) => d.name && d.name.trim().toLowerCase() === val.trim().toLowerCase());
+                                setDriverForm((prev) => ({
+                                  ...prev,
+                                  id: matchedDriver ? matchedDriver.id : undefined,
+                                  name: val,
+                                  phone: matchedDriver ? matchedDriver.phone : (matchedOwner ? matchedOwner.phone : prev.phone),
+                                }));
+                                setVehicleForm((prev) => ({
+                                  ...prev,
+                                  driverName: val,
+                                  driverId: matchedDriver ? matchedDriver.id : undefined,
+                                }));
+                              }
+                            }}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500 bg-white font-medium"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Phone Number *</label>
+                          <input
+                            id="field-owner-phone"
+                            type="text"
+                            placeholder="e.g. 9876543210"
+                            value={ownerForm.phone || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setOwnerForm({ ...ownerForm, phone: val });
+                              if (driverForm.driverType === 'Owner-cum-Driver') {
+                                setDriverForm((prev) => ({ ...prev, phone: val }));
+                              }
+                            }}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Email Address</label>
+                          <input
+                            id="field-owner-email"
+                            type="email"
+                            placeholder="owner@example.com"
+                            value={ownerForm.email || ''}
+                            onChange={(e) => setOwnerForm({ ...ownerForm, email: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Bank Name</label>
+                          <input
+                            id="field-owner-bankName"
+                            type="text"
+                            placeholder="e.g. HDFC Bank, SBI, ICICI"
+                            value={ownerForm.bankName || ''}
+                            onChange={(e) => setOwnerForm({ ...ownerForm, bankName: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Account Number</label>
+                          <input
+                            id="field-owner-accountNumber"
+                            type="text"
+                            placeholder="e.g. 50100234567890"
+                            value={ownerForm.accountNumber || ''}
+                            onChange={(e) => setOwnerForm({ ...ownerForm, accountNumber: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500 bg-white font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">IFSC Code</label>
+                          <input
+                            id="field-owner-ifsc"
+                            type="text"
+                            placeholder="e.g. HDFC0001234"
+                            value={ownerForm.ifsc || ''}
+                            onChange={(e) => setOwnerForm({ ...ownerForm, ifsc: e.target.value.toUpperCase() })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500 bg-white font-mono uppercase"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">UPI ID</label>
+                          <input
+                            id="field-owner-upiId"
+                            type="text"
+                            placeholder="e.g. rajesh@okaxis"
+                            value={ownerForm.upiId || ''}
+                            onChange={(e) => setOwnerForm({ ...ownerForm, upiId: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500 bg-white font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">PAN Card Number</label>
+                          <input
+                            id="field-owner-pan"
+                            type="text"
+                            placeholder="e.g. ABCDE1234F"
+                            value={ownerForm.pan || ''}
+                            onChange={(e) => {
+                              const val = e.target.value.toUpperCase();
+                              setOwnerForm({ ...ownerForm, pan: val });
+                              if (driverForm.driverType === 'Owner-cum-Driver' && (driverForm.name === ownerForm.name || !driverForm.name)) {
+                                setDriverForm((prev) => ({ ...prev, pan: val }));
+                              }
+                            }}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500 bg-white font-mono uppercase"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Aadhaar Card Number</label>
+                          <input
+                            id="field-owner-aadhaar"
+                            type="text"
+                            placeholder="12-digit Aadhaar Number"
+                            value={ownerForm.aadhaar || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setOwnerForm({ ...ownerForm, aadhaar: val });
+                              if (driverForm.driverType === 'Owner-cum-Driver' && (driverForm.name === ownerForm.name || !driverForm.name)) {
+                                setDriverForm((prev) => ({ ...prev, aadhaar: val }));
+                              }
+                            }}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500 bg-white font-mono"
+                          />
+                        </div>
+                        <div className="sm:col-span-2 md:col-span-3">
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Residential Address</label>
+                          <input
+                            id="field-owner-address"
+                            type="text"
+                            placeholder="Street, Area, City, Pin code"
+                            value={ownerForm.address || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setOwnerForm({ ...ownerForm, address: val });
+                              if (driverForm.driverType === 'Owner-cum-Driver' && (driverForm.name === ownerForm.name || !driverForm.name)) {
+                                setDriverForm((prev) => ({ ...prev, address: val }));
+                              }
+                            }}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Emergency Contact Name</label>
+                          <input
+                            id="field-owner-emergencyContactName"
+                            type="text"
+                            placeholder="e.g. Suresh Kumar"
+                            value={ownerForm.emergencyContactName || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setOwnerForm({ ...ownerForm, emergencyContactName: val });
+                              if (driverForm.driverType === 'Owner-cum-Driver' && (driverForm.name === ownerForm.name || !driverForm.name)) {
+                                setDriverForm((prev) => ({ ...prev, emergencyContactName: val }));
+                              }
+                            }}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Relationship</label>
+                          <select
+                            id="field-owner-emergencyContactRelation"
+                            value={ownerForm.emergencyContactRelation || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setOwnerForm({ ...ownerForm, emergencyContactRelation: val });
+                              if (driverForm.driverType === 'Owner-cum-Driver' && (driverForm.name === ownerForm.name || !driverForm.name)) {
+                                setDriverForm((prev) => ({ ...prev, emergencyContactRelation: val }));
+                              }
+                            }}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500 bg-white"
+                          >
+                            <option value="">-- Select Relation --</option>
+                            <option value="Father">Father</option>
+                            <option value="Mother">Mother</option>
+                            <option value="Wife">Wife</option>
+                            <option value="Husband">Husband</option>
+                            <option value="Spouse">Spouse</option>
+                            <option value="Brother">Brother</option>
+                            <option value="Sister">Sister</option>
+                            <option value="Son">Son</option>
+                            <option value="Daughter">Daughter</option>
+                            <option value="Friend">Friend</option>
+                            <option value="Relative">Relative</option>
+                            <option value="Other">Other</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Emergency Phone Number</label>
+                          <input
+                            id="field-owner-emergencyContactNumber"
+                            type="text"
+                            placeholder="e.g. 9876543211"
+                            value={ownerForm.emergencyContactNumber || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setOwnerForm({ ...ownerForm, emergencyContactNumber: val });
+                              if (driverForm.driverType === 'Owner-cum-Driver' && (driverForm.name === ownerForm.name || !driverForm.name)) {
+                                setDriverForm((prev) => ({ ...prev, emergencyContactNumber: val }));
+                              }
+                            }}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500 bg-white"
+                          />
                         </div>
                       </div>
-                    )}
-                  </>
-                )}
-              </div>
-              <div className="md:col-span-3">
-                <button
-                  id="btn-save-vehicle"
-                  type="submit"
-                  className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-xs transition-colors mr-2"
-                >
-                  Save Vehicle
-                </button>
-                <button
-                  type="button"
-                  onClick={resetForms}
-                  className="px-4 py-2 text-sm font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          )}
+                    </div>
+                  )}
+
+                  {/* SECTION 3: ASSIGNED DRIVER DETAILS */}
+                  {(vehicleEditTab === 'all' || vehicleEditTab === 'driver') && (
+                    <div className="bg-emerald-50/40 border border-emerald-200 rounded-xl p-4 space-y-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-emerald-200">
+                        <div className="flex items-center gap-2">
+                          <span className="p-1.5 bg-emerald-100 text-emerald-800 rounded-lg">
+                            <Briefcase className="h-4 w-4" />
+                          </span>
+                          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                            3. Assigned Driver Information
+                          </h4>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-2xs font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 border border-emerald-200">
+                            Auto-saved to Driver Master
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* OPTION: SET OWNER AS DRIVER (OWNER-CUM-DRIVER) */}
+                      <div className={`p-3.5 rounded-xl border transition-all ${
+                        driverForm.driverType === 'Owner-cum-Driver'
+                          ? 'bg-gradient-to-r from-indigo-50/90 via-blue-50/80 to-purple-50/80 border-indigo-300 shadow-sm'
+                          : 'bg-white border-emerald-200/80 shadow-2xs'
+                      }`}>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-start gap-3">
+                            <label className="relative inline-flex items-center cursor-pointer mt-0.5">
+                              <input
+                                type="checkbox"
+                                id="toggle-owner-as-driver"
+                                checked={driverForm.driverType === 'Owner-cum-Driver'}
+                                onChange={(e) => handleSetOwnerAsDriver(e.target.checked)}
+                                className="sr-only peer"
+                              />
+                              <div className="w-10 h-5.5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-indigo-600"></div>
+                            </label>
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <label
+                                  htmlFor="toggle-owner-as-driver"
+                                  className="text-xs font-black text-slate-900 cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <UserCheck className="h-4 w-4 text-indigo-600" />
+                                  SET OWNER AS DRIVER (Owner-cum-Driver / Self-Driven)
+                                </label>
+                                {driverForm.driverType === 'Owner-cum-Driver' ? (
+                                  <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-indigo-600 text-white shadow-2xs flex items-center gap-1">
+                                    <Sparkles className="h-3 w-3" /> OWNER-CUM-DRIVER ENABLED
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                                    Owner-Paid Mode
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-slate-600 mt-1">
+                                Enable this option if the owner drives this vehicle. Automatically populates & syncs Driver Name, Phone, Address, Aadhaar, PAN, and Emergency Contacts directly from Owner details.
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {driverForm.driverType === 'Owner-cum-Driver' ? (
+                              <button
+                                type="button"
+                                id="btn-resync-owner-details"
+                                onClick={() => handleSetOwnerAsDriver(true)}
+                                className="px-3 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                                title="Re-sync all details from Owner section"
+                              >
+                                <RefreshCw className="h-3.5 w-3.5" />
+                                Re-Sync from Owner
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                id="btn-quick-set-owner-as-driver"
+                                onClick={() => handleSetOwnerAsDriver(true)}
+                                className="px-3 py-1.5 text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                                title="Set Owner as Driver with one click"
+                              >
+                                <Sparkles className="h-3.5 w-3.5 text-indigo-600" />
+                                Set Owner as Driver
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Driver Quick Select Dropdown */}
+                      <div className="bg-white p-3 rounded-lg border border-emerald-200/80">
+                        <label className="block text-xs font-bold text-slate-700 mb-1">
+                          Select Existing Driver or Fill Details Below
+                        </label>
+                        <select
+                          id="field-driver-select-picker"
+                          value={
+                            driverForm.id ||
+                            (drivers.some((d) => d.id === vehicleForm.driverId)
+                              ? vehicleForm.driverId
+                              : drivers.find((d) => d.name && driverForm.name && d.name.trim().toLowerCase() === driverForm.name.trim().toLowerCase())?.id || '')
+                          }
+                          onChange={(e) => {
+                            const selId = e.target.value;
+                            if (!selId) {
+                              setDriverForm({
+                                name: '',
+                                phone: '',
+                                licenceNumber: '',
+                                licenceExpiry: '',
+                                badgeNumber: '',
+                                badgeExpiry: '',
+                                address: '',
+                                salary: 0,
+                                aadhaar: '',
+                                pan: '',
+                                driverType: 'Owner-Paid',
+                                status: 'Active',
+                                emergencyContactName: '',
+                                emergencyContactRelation: '',
+                                emergencyContactNumber: '',
+                              });
+                              setVehicleForm((prev) => ({ ...prev, driverId: '', driverName: '' }));
+                              return;
+                            }
+                            const matched = drivers.find((d) => d.id === selId);
+                            if (matched) {
+                              setDriverForm({ ...matched });
+                              setVehicleForm((prev) => ({ ...prev, driverId: matched.id, driverName: matched.name }));
+                            }
+                          }}
+                          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white font-medium"
+                        >
+                          <option value="">➕ [Create / Enter New Driver Record]</option>
+                          {drivers.map((d, index) => (
+                            <option key={`${d.id}-${index}`} value={d.id}>
+                              {d.name} ({d.id}) {d.phone ? `- 📞 ${d.phone}` : ''} {d.licenceNumber ? `[DL: ${d.licenceNumber}]` : ''} {d.driverType === 'Owner-cum-Driver' ? '(Owner-cum-Driver)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-xs font-medium text-slate-700">Driver Full Name *</label>
+                            {driverForm.driverType === 'Owner-cum-Driver' && (
+                              <span className="text-[10px] font-bold text-indigo-600 flex items-center gap-0.5">
+                                <Sparkles className="h-2.5 w-2.5" /> (Owner)
+                              </span>
+                            )}
+                          </div>
+                          <input
+                            id="field-driver-name"
+                            type="text"
+                            placeholder="e.g. Ramesh Kumar"
+                            value={driverForm.name || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              const matchedDriver = drivers.find((d) => d.name && d.name.trim().toLowerCase() === val.trim().toLowerCase());
+                              const isOwnerName = Boolean(ownerForm.name && val.trim().toLowerCase() === ownerForm.name.trim().toLowerCase());
+                              setDriverForm((prev) => ({
+                                ...prev,
+                                id: matchedDriver ? matchedDriver.id : undefined,
+                                name: val,
+                                phone: matchedDriver ? matchedDriver.phone : prev.phone,
+                                driverType: matchedDriver?.driverType || (isOwnerName ? 'Owner-cum-Driver' : 'Owner-Paid'),
+                              }));
+                              setVehicleForm((prev) => ({
+                                ...prev,
+                                driverName: val,
+                                driverId: matchedDriver ? matchedDriver.id : undefined,
+                              }));
+                            }}
+                            className={`w-full px-3 py-2 text-sm border rounded-lg bg-white font-medium focus:ring-2 ${
+                              driverForm.driverType === 'Owner-cum-Driver'
+                                ? 'border-indigo-300 focus:ring-indigo-500 bg-indigo-50/20'
+                                : 'border-slate-200 focus:ring-emerald-500'
+                            }`}
+                          />
+                        </div>
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-xs font-medium text-slate-700">Driver Phone Number *</label>
+                            {driverForm.driverType === 'Owner-cum-Driver' && (
+                              <span className="text-[10px] font-bold text-indigo-600 flex items-center gap-0.5">
+                                <Sparkles className="h-2.5 w-2.5" /> (Owner)
+                              </span>
+                            )}
+                          </div>
+                          <input
+                            id="field-driver-phone"
+                            type="text"
+                            placeholder="e.g. 9840123456"
+                            value={driverForm.phone || ''}
+                            onChange={(e) => setDriverForm({ ...driverForm, phone: e.target.value })}
+                            className={`w-full px-3 py-2 text-sm border rounded-lg bg-white focus:ring-2 ${
+                              driverForm.driverType === 'Owner-cum-Driver'
+                                ? 'border-indigo-300 focus:ring-indigo-500 bg-indigo-50/20'
+                                : 'border-slate-200 focus:ring-emerald-500'
+                            }`}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Driver Type</label>
+                          <select
+                            id="field-driverType"
+                            value={driverForm.driverType || 'Owner-Paid'}
+                            onChange={(e) => {
+                              const val = e.target.value as 'Owner-Paid' | 'Owner-cum-Driver';
+                              if (val === 'Owner-cum-Driver') {
+                                handleSetOwnerAsDriver(true);
+                              } else {
+                                handleSetOwnerAsDriver(false);
+                              }
+                            }}
+                            className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 font-bold ${
+                              driverForm.driverType === 'Owner-cum-Driver'
+                                ? 'border-indigo-300 focus:ring-indigo-500 bg-indigo-50/40 text-indigo-900'
+                                : 'border-slate-200 focus:ring-emerald-500 bg-white text-slate-800'
+                            }`}
+                          >
+                            <option value="Owner-Paid">Owner-Paid Driver</option>
+                            <option value="Owner-cum-Driver">Owner-cum-Driver (Self Driven)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Driving Licence Number *</label>
+                          <input
+                            id="field-driver-licenceNumber"
+                            type="text"
+                            placeholder="e.g. TN-07-20150001234"
+                            value={driverForm.licenceNumber || ''}
+                            onChange={(e) => setDriverForm({ ...driverForm, licenceNumber: e.target.value.toUpperCase() })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white font-mono uppercase"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Licence Expiry Date</label>
+                          <input
+                            id="field-driver-licenceExpiry"
+                            type="date"
+                            value={toInputDateFormat(driverForm.licenceExpiry || '')}
+                            onChange={(e) => setDriverForm({ ...driverForm, licenceExpiry: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Badge Number</label>
+                          <input
+                            id="field-driver-badgeNumber"
+                            type="text"
+                            placeholder="e.g. BDG-4458"
+                            value={driverForm.badgeNumber || ''}
+                            onChange={(e) => setDriverForm({ ...driverForm, badgeNumber: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Badge Expiry Date</label>
+                          <input
+                            id="field-driver-badgeExpiry"
+                            type="date"
+                            value={toInputDateFormat(driverForm.badgeExpiry || '')}
+                            onChange={(e) => setDriverForm({ ...driverForm, badgeExpiry: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Base Salary / Remuneration (₹)</label>
+                          <input
+                            id="field-driver-salary"
+                            type="number"
+                            placeholder="e.g. 20000"
+                            value={driverForm.salary !== undefined ? driverForm.salary : ''}
+                            onChange={(e) => setDriverForm({ ...driverForm, salary: Number(e.target.value) })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Driver Status</label>
+                          <select
+                            id="field-driver-status"
+                            value={driverForm.status || 'Active'}
+                            onChange={(e) => setDriverForm({ ...driverForm, status: e.target.value as any })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white font-bold"
+                          >
+                            <option value="Active">Active</option>
+                            <option value="Inactive">Inactive</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Aadhaar Card Number</label>
+                          <input
+                            id="field-driver-aadhaar"
+                            type="text"
+                            placeholder="12-digit Aadhaar"
+                            value={driverForm.aadhaar || ''}
+                            onChange={(e) => setDriverForm({ ...driverForm, aadhaar: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">PAN Card Number</label>
+                          <input
+                            id="field-driver-pan"
+                            type="text"
+                            placeholder="e.g. ABCDE1234F"
+                            value={driverForm.pan || ''}
+                            onChange={(e) => setDriverForm({ ...driverForm, pan: e.target.value.toUpperCase() })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white font-mono uppercase"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Joining Date</label>
+                          <input
+                            id="field-driver-joiningDate"
+                            type="date"
+                            value={toInputDateFormat(driverForm.joiningDate || '')}
+                            onChange={(e) => setDriverForm({ ...driverForm, joiningDate: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+                          />
+                        </div>
+                        <div className="sm:col-span-2 md:col-span-3">
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Residential Address</label>
+                          <input
+                            id="field-driver-address"
+                            type="text"
+                            placeholder="Driver local residential address"
+                            value={driverForm.address || ''}
+                            onChange={(e) => setDriverForm({ ...driverForm, address: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Emergency Contact Name</label>
+                          <input
+                            id="field-driver-emergencyContactName"
+                            type="text"
+                            placeholder="e.g. Meena (Wife)"
+                            value={driverForm.emergencyContactName || ''}
+                            onChange={(e) => setDriverForm({ ...driverForm, emergencyContactName: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Relationship</label>
+                          <select
+                            id="field-driver-emergencyContactRelation"
+                            value={driverForm.emergencyContactRelation || ''}
+                            onChange={(e) => setDriverForm({ ...driverForm, emergencyContactRelation: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+                          >
+                            <option value="">-- Select Relation --</option>
+                            <option value="Father">Father</option>
+                            <option value="Mother">Mother</option>
+                            <option value="Wife">Wife</option>
+                            <option value="Husband">Husband</option>
+                            <option value="Spouse">Spouse</option>
+                            <option value="Brother">Brother</option>
+                            <option value="Sister">Sister</option>
+                            <option value="Son">Son</option>
+                            <option value="Daughter">Daughter</option>
+                            <option value="Friend">Friend</option>
+                            <option value="Relative">Relative</option>
+                            <option value="Other">Other</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">Emergency Phone Number</label>
+                          <input
+                            id="field-driver-emergencyContactNumber"
+                            type="text"
+                            placeholder="e.g. 9840123457"
+                            value={driverForm.emergencyContactNumber || ''}
+                            onChange={(e) => setDriverForm({ ...driverForm, emergencyContactNumber: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* STICKY BOTTOM FORM ACTIONS BAR */}
+                  <div className="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-white sticky bottom-0 z-10 py-2">
+                    <div className="flex flex-wrap items-center gap-2 text-2xs text-slate-600">
+                      <span className="font-semibold text-slate-400 uppercase">Save Summary:</span>
+                      <span className="bg-blue-50 text-blue-800 font-bold px-2 py-0.5 rounded border border-blue-200 font-mono">
+                        🚗 {vehicleForm.registrationNumber || 'No Reg Number'}
+                      </span>
+                      <span className="bg-amber-50 text-amber-900 font-bold px-2 py-0.5 rounded border border-amber-200">
+                        👤 {ownerForm.name || vehicleForm.ownerName || 'No Owner'}
+                      </span>
+                      <span className="bg-emerald-50 text-emerald-900 font-bold px-2 py-0.5 rounded border border-emerald-200">
+                        🪪 {driverForm.name || vehicleForm.driverName || 'No Driver'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={resetForms}
+                        className="px-4 py-2 text-sm font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        id="btn-save-vehicle"
+                        type="submit"
+                        className="px-5 py-2 text-sm font-bold bg-[#006B57] hover:bg-[#004D40] text-white rounded-lg shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer"
+                      >
+                        <CheckCircle className="h-4 w-4" />
+                        {editingId ? 'Save All Changes (Car + Owner + Driver)' : 'Save New Record (Car + Owner + Driver)'}
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              )}
 
           {/* OWNER MASTER FORM */}
           {activeSubView === 'Owner Master' && (
@@ -2071,14 +3488,14 @@ export default function MasterViews({
                 <button
                   id="btn-save-owner"
                   type="submit"
-                  className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-xs transition-colors mr-2"
+                  className="px-4 py-2 text-sm font-semibold bg-[#006B57] hover:bg-[#004D40] text-white rounded-lg shadow-xs transition-colors mr-2 cursor-pointer"
                 >
                   Save Owner Details
                 </button>
                 <button
                   type="button"
                   onClick={resetForms}
-                  className="px-4 py-2 text-sm font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
+                  className="px-4 py-2 text-sm font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -2323,14 +3740,14 @@ export default function MasterViews({
                 <button
                   id="btn-save-driver"
                   type="submit"
-                  className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-xs transition-colors mr-2"
+                  className="px-4 py-2 text-sm font-semibold bg-[#006B57] hover:bg-[#004D40] text-white rounded-lg shadow-xs transition-colors mr-2 cursor-pointer"
                 >
                   Save Driver Partner
                 </button>
                 <button
                   type="button"
                   onClick={resetForms}
-                  className="px-4 py-2 text-sm font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
+                  className="px-4 py-2 text-sm font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -2466,7 +3883,7 @@ export default function MasterViews({
                 <button
                   id="btn-save-company"
                   type="submit"
-                  className="px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-xs transition-colors cursor-pointer"
+                  className="px-4 py-2 text-sm font-semibold bg-[#006B57] hover:bg-[#004D40] text-white rounded-lg shadow-xs transition-colors cursor-pointer"
                 >
                   {editingId ? 'Update Company Master' : 'Save Company Master'}
                 </button>
@@ -2524,7 +3941,10 @@ export default function MasterViews({
                     </td>
                     <td className="py-3 px-4 text-slate-700">
                       <div className="font-semibold text-slate-800">{v.manufacturer} {v.model}</div>
-                      {v.year ? <div className="text-[10px] text-slate-500 font-medium">Mfg Year: {v.year}</div> : null}
+                      <div className="flex flex-wrap items-center gap-x-2 text-[10px] text-slate-500 font-medium">
+                        {v.year ? <span>Mfg: {v.year}</span> : null}
+                        {v.registrationDate ? <span className="text-blue-600 font-semibold">Reg: {formatDate(v.registrationDate)}</span> : null}
+                      </div>
                     </td>
                     <td className="py-3 px-4 text-xs text-slate-600">{v.vehicleType}</td>
                     <td className="py-3 px-4 text-xs">{getFuelTypeBadge(v.fuelType)}</td>
@@ -2718,21 +4138,88 @@ export default function MasterViews({
                           onClick={() => {
                             setIsAdding(true);
                             setEditingId(v.id);
+                            setVehicleEditTab('all');
+                            setFormError(null);
                             const currentOwner = (v.ownerId ? owners.find(o => o.id === v.ownerId) : null) ||
                                                  (v.ownerName && v.ownerName.trim() ? owners.find(o => o.name && o.name.trim().toLowerCase() === v.ownerName.trim().toLowerCase()) : null);
                             const currentDriver = (v.driverId ? drivers.find(d => d.id === v.driverId) : null) ||
                                                   (v.driverName && v.driverName.trim() ? drivers.find(d => d.name && d.name.trim().toLowerCase() === v.driverName.trim().toLowerCase()) : null);
                             setVehicleForm({
                               ...v,
+                              registrationDate: v.registrationDate || '',
+                              company: cleanSiteValue(v.company || v.sitePreference1),
+                              company2: cleanSiteValue(v.company2 || v.sitePreference2),
+                              site: cleanSiteValue(v.site || v.sitePreference3),
+                              site2: cleanSiteValue(v.site2 || v.sitePreference4),
+                              sitePreference1: cleanSiteValue(v.company || v.sitePreference1),
+                              sitePreference2: cleanSiteValue(v.company2 || v.sitePreference2),
+                              sitePreference3: cleanSiteValue(v.site || v.sitePreference3),
+                              sitePreference4: cleanSiteValue(v.site2 || v.sitePreference4),
                               gpsRequired: v.gpsRequired || (isGpsRequiredForVehicle(v) ? 'Yes' : 'No'),
                               ownerId: currentOwner ? currentOwner.id : v.ownerId,
                               ownerName: currentOwner ? currentOwner.name : v.ownerName,
                               driverId: currentDriver ? currentDriver.id : v.driverId,
                               driverName: currentDriver ? currentDriver.name : v.driverName
                             });
+                            if (currentOwner) {
+                              setOwnerForm({
+                                ...currentOwner,
+                                emergencyContactName: currentOwner.emergencyContactName || '',
+                                emergencyContactNumber: currentOwner.emergencyContactNumber || '',
+                                emergencyContactRelation: currentOwner.emergencyContactRelation || '',
+                              });
+                            } else {
+                              setOwnerForm({
+                                name: v.ownerName || '',
+                                phone: v.ownerPhone || '',
+                                address: v.ownerAddress || '',
+                              });
+                            }
+                            const isOwnerSameAsDriver = Boolean(
+                              (v.driverName && v.ownerName && v.driverName.trim().toLowerCase() === v.ownerName.trim().toLowerCase()) ||
+                              (currentOwner && currentDriver && currentOwner.name.trim().toLowerCase() === currentDriver.name.trim().toLowerCase())
+                            );
+
+                            if (currentDriver) {
+                              const parsedEm = parseEmergencyDetails(
+                                currentDriver.emergencyContact,
+                                currentDriver.emergencyContactName,
+                                currentDriver.emergencyContactRelation,
+                                currentDriver.emergencyContactNumber
+                              );
+                              setDriverForm({
+                                ...currentDriver,
+                                driverType: isOwnerSameAsDriver ? 'Owner-cum-Driver' : (currentDriver.driverType || 'Owner-Paid'),
+                                emergencyContactName: parsedEm.name,
+                                emergencyContactNumber: parsedEm.number,
+                                emergencyContactRelation: parsedEm.relation,
+                              });
+                            } else if (isOwnerSameAsDriver && currentOwner) {
+                              setDriverForm({
+                                name: currentOwner.name,
+                                phone: currentOwner.phone || '',
+                                address: currentOwner.address || '',
+                                aadhaar: currentOwner.aadhaar || '',
+                                pan: currentOwner.pan || '',
+                                licenceNumber: '',
+                                driverType: 'Owner-cum-Driver',
+                                status: 'Active',
+                                emergencyContactName: currentOwner.emergencyContactName || '',
+                                emergencyContactNumber: currentOwner.emergencyContactNumber || '',
+                                emergencyContactRelation: currentOwner.emergencyContactRelation || '',
+                              });
+                            } else {
+                              setDriverForm({
+                                name: v.driverName || '',
+                                phone: '',
+                                licenceNumber: '',
+                                driverType: isOwnerSameAsDriver ? 'Owner-cum-Driver' : 'Owner-Paid',
+                                status: 'Active',
+                              });
+                            }
                           }}
                           className="p-1 hover:bg-slate-100 text-slate-600 rounded cursor-pointer"
-                          title="Edit Vehicle record"
+                          title="Edit Vehicle, Owner & Driver Profile"
                         >
                           <Edit2 className="h-4 w-4" />
                         </button>
@@ -2953,50 +4440,18 @@ export default function MasterViews({
                           id={`btn-edit-driver-${d.id}`}
                           onClick={() => {
                             setEditingId(d.id);
-                            let emName = d.emergencyContactName || '';
-                            let emNum = d.emergencyContactNumber || '';
-                            let emRel = d.emergencyContactRelation || '';
-
-                            if (!emRel && !emName && !emNum && d.emergencyContact) {
-                              const relList = ['Father', 'Mother', 'Wife', 'Husband', 'Spouse', 'Brother', 'Sister', 'Son', 'Daughter', 'Friend', 'Relative'];
-                              const text = d.emergencyContact.trim();
-
-                              const parenMatch = text.match(/^(.*?)\s*\(([^)]+)\)\s*(?:-\s*(.*))?$/);
-                              if (parenMatch) {
-                                emName = parenMatch[1].trim();
-                                emRel = parenMatch[2].trim();
-                                emNum = (parenMatch[3] || '').trim();
-                              } else {
-                                const dashParts = text.split('-').map(s => s.trim());
-                                if (dashParts.length >= 2) {
-                                  const first = dashParts[0];
-                                  const second = dashParts.slice(1).join('-');
-                                  const matchedRel = relList.find(r => r.toLowerCase() === first.toLowerCase());
-                                  if (matchedRel) {
-                                    emRel = matchedRel;
-                                    emNum = second;
-                                  } else {
-                                    emName = first;
-                                    emNum = second;
-                                  }
-                                } else if (/^\d+$/.test(text.replace(/[\s+]/g, ''))) {
-                                  emNum = text;
-                                } else {
-                                  const matchedRel = relList.find(r => r.toLowerCase() === text.toLowerCase());
-                                  if (matchedRel) {
-                                    emRel = matchedRel;
-                                  } else {
-                                    emName = text;
-                                  }
-                                }
-                              }
-                            }
+                            const parsedEm = parseEmergencyDetails(
+                              d.emergencyContact,
+                              d.emergencyContactName,
+                              d.emergencyContactRelation,
+                              d.emergencyContactNumber
+                            );
 
                             setDriverForm({
                               ...d,
-                              emergencyContactName: emName,
-                              emergencyContactNumber: emNum,
-                              emergencyContactRelation: emRel,
+                              emergencyContactName: parsedEm.name,
+                              emergencyContactNumber: parsedEm.number,
+                              emergencyContactRelation: parsedEm.relation,
                             });
                           }}
                           className="p-1 hover:bg-slate-100 text-slate-600 rounded"
@@ -3215,10 +4670,12 @@ export default function MasterViews({
                       <th className="py-3.5 px-4 text-center bg-emerald-100/80 text-emerald-950 border-x border-emerald-200">
                         RUNNING VEHICLES
                       </th>
-                      <th className="py-3.5 px-4 text-center">IDLE VEHICLES</th>
+                      <th className="py-3.5 px-4 text-center bg-amber-100/70 text-amber-950 border-r border-amber-200">
+                        IDLE VEHICLES
+                      </th>
                       <th className="py-3.5 px-4">Running Vehicle Types</th>
                       <th className="py-3.5 px-4 text-center">Fleet Utilization</th>
-                      <th className="py-3.5 px-4 text-center">Running Fleet Details</th>
+                      <th className="py-3.5 px-4 text-center">View Fleet Details</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs">
@@ -3241,18 +4698,52 @@ export default function MasterViews({
                           </div>
                         </td>
                         <td className="py-3 px-4 text-center font-bold text-slate-800 text-sm">
-                          {v.totalCount}
+                          <button
+                            id={`btn-total-${v.vendorName.toLowerCase().replace(/\s+/g, '-')}`}
+                            onClick={() => {
+                              setSelectedVendorForFleet(v.vendorName);
+                              setVendorModalTab('all');
+                              setVendorModalSearch('');
+                            }}
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-300 text-slate-800 rounded-lg font-black text-xs transition-all cursor-pointer border border-slate-200 shadow-3xs"
+                            title={`Click to view all ${v.totalCount} attached vehicles for ${v.vendorName}`}
+                          >
+                            {v.totalCount}
+                          </button>
                         </td>
                         <td className="py-3 px-4 text-center bg-emerald-50/40 border-x border-emerald-100">
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-600 text-white shadow-3xs">
+                          <button
+                            id={`btn-col-running-${v.vendorName.toLowerCase().replace(/\s+/g, '-')}`}
+                            onClick={() => {
+                              setSelectedVendorForFleet(v.vendorName);
+                              setVendorModalTab('running');
+                              setVendorModalSearch('');
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white shadow-3xs transition-all cursor-pointer hover:scale-105"
+                            title={`Click to view ${v.runningCount} active running vehicles for ${v.vendorName}`}
+                          >
                             <Car className="h-3.5 w-3.5" />
                             {v.runningCount} RUNNING
-                          </span>
+                          </button>
                         </td>
-                        <td className="py-3 px-4 text-center">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${v.idleCount > 0 ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-slate-100 text-slate-500'}`}>
-                            {v.idleCount} Idle
-                          </span>
+                        <td className="py-3 px-4 text-center bg-amber-50/30 border-r border-amber-100">
+                          <button
+                            id={`btn-col-idle-${v.vendorName.toLowerCase().replace(/\s+/g, '-')}`}
+                            onClick={() => {
+                              setSelectedVendorForFleet(v.vendorName);
+                              setVendorModalTab('idle');
+                              setVendorModalSearch('');
+                            }}
+                            className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black transition-all cursor-pointer hover:scale-105 ${
+                              v.idleCount > 0
+                                ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-3xs border border-amber-600'
+                                : 'bg-slate-100 hover:bg-slate-200 text-slate-500 border border-slate-200'
+                            }`}
+                            title={`Click to view ${v.idleCount} idle / standby vehicles for ${v.vendorName}`}
+                          >
+                            <AlertTriangle className="h-3 w-3" />
+                            {v.idleCount} IDLE
+                          </button>
                         </td>
                         <td className="py-3 px-4">
                           <div className="flex flex-wrap gap-1">
@@ -3276,16 +4767,36 @@ export default function MasterViews({
                           </div>
                         </td>
                         <td className="py-3 px-4 text-center">
-                          <button
-                            id={`btn-view-running-${v.vendorName.toLowerCase().replace(/\s+/g, '-')}`}
-                            onClick={() => {
-                              setSelectedVendorForFleet(v.vendorName);
-                              setVendorModalSearch('');
-                            }}
-                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-3xs transition-all flex items-center gap-1.5 mx-auto cursor-pointer"
-                          >
-                            <Car className="h-3.5 w-3.5" /> View Running Vehicles ({v.runningCount})
-                          </button>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              id={`btn-view-running-${v.vendorName.toLowerCase().replace(/\s+/g, '-')}`}
+                              onClick={() => {
+                                setSelectedVendorForFleet(v.vendorName);
+                                setVendorModalTab('running');
+                                setVendorModalSearch('');
+                              }}
+                              className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-3xs transition-all flex items-center gap-1 cursor-pointer"
+                              title={`View ${v.runningCount} Running Vehicles`}
+                            >
+                              <Car className="h-3.5 w-3.5" /> Running ({v.runningCount})
+                            </button>
+                            <button
+                              id={`btn-view-idle-${v.vendorName.toLowerCase().replace(/\s+/g, '-')}`}
+                              onClick={() => {
+                                setSelectedVendorForFleet(v.vendorName);
+                                setVendorModalTab('idle');
+                                setVendorModalSearch('');
+                              }}
+                              className={`px-2.5 py-1.5 text-xs font-bold rounded-lg shadow-3xs transition-all flex items-center gap-1 cursor-pointer ${
+                                v.idleCount > 0
+                                  ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-3xs'
+                                  : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
+                              }`}
+                              title={`View ${v.idleCount} Idle / Standby Vehicles`}
+                            >
+                              <AlertTriangle className="h-3.5 w-3.5" /> Idle ({v.idleCount})
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -3605,6 +5116,10 @@ export default function MasterViews({
           enquiry={printEnquiry}
           owners={owners}
           vehicles={vehicles}
+          drivers={drivers}
+          companies={companies}
+          sites={sites}
+          customLogo={customLogo}
           onClose={() => setPrintEnquiry(undefined)}
         />
       )}
@@ -3695,11 +5210,28 @@ export default function MasterViews({
                 {getVendorBadge(selectedVendorForFleet)}
                 <div>
                   <h3 className="text-base font-black tracking-tight text-white flex items-center gap-2">
-                    <Car className="h-5 w-5 text-emerald-400" />
-                    Running Vehicles List — Vendor: {selectedVendorForFleet}
+                    {vendorModalTab === 'idle' ? (
+                      <AlertTriangle className="h-5 w-5 text-amber-400" />
+                    ) : vendorModalTab === 'running' ? (
+                      <Car className="h-5 w-5 text-emerald-400" />
+                    ) : (
+                      <Building className="h-5 w-5 text-blue-400" />
+                    )}
+                    {vendorModalTab === 'idle'
+                      ? 'Idle & Standby Vehicles List'
+                      : vendorModalTab === 'running'
+                      ? 'Running Vehicles List'
+                      : 'All Attached Vehicles Register'}
+                    <span className="text-xs font-normal text-slate-300">
+                      — Vendor: <strong className="text-white">{selectedVendorForFleet}</strong>
+                    </span>
                   </h3>
                   <p className="text-xs text-slate-300 mt-0.5">
-                    List of active running vehicles operating under {selectedVendorForFleet}
+                    {vendorModalTab === 'idle'
+                      ? `Viewing idle / standby / inactive vehicles attached to ${selectedVendorForFleet}`
+                      : vendorModalTab === 'running'
+                      ? `Viewing active running vehicles operating under ${selectedVendorForFleet}`
+                      : `Viewing all attached fleet for ${selectedVendorForFleet}`}
                   </p>
                 </div>
               </div>
@@ -3712,34 +5244,75 @@ export default function MasterViews({
               </button>
             </div>
 
-            {/* Modal Toolbar */}
-            <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-              <div className="relative flex-1 max-w-xs">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Filter vehicle reg, driver, owner..."
-                  value={vendorModalSearch}
-                  onChange={(e) => setVendorModalSearch(e.target.value)}
-                  className="pl-9 pr-4 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full font-medium"
-                />
-              </div>
+            {/* Modal Toolbar & Filter Tabs */}
+            {(() => {
+              const selectedVendorData = availableVendorCalculations.find((v) => v.vendorName === selectedVendorForFleet);
+              const totalAttached = selectedVendorData?.totalCount || 0;
+              const runningCount = selectedVendorData?.runningCount || 0;
+              const idleCount = selectedVendorData?.idleCount || 0;
 
-              {(() => {
-                const selectedVendorData = availableVendorCalculations.find((v) => v.vendorName === selectedVendorForFleet);
-                const runningFleet = selectedVendorData ? selectedVendorData.runningVehicles : [];
-                return (
-                  <div className="flex items-center gap-3 text-xs font-bold text-slate-700">
-                    <span className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-lg border border-emerald-200 flex items-center gap-1.5">
-                      <CheckCircle className="h-4 w-4 text-emerald-600" /> Total Running: {runningFleet.length} Vehicles
-                    </span>
-                    <span className="px-3 py-1 bg-slate-200 text-slate-700 rounded-lg">
-                      Total Attached: {selectedVendorData?.totalCount || 0} Vehicles
-                    </span>
+              return (
+                <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* All Vehicles Tab */}
+                    <button
+                      type="button"
+                      id="vendor-modal-tab-all"
+                      onClick={() => setVendorModalTab('all')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer border ${
+                        vendorModalTab === 'all'
+                          ? 'bg-slate-800 text-white border-slate-800 shadow-3xs'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <Building className="h-3.5 w-3.5" />
+                      All Attached ({totalAttached})
+                    </button>
+
+                    {/* Running Vehicles Tab */}
+                    <button
+                      type="button"
+                      id="vendor-modal-tab-running"
+                      onClick={() => setVendorModalTab('running')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer border ${
+                        vendorModalTab === 'running'
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-3xs'
+                          : 'bg-white text-emerald-800 border-emerald-200 hover:bg-emerald-50'
+                      }`}
+                    >
+                      <Car className="h-3.5 w-3.5" />
+                      Running Vehicles ({runningCount})
+                    </button>
+
+                    {/* Idle Vehicles Tab */}
+                    <button
+                      type="button"
+                      id="vendor-modal-tab-idle"
+                      onClick={() => setVendorModalTab('idle')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer border ${
+                        vendorModalTab === 'idle'
+                          ? 'bg-amber-600 text-white border-amber-600 shadow-3xs'
+                          : 'bg-white text-amber-800 border-amber-200 hover:bg-amber-50'
+                      }`}
+                    >
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      Idle Vehicles ({idleCount})
+                    </button>
                   </div>
-                );
-              })()}
-            </div>
+
+                  <div className="relative flex-1 max-w-xs min-w-[200px]">
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search reg no, driver, owner, phone..."
+                      value={vendorModalSearch}
+                      onChange={(e) => setVendorModalSearch(e.target.value)}
+                      className="pl-9 pr-4 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full font-medium"
+                    />
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Modal Table Content */}
             <div className="p-6 overflow-y-auto flex-1">
@@ -3747,13 +5320,30 @@ export default function MasterViews({
                 const selectedVendorData = availableVendorCalculations.find((v) => v.vendorName === selectedVendorForFleet);
                 if (!selectedVendorData) return null;
 
-                const runningList = selectedVendorData.runningVehicles.filter((v) =>
-                  v.registrationNumber.toLowerCase().includes(vendorModalSearch.toLowerCase()) ||
-                  v.driverName.toLowerCase().includes(vendorModalSearch.toLowerCase()) ||
-                  v.ownerName.toLowerCase().includes(vendorModalSearch.toLowerCase()) ||
-                  (v.company || '').toLowerCase().includes(vendorModalSearch.toLowerCase()) ||
-                  (v.site || '').toLowerCase().includes(vendorModalSearch.toLowerCase())
-                );
+                const baseList =
+                  vendorModalTab === 'running'
+                    ? selectedVendorData.runningVehicles
+                    : vendorModalTab === 'idle'
+                    ? selectedVendorData.idleVehicles
+                    : selectedVendorData.attachedVehicles;
+
+                const filteredList = baseList.filter((v) => {
+                  const q = vendorModalSearch.toLowerCase();
+                  if (!q) return true;
+                  const owner = owners.find((o) => o.id === v.ownerId);
+                  const driver = drivers.find((d) => d.id === v.driverId);
+                  return (
+                    v.registrationNumber.toLowerCase().includes(q) ||
+                    (v.driverName || driver?.name || '').toLowerCase().includes(q) ||
+                    (driver?.phone || '').toLowerCase().includes(q) ||
+                    (v.ownerName || owner?.name || '').toLowerCase().includes(q) ||
+                    (owner?.phone || '').toLowerCase().includes(q) ||
+                    (v.company || '').toLowerCase().includes(q) ||
+                    (v.site || '').toLowerCase().includes(q) ||
+                    (v.vehicleType || '').toLowerCase().includes(q) ||
+                    (v.model || '').toLowerCase().includes(q)
+                  );
+                });
 
                 return (
                   <div className="overflow-x-auto border border-slate-200 rounded-lg shadow-2xs">
@@ -3771,11 +5361,13 @@ export default function MasterViews({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-150 text-xs">
-                        {runningList.map((veh, idx) => {
+                        {filteredList.map((veh, idx) => {
                           const owner = owners.find((o) => o.id === veh.ownerId);
                           const driver = drivers.find((d) => d.id === veh.driverId);
+                          const isRunning = veh.status !== 'Inactive';
+
                           return (
-                            <tr key={veh.id} className="hover:bg-slate-50 transition-colors">
+                            <tr key={veh.id} className={`hover:bg-slate-50 transition-colors ${!isRunning ? 'bg-amber-50/20' : ''}`}>
                               <td className="py-2.5 px-3 font-bold text-slate-400 text-[10px]">{idx + 1}</td>
                               <td className="py-2.5 px-3 font-black text-slate-900 tracking-tight font-mono text-xs">
                                 {veh.registrationNumber}
@@ -3803,18 +5395,41 @@ export default function MasterViews({
                               </td>
                               <td className="py-2.5 px-3 text-slate-600 font-medium">{formatDate(veh.joiningDate)}</td>
                               <td className="py-2.5 px-3 text-center">
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 uppercase">
-                                  <CheckCircle className="h-3 w-3 text-emerald-600" />
-                                  Running
-                                </span>
+                                {isRunning ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 uppercase">
+                                    <CheckCircle className="h-3 w-3 text-emerald-600" />
+                                    Running
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-200 uppercase">
+                                    <AlertTriangle className="h-3 w-3 text-amber-600" />
+                                    Idle
+                                  </span>
+                                )}
                               </td>
                             </tr>
                           );
                         })}
-                        {runningList.length === 0 && (
+                        {filteredList.length === 0 && (
                           <tr>
-                            <td colSpan={8} className="text-center py-8 text-slate-400 font-medium">
-                              No running vehicles found matching your search.
+                            <td colSpan={8} className="text-center py-10 text-slate-400 font-medium">
+                              {vendorModalTab === 'idle' ? (
+                                <div>
+                                  <AlertTriangle className="h-6 w-6 text-amber-400 mx-auto mb-2 opacity-60" />
+                                  <p className="font-bold text-slate-600 text-xs">No idle vehicles found for {selectedVendorForFleet}.</p>
+                                  <p className="text-[11px] text-slate-400 mt-0.5">All attached vehicles for this vendor are currently active and running.</p>
+                                </div>
+                              ) : vendorModalTab === 'running' ? (
+                                <div>
+                                  <Car className="h-6 w-6 text-slate-400 mx-auto mb-2 opacity-60" />
+                                  <p className="font-bold text-slate-600 text-xs">No active running vehicles found for {selectedVendorForFleet}.</p>
+                                </div>
+                              ) : (
+                                <div>
+                                  <Building className="h-6 w-6 text-slate-400 mx-auto mb-2 opacity-60" />
+                                  <p className="font-bold text-slate-600 text-xs">No vehicles found matching your search.</p>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         )}
@@ -4293,6 +5908,8 @@ export default function MasterViews({
       {showPrintVehicleReport && (
         <PrintVehicleReport
           vehicles={vehicles}
+          owners={owners}
+          drivers={drivers}
           onClose={() => setShowPrintVehicleReport(false)}
           initialFilter={vehicleFilter}
         />
@@ -4489,39 +6106,8 @@ export default function MasterViews({
               <span className="font-bold text-slate-700">Archived Record Info:</span> Owner: <span className="font-semibold text-slate-900">{restoreCandidate.ownerName || 'N/A'}</span> • Driver: <span className="font-semibold text-slate-900">{restoreCandidate.driverName || 'N/A'}</span> • Reason: <span className="font-semibold text-rose-700">{restoreCandidate.deletionReason || 'Deleted'}</span>
             </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
-              {/* Option 1: Enquiry Desk */}
-              <button
-                type="button"
-                onClick={() => {
-                  onRestoreVehicle(restoreCandidate, 'enquiry');
-                  setRestoreCandidate(null);
-                  setViewDeletedVehicle(null);
-                }}
-                className="p-4 rounded-xl border-2 border-indigo-200 hover:border-indigo-600 bg-indigo-50/40 hover:bg-indigo-50 text-left transition-all group flex flex-col justify-between cursor-pointer shadow-xs hover:shadow-md"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="p-2 bg-indigo-100 text-indigo-700 rounded-lg group-hover:scale-105 transition-transform">
-                      <FileSpreadsheet className="h-5 w-5" />
-                    </span>
-                    <span className="text-[10px] font-black uppercase text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full">
-                      Desk Review
-                    </span>
-                  </div>
-                  <h4 className="text-xs font-black text-slate-900 group-hover:text-indigo-900 mb-1">
-                    Move to Enquiry Desk
-                  </h4>
-                  <p className="text-[11px] text-slate-500 leading-snug">
-                    Creates a new Enquiry entry in the Enquiry Register to re-evaluate or re-induct this vehicle.
-                  </p>
-                </div>
-                <div className="mt-3 text-2xs font-extrabold text-indigo-700 flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
-                  Restore to Enquiry &rarr;
-                </div>
-              </button>
-
-              {/* Option 2: Master Register */}
+            <div className="pt-1">
+              {/* Direct Restore to Master Register */}
               <button
                 type="button"
                 onClick={() => {
@@ -4529,7 +6115,7 @@ export default function MasterViews({
                   setRestoreCandidate(null);
                   setViewDeletedVehicle(null);
                 }}
-                className="p-4 rounded-xl border-2 border-emerald-200 hover:border-emerald-600 bg-emerald-50/40 hover:bg-emerald-50 text-left transition-all group flex flex-col justify-between cursor-pointer shadow-xs hover:shadow-md"
+                className="w-full p-4 rounded-xl border-2 border-emerald-200 hover:border-emerald-600 bg-emerald-50/40 hover:bg-emerald-50 text-left transition-all group flex flex-col justify-between cursor-pointer shadow-xs hover:shadow-md"
               >
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -4541,14 +6127,14 @@ export default function MasterViews({
                     </span>
                   </div>
                   <h4 className="text-xs font-black text-slate-900 group-hover:text-emerald-900 mb-1">
-                    Move to Master Register
+                    Restore to Vehicle Master Register
                   </h4>
                   <p className="text-[11px] text-slate-500 leading-snug">
-                    Restores directly as an active vehicle record in the Vehicle Master Fleet Register.
+                    Restores directly as an active vehicle record in the Vehicle Master Fleet Register with all owner, driver, and site affiliations preserved.
                   </p>
                 </div>
                 <div className="mt-3 text-2xs font-extrabold text-emerald-700 flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
-                  Restore to Master &rarr;
+                  Confirm Restore to Master &rarr;
                 </div>
               </button>
             </div>

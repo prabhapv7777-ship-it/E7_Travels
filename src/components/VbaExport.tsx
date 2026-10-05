@@ -281,7 +281,7 @@ End Sub`,
           <button
             id="download-csv-btn"
             onClick={() => handleDownloadCsv('Vehicles_Sample', generateVehicleCsv())}
-            className="px-4 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-1.5 transition-colors"
+            className="px-4 py-2 text-xs font-semibold bg-[#006B57] hover:bg-[#004D40] text-white rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
           >
             <Download className="h-4 w-4" /> Export 35 Sample Vehicles CSV
           </button>

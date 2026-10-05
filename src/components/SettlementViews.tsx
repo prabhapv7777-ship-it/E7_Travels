@@ -16,9 +16,17 @@ import {
   Clock,
   ShieldCheck,
   Percent,
+  Edit3,
+  Save,
+  Plus,
+  Calculator,
+  X,
+  ShieldAlert,
 } from 'lucide-react';
 import { Vehicle, Owner, Driver, CompanyPayment, Expense } from '../types';
 import { formatDate, formatMonth, toInputDateFormat, getCurrentMonthString, getTodayDateString } from '../lib/dateUtils';
+import { getManualLedgerStore, saveManualLedgerEntry, getManualLedgerEntry } from '../lib/ledgerStorage';
+import { printDocument } from '../utils/printService';
 
 const getCycleDisplay = (cycle: string) => {
   if (!cycle) return '-';
@@ -58,6 +66,16 @@ export default function SettlementViews({
   const [invoiceTerms, setInvoiceTerms] = useState('Due in 30 days');
   const [printNotice, setPrintNotice] = useState(false);
 
+  // RUNNING LEDGER MANUAL DEDUCTIONS & AUTO TDS STATE
+  const [manualStore, setManualStore] = useState(() => getManualLedgerStore());
+  const [defaultTdsRate, setDefaultTdsRate] = useState<number>(1); // Default 1% TDS automatically deducted
+  const [quickModalVehicle, setQuickModalVehicle] = useState<string | null>(null);
+
+  const handleUpdateManualLedger = (vehicleNumber: string, field: string, value: number | null) => {
+    const updated = saveManualLedgerEntry(vehicleNumber, selectedMonth, { [field]: value });
+    setManualStore(updated);
+  };
+
   const printAreaRef = useRef<HTMLDivElement>(null);
 
   const formatCurrency = (val: number) => {
@@ -68,168 +86,21 @@ export default function SettlementViews({
     }).format(val);
   };
 
-  const handlePrint = () => {
-    if (!printAreaRef.current) {
-      window.print();
+  const handlePrint = async () => {
+    const documentTitle = `E7_Tours_and_Travels_Settlement_${activeSubView.replace(/\s+/g, '_')}_${selectedMonth}`;
+    const paperSize = activeSubView === 'Monthly Settlement' ? 'A4Landscape' : 'A4';
+
+    if (printAreaRef.current) {
+      await printDocument({
+        title: documentTitle,
+        element: printAreaRef.current,
+        paperSize: paperSize,
+        openInNewTab: false,
+      });
       return;
     }
 
-    // Get the HTML content inside our printable area
-    const innerHTML = printAreaRef.current.innerHTML;
-    const documentTitle = `${activeSubView} - ${selectedMonth}`;
-
-    // Compile full document with Tailwind, Inter, Space Grotesk, JetBrains Mono
-    const fullHtml = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>${documentTitle}</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ["Inter", "sans-serif"],
-            display: ["Space Grotesk", "sans-serif"],
-            mono: ["JetBrains Mono", "monospace"],
-          }
-        }
-      }
-    }
-  </script>
-  <style>
-    body {
-      font-family: 'Inter', sans-serif;
-      background-color: #ffffff;
-      color: #1e293b;
-      margin: 0;
-      padding: 1.5rem;
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
-    }
-    @page {
-      size: ${activeSubView === 'Monthly Settlement' ? 'A4 landscape' : 'A4 portrait'};
-      margin: 8mm;
-    }
-    @media print {
-      body {
-        padding: 0 !important;
-        margin: 0 !important;
-        background-color: #ffffff !important;
-      }
-      .no-print {
-        display: none !important;
-      }
-      .overflow-x-auto {
-        overflow: visible !important;
-        width: 100% !important;
-      }
-      /* Reset massive margins/paddings on print */
-      .p-12, .p-8, .p-6 {
-        padding: 2mm !important;
-      }
-      .space-y-8 {
-        margin-top: 2mm !important;
-        margin-bottom: 2mm !important;
-      }
-      .my-4 {
-        margin-top: 0 !important;
-        margin-bottom: 0 !important;
-      }
-      .pt-16 {
-        padding-top: 8mm !important;
-      }
-      /* Scale tables to fit page exactly */
-      table {
-        width: 100% !important;
-        table-layout: fixed !important;
-        border-collapse: collapse !important;
-      }
-      th, td {
-        font-size: ${activeSubView === 'Monthly Settlement' ? '7pt' : '8.5pt'} !important;
-        padding: ${activeSubView === 'Monthly Settlement' ? '3px 2px' : '4px 6px'} !important;
-        word-wrap: break-word !important;
-        white-space: normal !important;
-      }
-      ${activeSubView === 'Monthly Settlement' ? `
-      th:nth-child(1), td:nth-child(1) { width: 10% !important; }
-      th:nth-child(2), td:nth-child(2) { width: 12% !important; }
-      th:nth-child(3), td:nth-child(3) { width: 9% !important; }
-      th:nth-child(4), td:nth-child(4) { width: 8% !important; }
-      th:nth-child(5), td:nth-child(5) { width: 7% !important; }
-      th:nth-child(6), td:nth-child(6) { width: 7% !important; }
-      th:nth-child(7), td:nth-child(7) { width: 8% !important; }
-      th:nth-child(8), td:nth-child(8) { width: 10% !important; }
-      th:nth-child(9), td:nth-child(9) { width: 7% !important; }
-      th:nth-child(10), td:nth-child(10) { width: 10% !important; }
-      th:nth-child(11), td:nth-child(11) { width: 12% !important; }
-      ` : ''}
-      tr {
-        page-break-inside: avoid !important;
-        break-inside: avoid !important;
-      }
-      thead {
-        display: table-header-group !important;
-      }
-    }
-  </style>
-</head>
-<body class="p-6 bg-white text-slate-800 print:p-0 print:m-0">
-  <div class="${activeSubView === 'Monthly Settlement' ? 'w-full max-w-none' : 'max-w-4xl'} mx-auto border border-slate-100 p-6 rounded-xl shadow-xs print:border-none print:shadow-none print:p-0">
-    ${innerHTML}
-  </div>
-  
-  <div class="max-w-4xl mx-auto mt-6 p-4 bg-slate-50 border border-slate-200 rounded-lg flex justify-between items-center no-print shadow-xs">
-    <div>
-      <h4 class="text-sm font-bold text-slate-800">Print Preview Mode</h4>
-      <p class="text-xs text-slate-500">Document generated from your live fleet dashboard.</p>
-    </div>
-    <div class="flex gap-2">
-      <button onclick="window.print()" class="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-lg shadow-sm transition-colors cursor-pointer">
-        Print Now (Ctrl+P)
-      </button>
-    </div>
-  </div>
-
-  <script>
-    window.onload = function() {
-      setTimeout(function() {
-        window.print();
-      }, 600);
-    };
-  </script>
-</body>
-</html>`;
-
-    // Try opening a new tab
-    let printWindow: Window | null = null;
-    try {
-      printWindow = window.open('', '_blank');
-      if (printWindow) {
-        printWindow.document.write(fullHtml);
-        printWindow.document.close();
-      } else {
-        throw new Error('Popup blocked');
-      }
-    } catch (err) {
-      console.warn('Could not open print in a new tab due to sandboxing or popup blocker, falling back to direct download.', err);
-      // Fallback: Trigger a direct download of the print HTML file!
-      const blob = new Blob([fullHtml], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${activeSubView.replace(/\s+/g, '_')}_${selectedMonth}.html`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      // Show an elegant visual alert/notification explaining the fallback
-      setPrintNotice(true);
-      setTimeout(() => setPrintNotice(false), 12000);
-    }
+    window.print();
   };
 
   const distinctMonths = Array.from(
@@ -278,7 +149,7 @@ export default function SettlementViews({
         })
         .reduce((sum, p) => sum + p.amountReceived, 0);
 
-      // Category deductions
+      // Category deductions from logged expenses
       const vehicleExpenses = expenses.filter((e) => {
         if (e.vehicleNumber !== v.registrationNumber) return false;
         const normalizedDate = toInputDateFormat(e.date);
@@ -291,6 +162,38 @@ export default function SettlementViews({
         }
       });
 
+      // Fetch manual ledger record from local storage store
+      const manualRec = getManualLedgerEntry(v.registrationNumber, selectedMonth, manualStore);
+      const effectiveTdsRate = manualRec.tdsRate !== undefined ? manualRec.tdsRate : defaultTdsRate;
+
+      // 1. TDS (Tax Deducted at Source) - Automatically calculated on gross billing (default 1% or custom rate/override)
+      const autoTds = manualRec.tdsOverride !== undefined && manualRec.tdsOverride !== null && manualRec.tdsOverride >= 0
+        ? manualRec.tdsOverride
+        : Math.round(billing * (effectiveTdsRate / 100));
+      const tdsFromExp = vehicleExpenses.filter((e) => e.expenseType === 'TDS').reduce((sum, e) => sum + e.amount, 0);
+      const tds = tdsFromExp > 0 ? tdsFromExp : autoTds;
+
+      // 2. Penalty (Manual entry OR logged expenses)
+      const penFromExp = vehicleExpenses.filter((e) => e.expenseType === 'Penalty').reduce((sum, e) => sum + e.amount, 0);
+      const penalty = manualRec.penalty !== undefined && manualRec.penalty !== null ? manualRec.penalty : penFromExp;
+
+      // 3. D&R (Damage & Recovery)
+      const dnrFromExp = vehicleExpenses.filter((e) => e.expenseType === 'D&R').reduce((sum, e) => sum + e.amount, 0);
+      const dnr = manualRec.dnr !== undefined && manualRec.dnr !== null ? manualRec.dnr : dnrFromExp;
+
+      // 4. Caution Deposit
+      const cautionFromExp = vehicleExpenses.filter((e) => e.expenseType === 'Caution Deposit').reduce((sum, e) => sum + e.amount, 0);
+      const cautionDeposit = manualRec.cautionDeposit !== undefined && manualRec.cautionDeposit !== null ? manualRec.cautionDeposit : cautionFromExp;
+
+      // 5. Admin Charges
+      const adminFromExp = vehicleExpenses.filter((e) => e.expenseType === 'Admin Charges').reduce((sum, e) => sum + e.amount, 0);
+      const adminCharges = manualRec.adminCharges !== undefined && manualRec.adminCharges !== null ? manualRec.adminCharges : adminFromExp;
+
+      // 6. GPS Rent
+      const gpsFromExp = vehicleExpenses.filter((e) => e.expenseType === 'GPS Rent').reduce((sum, e) => sum + e.amount, 0);
+      const gpsRent = manualRec.gpsRent !== undefined && manualRec.gpsRent !== null ? manualRec.gpsRent : gpsFromExp;
+
+      // Standard operational expenses
       const cng = vehicleExpenses.filter((e) => e.expenseType === 'CNG').reduce((sum, e) => sum + e.amount, 0);
       const fuel = vehicleExpenses.filter((e) => e.expenseType === 'Fuel').reduce((sum, e) => sum + e.amount, 0);
       const emi = vehicleExpenses.filter((e) => e.expenseType === 'EMI').reduce((sum, e) => sum + e.amount, 0);
@@ -298,13 +201,13 @@ export default function SettlementViews({
       const advance = vehicleExpenses.filter((e) => e.expenseType === 'Advance' || e.expenseType === 'Driver Advance' || e.expenseType === 'Deduct').reduce((sum, e) => sum + e.amount, 0);
       const repair = vehicleExpenses.filter((e) => e.expenseType === 'Repair').reduce((sum, e) => sum + e.amount, 0);
       const service = vehicleExpenses.filter((e) => e.expenseType === 'Service').reduce((sum, e) => sum + e.amount, 0);
-      const penalty = vehicleExpenses.filter((e) => e.expenseType === 'Penalty').reduce((sum, e) => sum + e.amount, 0);
       
       const other = vehicleExpenses
-        .filter((e) => !['CNG', 'Fuel', 'EMI', 'FASTag', 'Advance', 'Driver Advance', 'Deduct', 'Repair', 'Service', 'Penalty'].includes(e.expenseType))
+        .filter((e) => !['CNG', 'Fuel', 'EMI', 'FASTag', 'Advance', 'Driver Advance', 'Deduct', 'Repair', 'Service', 'Penalty', 'TDS', 'D&R', 'Caution Deposit', 'Admin Charges', 'GPS Rent'].includes(e.expenseType))
         .reduce((sum, e) => sum + e.amount, 0);
 
-      const totalDeductions = cng + fuel + emi + fastag + advance + repair + service + penalty + other;
+      const operationalDeductions = cng + fuel + emi + fastag + advance + repair + service + other;
+      const totalDeductions = tds + penalty + dnr + cautionDeposit + adminCharges + gpsRent + operationalDeductions;
       const netPayable = Math.max(0, billing - totalDeductions);
 
       return {
@@ -312,6 +215,13 @@ export default function SettlementViews({
         driver: v.driverName,
         owner: v.ownerName,
         billing,
+        effectiveTdsRate,
+        tds,
+        penalty,
+        dnr,
+        cautionDeposit,
+        adminCharges,
+        gpsRent,
         cng,
         fuel,
         emi,
@@ -319,8 +229,8 @@ export default function SettlementViews({
         advance,
         repair,
         service,
-        penalty,
         other,
+        operationalDeductions,
         totalDeductions,
         netPayable,
       };
@@ -364,24 +274,33 @@ export default function SettlementViews({
       }
     });
 
+    const list = getMonthlySettlementData();
+    const ownerRows = list.filter((r) => vehicleRegs.includes(r.vehicle));
+
+    const tds = ownerRows.reduce((sum, r) => sum + r.tds, 0);
+    const penalty = ownerRows.reduce((sum, r) => sum + r.penalty, 0);
+    const dnr = ownerRows.reduce((sum, r) => sum + r.dnr, 0);
+    const cautionDeposit = ownerRows.reduce((sum, r) => sum + r.cautionDeposit, 0);
+    const adminCharges = ownerRows.reduce((sum, r) => sum + r.adminCharges, 0);
+    const gpsRent = ownerRows.reduce((sum, r) => sum + r.gpsRent, 0);
+
     const cng = ownerExpenses.filter((e) => e.expenseType === 'CNG').reduce((sum, e) => sum + e.amount, 0);
     const emi = ownerExpenses.filter((e) => e.expenseType === 'EMI').reduce((sum, e) => sum + e.amount, 0);
     const fastag = ownerExpenses.filter((e) => e.expenseType === 'FASTag').reduce((sum, e) => sum + e.amount, 0);
     const advance = ownerExpenses.filter((e) => e.expenseType === 'Advance' || e.expenseType === 'Driver Advance' || e.expenseType === 'Deduct').reduce((sum, e) => sum + e.amount, 0);
     const repair = ownerExpenses.filter((e) => e.expenseType === 'Repair').reduce((sum, e) => sum + e.amount, 0);
     const service = ownerExpenses.filter((e) => e.expenseType === 'Service').reduce((sum, e) => sum + e.amount, 0);
-    const penalty = ownerExpenses.filter((e) => e.expenseType === 'Penalty').reduce((sum, e) => sum + e.amount, 0);
 
     const advanceExpenses = ownerExpenses.filter((e) => e.expenseType === 'Advance' || e.expenseType === 'Driver Advance' || e.expenseType === 'Deduct');
 
-    const totalDeductions = cng + emi + fastag + advance + repair + service + penalty;
+    const totalDeductions = tds + penalty + dnr + cautionDeposit + adminCharges + gpsRent + cng + emi + fastag + advance + repair + service;
     const netPayable = Math.max(0, ownerBilling - totalDeductions);
 
     return {
       owner,
       vehicles: ownerVehicles,
       billing: ownerBilling,
-      deductions: { cng, emi, fastag, advance, repair, service, penalty },
+      deductions: { tds, penalty, dnr, cautionDeposit, adminCharges, gpsRent, cng, emi, fastag, advance, repair, service },
       advanceExpenses,
       totalDeductions,
       netPayable,
@@ -714,7 +633,7 @@ export default function SettlementViews({
                 )}
                 <div>
                   <h2 className="text-md font-bold text-slate-800">Monthly Settlement Summary</h2>
-                  <p className="text-xs text-slate-500">Cycle: {getCycleDisplay(selectedMonth)} | Consolidated fleet payouts for E7 Travels Chennai</p>
+                  <p className="text-xs text-slate-500">Cycle: {getCycleDisplay(selectedMonth)} | Consolidated fleet payouts for E7 Tours & Travels</p>
                 </div>
               </div>
 
@@ -735,22 +654,44 @@ export default function SettlementViews({
               </div>
             </div>
 
+            <div className="p-4 border-b border-slate-200 bg-amber-50/50 flex flex-wrap justify-between items-center gap-3 no-print">
+              <div className="flex items-center gap-2">
+                <Calculator className="w-4 h-4 text-amber-700 shrink-0" />
+                <span className="text-xs font-bold text-slate-700">TDS Auto-Deduction Rule:</span>
+                <select
+                  value={defaultTdsRate}
+                  onChange={(e) => setDefaultTdsRate(Number(e.target.value))}
+                  className="px-2 py-1 text-xs font-bold border border-amber-300 rounded bg-white text-amber-900 shadow-2xs"
+                >
+                  <option value={1}>1% Auto TDS (Sec 194C Transporter/Contract)</option>
+                  <option value={2}>2% Auto TDS (Sec 194C Standard)</option>
+                  <option value={5}>5% Auto TDS</option>
+                  <option value={10}>10% Auto TDS</option>
+                  <option value={0}>0% TDS Exemption</option>
+                </select>
+              </div>
+              <div className="text-2xs text-slate-500 font-medium">
+                💡 <span className="font-semibold text-slate-700">Auto TDS</span> calculates automatically. Type values directly into <span className="font-semibold text-rose-700">Penalty, D&R, Caution Deposit, Admin Charges, & GPS Rent</span> cells to update ledgers instantly.
+              </div>
+            </div>
+
             {/* Reconciliation table */}
             <div className="overflow-x-auto scrollbar-visible">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left border-collapse min-w-[1000px]">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-3xs font-bold text-slate-600 uppercase tracking-wider">
-                    <th className="py-3 px-4">Vehicle</th>
-                    <th className="py-3 px-4">Owner Name</th>
-                    <th className="py-3 px-4 text-right">Billing Amount</th>
-                    <th className="py-3 px-4 text-right">CNG / Fuel</th>
-                    <th className="py-3 px-4 text-right">EMI Cost</th>
-                    <th className="py-3 px-4 text-right">FASTag</th>
-                    <th className="py-3 px-4 text-right">Advances</th>
-                    <th className="py-3 px-4 text-right">Service / Repairs</th>
-                    <th className="py-3 px-4 text-right">Penalties</th>
-                    <th className="py-3 px-4 text-right font-bold">Total Deduct</th>
-                    <th className="py-3 px-4 text-right font-black">Net Payable</th>
+                    <th className="py-3 px-3">Vehicle</th>
+                    <th className="py-3 px-3">Owner Name</th>
+                    <th className="py-3 px-3 text-right">Billing Amount</th>
+                    <th className="py-3 px-3 text-right text-blue-700 bg-blue-50/50">Auto TDS ({defaultTdsRate}%)</th>
+                    <th className="py-3 px-3 text-right text-rose-700">Penalty (₹)</th>
+                    <th className="py-3 px-3 text-right text-rose-700">D&R (₹)</th>
+                    <th className="py-3 px-3 text-right text-rose-700">Caution Dep. (₹)</th>
+                    <th className="py-3 px-3 text-right text-rose-700">Admin Chg (₹)</th>
+                    <th className="py-3 px-3 text-right text-rose-700">GPS Rent (₹)</th>
+                    <th className="py-3 px-3 text-right">CNG/Fuel/Ops</th>
+                    <th className="py-3 px-3 text-right font-bold text-rose-800">Total Deduct</th>
+                    <th className="py-3 px-3 text-right font-black text-blue-800">Net Payable</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-2xs font-semibold text-slate-700">
@@ -760,35 +701,103 @@ export default function SettlementViews({
 
                     return (
                       <tr key={row.vehicle} className={`hover:bg-slate-50/20 ${isGpsHeld ? 'bg-rose-50/50' : ''}`}>
-                        <td className="py-2.5 px-4 font-mono font-bold text-slate-800">
+                        <td className="py-2 px-3 font-mono font-bold text-slate-800">
                           <div className="flex flex-col gap-0.5">
                             <span>{row.vehicle}</span>
                             {isGpsHeld && (
                               <span className="text-[9px] font-extrabold text-rose-800 bg-rose-100 px-1.5 py-0.5 rounded border border-rose-300 uppercase tracking-tight flex items-center gap-1 w-fit animate-pulse">
-                                🚨 GPS Hold (Unreturned)
+                                🚨 GPS Hold
                               </span>
                             )}
                           </div>
                         </td>
-                        <td className="py-2.5 px-4 text-slate-600 truncate max-w-[110px]">{row.owner}</td>
-                        <td className="py-2.5 px-4 text-right text-emerald-600">{formatCurrency(row.billing)}</td>
-                        <td className="py-2.5 px-4 text-right text-rose-500">{formatCurrency(row.cng + row.fuel)}</td>
-                        <td className="py-2.5 px-4 text-right text-rose-500">{formatCurrency(row.emi)}</td>
-                        <td className="py-2.5 px-4 text-right text-rose-500">{formatCurrency(row.fastag)}</td>
-                        <td className="py-2.5 px-4 text-right text-rose-500">{formatCurrency(row.advance)}</td>
-                        <td className="py-2.5 px-4 text-right text-rose-500">{formatCurrency(row.repair + row.service)}</td>
-                        <td className="py-2.5 px-4 text-right text-rose-500">{formatCurrency(row.penalty)}</td>
-                        <td className="py-2.5 px-4 text-right text-rose-600 font-bold">{formatCurrency(row.totalDeductions)}</td>
-                        <td className="py-2.5 px-4 text-right">
+                        <td className="py-2 px-3 text-slate-600 truncate max-w-[100px]">{row.owner}</td>
+                        <td className="py-2 px-3 text-right text-emerald-600 font-bold">{formatCurrency(row.billing)}</td>
+                        
+                        {/* Auto TDS */}
+                        <td className="py-2 px-3 text-right bg-blue-50/30 font-bold text-blue-700">
+                          <div className="flex items-center justify-end gap-1">
+                            <span>-{formatCurrency(row.tds)}</span>
+                          </div>
+                        </td>
+
+                        {/* Penalty (Manual Entry) */}
+                        <td className="py-2 px-2 text-right">
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={row.penalty || ''}
+                            onChange={(e) => handleUpdateManualLedger(row.vehicle, 'penalty', e.target.value === '' ? 0 : Number(e.target.value))}
+                            className="w-16 text-right px-1.5 py-1 text-2xs border border-slate-200 rounded focus:bg-amber-50 focus:border-amber-400 font-bold text-rose-600 bg-white print:border-none print:bg-transparent print:p-0 print:w-auto"
+                          />
+                        </td>
+
+                        {/* D&R - Damage & Recovery (Manual Entry) */}
+                        <td className="py-2 px-2 text-right">
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={row.dnr || ''}
+                            onChange={(e) => handleUpdateManualLedger(row.vehicle, 'dnr', e.target.value === '' ? 0 : Number(e.target.value))}
+                            className="w-16 text-right px-1.5 py-1 text-2xs border border-slate-200 rounded focus:bg-amber-50 focus:border-amber-400 font-bold text-rose-600 bg-white print:border-none print:bg-transparent print:p-0 print:w-auto"
+                          />
+                        </td>
+
+                        {/* Caution Deposit (Manual Entry) */}
+                        <td className="py-2 px-2 text-right">
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={row.cautionDeposit || ''}
+                            onChange={(e) => handleUpdateManualLedger(row.vehicle, 'cautionDeposit', e.target.value === '' ? 0 : Number(e.target.value))}
+                            className="w-16 text-right px-1.5 py-1 text-2xs border border-slate-200 rounded focus:bg-amber-50 focus:border-amber-400 font-bold text-rose-600 bg-white print:border-none print:bg-transparent print:p-0 print:w-auto"
+                          />
+                        </td>
+
+                        {/* Admin Charges (Manual Entry) */}
+                        <td className="py-2 px-2 text-right">
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={row.adminCharges || ''}
+                            onChange={(e) => handleUpdateManualLedger(row.vehicle, 'adminCharges', e.target.value === '' ? 0 : Number(e.target.value))}
+                            className="w-16 text-right px-1.5 py-1 text-2xs border border-slate-200 rounded focus:bg-amber-50 focus:border-amber-400 font-bold text-rose-600 bg-white print:border-none print:bg-transparent print:p-0 print:w-auto"
+                          />
+                        </td>
+
+                        {/* GPS Rent (Manual Entry) */}
+                        <td className="py-2 px-2 text-right">
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={row.gpsRent || ''}
+                            onChange={(e) => handleUpdateManualLedger(row.vehicle, 'gpsRent', e.target.value === '' ? 0 : Number(e.target.value))}
+                            className="w-16 text-right px-1.5 py-1 text-2xs border border-slate-200 rounded focus:bg-amber-50 focus:border-amber-400 font-bold text-rose-600 bg-white print:border-none print:bg-transparent print:p-0 print:w-auto"
+                          />
+                        </td>
+
+                        {/* CNG/Fuel/Ops */}
+                        <td className="py-2 px-3 text-right text-rose-500">{formatCurrency(row.operationalDeductions)}</td>
+                        
+                        {/* Total Deduct */}
+                        <td className="py-2 px-3 text-right text-rose-600 font-extrabold">{formatCurrency(row.totalDeductions)}</td>
+                        
+                        {/* Net Payable */}
+                        <td className="py-2 px-3 text-right">
                           {isGpsHeld ? (
                             <div className="flex flex-col items-end">
                               <span className="line-through text-slate-400 text-[10px]">{formatCurrency(row.netPayable)}</span>
                               <span className="text-rose-700 font-extrabold text-3xs bg-rose-100 px-1.5 py-0.5 rounded border border-rose-300 uppercase tracking-tight">
-                                ₹0 (PAYMENT HELD)
+                                ₹0 (HELD)
                               </span>
                             </div>
                           ) : (
-                            <span className="text-blue-700 font-extrabold">{formatCurrency(row.netPayable)}</span>
+                            <span className="text-blue-700 font-black text-xs">{formatCurrency(row.netPayable)}</span>
                           )}
                         </td>
                       </tr>
@@ -798,8 +807,8 @@ export default function SettlementViews({
                   {/* Consolidated Summary */}
                   <tr className="bg-slate-100 font-bold text-xs text-slate-800">
                     <td colSpan={2} className="py-3.5 px-4">CONSOLIDATED RECONCILIATION SUMMARY</td>
-                    <td className="py-3.5 px-4 text-right text-emerald-700">{formatCurrency(totalBilling)}</td>
-                    <td colSpan={6} className="py-3.5 px-4 text-right text-rose-600">Consolidated Deductions: {formatCurrency(totalDeductions)}</td>
+                    <td className="py-3.5 px-3 text-right text-emerald-700">{formatCurrency(totalBilling)}</td>
+                    <td colSpan={7} className="py-3.5 px-3 text-right text-rose-600 font-bold">Consolidated Deductions: {formatCurrency(totalDeductions)}</td>
                     <td colSpan={2} className="py-3.5 px-4 text-right text-blue-800 font-black">{formatCurrency(totalNetPayable)}</td>
                   </tr>
                 </tbody>
@@ -820,9 +829,9 @@ export default function SettlementViews({
                   <div className="w-12 h-12 rounded bg-blue-100 flex items-center justify-center text-blue-800 font-black text-xl shrink-0">E7</div>
                 )}
                 <div>
-                  <h1 className="text-2xl font-black tracking-tight text-blue-800 uppercase">E7 Travels Chennai</h1>
+                  <h1 className="text-2xl font-black tracking-tight text-blue-800 uppercase">E7 Tours & Travels</h1>
                   <p className="text-xs text-slate-500 font-medium">Corporate Transport Logistics Operators</p>
-                  <p className="text-3xs text-slate-400 font-mono">Siruseri SEZ, Navalur, Chennai - 603103</p>
+                  <p className="text-3xs text-slate-500 font-medium">3/289, South Street, Mudhanai, Vridhachalam Taluk - 607804</p>
                 </div>
               </div>
               <div className="text-right">
@@ -857,6 +866,40 @@ export default function SettlementViews({
                   <span className="text-emerald-700 font-bold">+{formatCurrency(ownerStmt.billing)}</span>
                 </div>
                 <div className="border-t border-slate-100 my-2 pt-2 space-y-1.5 text-slate-600 pl-4">
+                  <div className="flex justify-between font-semibold text-blue-800">
+                    <span>Tax Deducted at Source (Auto TDS):</span>
+                    <span>-{formatCurrency(ownerStmt.deductions.tds)}</span>
+                  </div>
+                  {ownerStmt.deductions.penalty > 0 && (
+                    <div className="flex justify-between text-rose-700">
+                      <span>Penalties / Fine Allocations:</span>
+                      <span>-{formatCurrency(ownerStmt.deductions.penalty)}</span>
+                    </div>
+                  )}
+                  {ownerStmt.deductions.dnr > 0 && (
+                    <div className="flex justify-between text-rose-700">
+                      <span>D&R (Damage & Recovery):</span>
+                      <span>-{formatCurrency(ownerStmt.deductions.dnr)}</span>
+                    </div>
+                  )}
+                  {ownerStmt.deductions.cautionDeposit > 0 && (
+                    <div className="flex justify-between text-rose-700">
+                      <span>Caution Deposit Deductions:</span>
+                      <span>-{formatCurrency(ownerStmt.deductions.cautionDeposit)}</span>
+                    </div>
+                  )}
+                  {ownerStmt.deductions.adminCharges > 0 && (
+                    <div className="flex justify-between text-rose-700">
+                      <span>Admin Charges:</span>
+                      <span>-{formatCurrency(ownerStmt.deductions.adminCharges)}</span>
+                    </div>
+                  )}
+                  {ownerStmt.deductions.gpsRent > 0 && (
+                    <div className="flex justify-between text-rose-700">
+                      <span>GPS Rent:</span>
+                      <span>-{formatCurrency(ownerStmt.deductions.gpsRent)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span>CNG Fuel Deductions:</span>
                     <span>-{formatCurrency(ownerStmt.deductions.cng)}</span>
@@ -876,10 +919,6 @@ export default function SettlementViews({
                   <div className="flex justify-between">
                     <span>Service & routine periodic checks:</span>
                     <span>-{formatCurrency(ownerStmt.deductions.service + ownerStmt.deductions.repair)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Penalties/Fine allocations:</span>
-                    <span>-{formatCurrency(ownerStmt.deductions.penalty)}</span>
                   </div>
                 </div>
 
@@ -946,7 +985,7 @@ export default function SettlementViews({
               </div>
               <div className="space-y-10">
                 <div className="border-b border-slate-300 w-44 mx-auto"></div>
-                <p>E7 Travels Authorized Representative</p>
+                <p>E7 Tours & Travels Authorized Representative</p>
               </div>
             </div>
           </div>
@@ -964,8 +1003,9 @@ export default function SettlementViews({
                   <div className="w-12 h-12 rounded bg-blue-100 flex items-center justify-center text-blue-800 font-black text-xl shrink-0">E7</div>
                 )}
                 <div>
-                  <h1 className="text-2xl font-black tracking-tight text-blue-800 uppercase">E7 Travels Chennai</h1>
+                  <h1 className="text-2xl font-black tracking-tight text-blue-800 uppercase">E7 Tours & Travels</h1>
                   <p className="text-xs text-slate-500 font-medium">Driver Payroll Slip</p>
+                  <p className="text-3xs text-slate-500 font-medium">3/289, South Street, Mudhanai, Vridhachalam Taluk - 607804</p>
                 </div>
               </div>
               <div className="text-right">
@@ -1056,7 +1096,7 @@ export default function SettlementViews({
               </div>
               <div className="space-y-10">
                 <div className="border-b border-slate-300 w-44 mx-auto"></div>
-                <p>Payroll Disbursing Manager</p>
+                <p>Payroll Disbursing Manager (E7 Tours & Travels)</p>
               </div>
             </div>
           </div>
@@ -1074,9 +1114,9 @@ export default function SettlementViews({
                   <div className="w-12 h-12 rounded bg-blue-100 flex items-center justify-center text-blue-800 font-black text-xl shrink-0">E7</div>
                 )}
                 <div>
-                  <h1 className="text-2xl font-black text-blue-800 uppercase">E7 Travels</h1>
+                  <h1 className="text-2xl font-black text-blue-800 uppercase">E7 Tours & Travels</h1>
                   <p className="text-xs text-slate-500 font-semibold">Corporate Employee Transportation Services</p>
-                  <p className="text-3xs text-slate-400 font-mono">ELCOT SEZ, Sholinganallur, OMR, Chennai</p>
+                  <p className="text-3xs text-slate-500 font-medium">3/289, South Street, Mudhanai, Vridhachalam Taluk - 607804</p>
                 </div>
               </div>
               <div className="text-right">
@@ -1195,7 +1235,7 @@ export default function SettlementViews({
               </div>
               <div className="space-y-10">
                 <div className="border-b border-slate-300 w-44 mx-auto"></div>
-                <p>Accounts Manager - E7 Travels</p>
+                <p>Accounts Manager - E7 Tours & Travels</p>
               </div>
             </div>
           </div>
@@ -1213,8 +1253,9 @@ export default function SettlementViews({
                   <div className="w-12 h-12 rounded bg-blue-100 flex items-center justify-center text-blue-800 font-black text-xl shrink-0">E7</div>
                 )}
                 <div>
-                  <h1 className="text-2xl font-black text-blue-800 uppercase">E7 Travels</h1>
+                  <h1 className="text-2xl font-black text-blue-800 uppercase">E7 Tours & Travels</h1>
                   <p className="text-xs text-slate-500 font-semibold">Consolidated Cash/Bank Voucher</p>
+                  <p className="text-3xs text-slate-500 font-medium">3/289, South Street, Mudhanai, Vridhachalam Taluk - 607804</p>
                 </div>
               </div>
               <div className="text-right">
@@ -1253,7 +1294,7 @@ export default function SettlementViews({
               </div>
               <div className="space-y-10">
                 <div className="border-b border-slate-300 w-44 mx-auto"></div>
-                <p>Accounts Disbursing Manager</p>
+                <p>Accounts Disbursing Manager (E7 Tours & Travels)</p>
               </div>
             </div>
           </div>

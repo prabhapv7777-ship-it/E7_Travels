@@ -764,8 +764,8 @@ export default function TransactionViews({
                 resetForms();
                 setIsAdding(true);
               }}
-              className={`px-4 py-1.5 text-xs font-semibold rounded-lg text-white flex items-center gap-1 shadow-xs transition-colors ${
-                activeSubView === 'Company Payments' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-rose-600 hover:bg-rose-700'
+              className={`px-4 py-1.5 text-xs font-semibold rounded-lg text-white flex items-center gap-1 shadow-xs transition-colors cursor-pointer ${
+                activeSubView === 'Company Payments' ? 'bg-[#006B57] hover:bg-[#004D40]' : 'bg-rose-600 hover:bg-rose-700'
               }`}
             >
               <Plus className="h-3.5 w-3.5" /> Log Entry
@@ -912,7 +912,7 @@ export default function TransactionViews({
                 <button
                   id="pay-submit-btn"
                   type="submit"
-                  className="px-4 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-xs transition-colors"
+                  className="px-4 py-2 text-xs font-semibold bg-[#006B57] hover:bg-[#004D40] text-white rounded-lg shadow-xs transition-colors cursor-pointer"
                 >
                   {editingPayment ? 'Update Billing Voucher' : 'Save Billing Voucher'}
                 </button>

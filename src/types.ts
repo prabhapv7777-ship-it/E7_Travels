@@ -31,6 +31,7 @@ export interface Vehicle {
   model: string;
   manufacturer: string;
   year: number;
+  registrationDate?: string; // YYYY-MM-DD
   fuelType: 'CNG' | 'Diesel' | 'Petrol' | 'EV';
   transmission: 'Manual' | 'Automatic';
   vehicleType: 'Sedan' | 'SUV' | 'Hatchback' | 'Bus' | 'Tempo Traveler';
@@ -40,14 +41,21 @@ export interface Vehicle {
   ownerAddress?: string;
   driverId: string;
   driverName: string;
-  company: string;
-  site: string;
-  company2?: string;
-  site2?: string;
+  company: string; // Assigned Site (Field 1)
+  company2?: string; // Site Preference 2 (Field 2)
+  site: string; // Site Preference 3 (Field 3)
+  site2?: string; // Site Preference 4 (Field 4)
+  sitePreference1?: string; // Assigned Site alias
+  sitePreference2?: string; // Site Preference 2 alias
+  sitePreference3?: string; // Site Preference 3 alias
+  sitePreference4?: string; // Site Preference 4 alias
   joiningDate: string;
   status: 'Active' | 'Inactive';
   emiAmount: number;
   emiDueDate: string; // YYYY-MM-DD
+  rcExpiry?: string; // YYYY-MM-DD
+  mfdYear?: string;
+  driverType?: 'Owner-Paid' | 'Owner-cum-Driver' | 'Company';
   insuranceExpiry: string; // YYYY-MM-DD
   permitExpiry: string; // YYYY-MM-DD
   fcExpiry: string; // YYYY-MM-DD
@@ -124,6 +132,8 @@ export interface Driver {
   id: string; // Driver ID
   name: string;
   phone: string;
+  altPhone?: string;
+  email?: string;
   address: string;
   badgeNumber: string;
   badgeExpiry: string; // YYYY-MM-DD
@@ -208,6 +218,11 @@ export type ExpenseType =
   | 'Penalty'
   | 'Driver Salary'
   | 'Driver Advance'
+  | 'TDS'
+  | 'D&R'
+  | 'Caution Deposit'
+  | 'Admin Charges'
+  | 'GPS Rent'
   | 'Miscellaneous';
 
 export const EXPENSE_TYPES: ExpenseType[] = [
@@ -228,6 +243,11 @@ export const EXPENSE_TYPES: ExpenseType[] = [
   'Penalty',
   'Driver Salary',
   'Driver Advance',
+  'TDS',
+  'D&R',
+  'Caution Deposit',
+  'Admin Charges',
+  'GPS Rent',
   'Miscellaneous',
 ];
 
@@ -270,6 +290,7 @@ export interface Enquiry {
   ownerMobile?: string;
   ownerAddress?: string;
   mfdYear?: string;
+  registrationDate?: string;
   fuelType?: string;
   rcExpiry?: string;
   insuranceExpiry?: string;
@@ -277,10 +298,14 @@ export interface Enquiry {
   fcExpiry?: string;
   driverAltPhone?: string;
   driverEmail?: string;
+  driverEmergencyContactName?: string;
+  driverEmergencyContactNumber?: string;
+  driverEmergencyRelation?: string;
   driverAadhaar?: string;
   driverDlNumber?: string;
   driverDlExpiry?: string;
   driverAddress?: string;
+  photoUrl?: string;
   gpsVendor?: string;
   gpsImei?: string;
   bankName?: string;
@@ -386,4 +411,95 @@ export function detectManufacturer(modelStr?: string): string {
     return firstWord.charAt(0).toUpperCase() + firstWord.slice(1);
   }
   return 'Toyota';
+}
+
+export interface DailyRunningEntry {
+  id: string;
+  date: string; // YYYY-MM-DD
+  vehicleNumber: string;
+  driverName: string;
+  openingKm: number;
+  closingKm: number;
+  totalKm: number;
+  trips: number;
+  amount: number;
+  remarks?: string;
+}
+
+export type AdvanceType = 'CNG Advance' | 'EMI Advance' | 'Driver Advance' | 'Maintenance' | 'Other';
+
+export interface AdvanceRecord {
+  id: string; // e.g. ADV-001
+  date: string; // YYYY-MM-DD
+  vehicleNumber: string;
+  type: AdvanceType;
+  amount: number;
+  cngPercent: number; // e.g. 5%
+  recoverable: number;
+  recovered: number;
+  balance: number;
+  status: 'Pending' | 'Partially Recovered' | 'Fully Recovered';
+  remarks?: string;
+}
+
+export interface RecoveryRecord {
+  id: string; // e.g. REC-001
+  date: string; // YYYY-MM-DD
+  vehicleNumber: string;
+  advanceId: string;
+  amount: number;
+  recoveryMonth: string; // YYYY-MM e.g. 2026-10
+  balance: number;
+  status: 'Applied' | 'Reversed';
+  remarks?: string;
+}
+
+export interface InvoiceRecord {
+  id: string;
+  invoiceNumber: string;
+  date: string;
+  company: string;
+  vehicleNumber: string;
+  billingPeriod: string; // e.g. Oct 2026 or 2026-10
+  amount: number;
+  deductions: number;
+  netAmount: number;
+  status: 'Draft' | 'Sent' | 'Paid' | 'Cancelled';
+  paymentTerms?: string;
+}
+
+export interface PaymentRecord {
+  id: string;
+  date: string;
+  paymentId: string;
+  invoiceNo: string;
+  company: string;
+  amount: number;
+  paid: number;
+  balance: number;
+  status: 'Paid' | 'Partial' | 'Pending';
+  paymentMode?: string;
+}
+
+export interface AttachmentRecord {
+  id: string;
+  vehicleNumber: string;
+  ownerName: string;
+  driverName: string;
+  site: string;
+  attachDate: string;
+  packageType: string;
+  kmLimit: number;
+  status: 'Active' | 'Under Notice' | 'Detached';
+  remarks?: string;
+}
+
+export interface FinancialSettings {
+  cngProfitPercent: number; // e.g. 5
+  e7TravelsCharge: number; // e.g. 1500
+  fixedDeductionDefault: number; // e.g. 1000
+  vehicleFixedDeductions: Record<string, number>; // Per-vehicle fixed deduction overrides
+  serviceCommissionPercent: number; // e.g. 2
+  defaultGstPercent: number; // e.g. 5
+  defaultTdsPercent: number; // e.g. 1
 }
